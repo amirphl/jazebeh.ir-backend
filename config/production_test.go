@@ -227,6 +227,13 @@ func TestLoadSchedulerConfigReadsCampaignRefundReconciliationSettings(t *testing
 	}
 }
 
+func TestLoadSchedulerConfigDefaultsRefundEligibilityToNinetySixHours(t *testing.T) {
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY", "")
+	if got := loadSchedulerConfig().CampaignRefundReconciliationEligibilityDelay; got != 96*time.Hour {
+		t.Fatalf("CampaignRefundReconciliationEligibilityDelay = %s, want 96h", got)
+	}
+}
+
 func TestLoadSchedulerConfigReadsPayamBalanceMonitorSettings(t *testing.T) {
 	t.Setenv("PAYAM_BALANCE_MONITOR_ENABLED", "false")
 	t.Setenv("PAYAM_BALANCE_MONITOR_INTERVAL", "17m")
