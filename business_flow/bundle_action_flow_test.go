@@ -34,9 +34,9 @@ func TestParseBundleActionXLSXStreamsRowsAndPreservesCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	uids, total, duplicates, invalid, err := parseBundleActionXLSX(path)
+	uids, total, duplicates, invalid, err := parseBundleActionFileXLSX(path)
 	if err != nil {
-		t.Fatalf("parseBundleActionXLSX() error = %v", err)
+		t.Fatalf("parseBundleActionFileXLSX() error = %v", err)
 	}
 	if got, want := total, int64(4); got != want {
 		t.Errorf("total = %d, want %d", got, want)
@@ -74,9 +74,9 @@ func TestParseBundleActionXLSXAcceptsUIDsWithoutHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	uids, total, duplicates, invalid, err := parseBundleActionXLSX(path)
+	uids, total, duplicates, invalid, err := parseBundleActionFileXLSX(path)
 	if err != nil {
-		t.Fatalf("parseBundleActionXLSX() error = %v", err)
+		t.Fatalf("parseBundleActionFileXLSX() error = %v", err)
 	}
 	if got, want := total, int64(3); got != want {
 		t.Errorf("total = %d, want %d", got, want)
@@ -114,9 +114,9 @@ func TestParseBundleActionXLSXAcceptsUIDHeaderWithWhitespaceAndCase(t *testing.T
 		t.Fatal(err)
 	}
 
-	uids, total, duplicates, invalid, err := parseBundleActionXLSX(path)
+	uids, total, duplicates, invalid, err := parseBundleActionFileXLSX(path)
 	if err != nil {
-		t.Fatalf("parseBundleActionXLSX() error = %v", err)
+		t.Fatalf("parseBundleActionFileXLSX() error = %v", err)
 	}
 	if got, want := total, int64(2); got != want {
 		t.Errorf("total = %d, want %d", got, want)
