@@ -33,6 +33,10 @@ const (
 	smsStatusJobMaxRetry               = 3
 	smsStatusJobTokenTTL               = 5 * time.Minute
 	smsStatusJobMaxConcurrentCampaigns = 10
+	// A provider call is allowed to consume the full status-job deadline. Keep
+	// a small separate budget for recording a failed attempt afterwards, or an
+	// expired provider context would leave the job due forever.
+	smsStatusJobFailurePersistTimeout = 10 * time.Second
 )
 
 type SMSCampaignScheduler struct {
@@ -1376,23 +1380,7 @@ func (s *SMSCampaignScheduler) handleStatusJob(ctx context.Context, job *models.
 			time.Since(fetchStartedAt).Round(time.Millisecond),
 			fetchErr,
 		)
-		now := utils.UTCNow()
-		job.RetryCount++
-		msg := fetchErr.Error()
-		job.Error = &msg
-		job.UpdatedAt = now
-		if job.RetryCount >= smsStatusJobMaxRetry {
-			job.ExecutedAt = &now
-		} else {
-			job.ExecutedAt = nil
-		}
-		if err := s.jobRepo.Update(ctx, job); err != nil {
-			// A deadline can expire just before this update. Preserve the original
-			// provider failure in the returned error instead of replacing it with
-			// the less useful database/context error.
-			return fmt.Errorf("%w; persist failed status-job retry state: %v", fetchErr, err)
-		}
-		return fetchErr
+		return s.markSMSStatusJobFailure(ctx, job, fetchErr)
 	}
 	statusItems := statusResult.Items
 
@@ -2058,7 +2046,12 @@ func (s *SMSCampaignScheduler) markSMSStatusJobFailure(ctx context.Context, job 
 	} else {
 		job.ExecutedAt = nil
 	}
-	if err := s.jobRepo.Update(ctx, job); err != nil {
+	// FetchStatus may return only after ctx reaches its deadline. Detach the
+	// durable retry-state update from that completed context while retaining
+	// any context values used by the repository, and bound it independently.
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), smsStatusJobFailurePersistTimeout)
+	defer cancel()
+	if err := s.jobRepo.Update(persistCtx, job); err != nil {
 		return fmt.Errorf("%w; persist failed status-job retry state: %v", fetchErr, err)
 	}
 	return fetchErr

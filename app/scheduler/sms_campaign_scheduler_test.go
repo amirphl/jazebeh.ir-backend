@@ -116,8 +116,9 @@ func (s *stubSMSClient) FetchStatus(ctx context.Context, token string, ids []str
 }
 
 type stubSMSCampaignStatusJobRepo struct {
-	updated []*models.CampaignStatusJob
-	batched [][]*models.CampaignStatusJob
+	updated  []*models.CampaignStatusJob
+	batched  [][]*models.CampaignStatusJob
+	updateFn func(context.Context, *models.CampaignStatusJob) error
 }
 
 type interleavedSMSCampaignStatusJobRepo struct {
@@ -232,6 +233,11 @@ func (s *stubSMSCampaignStatusJobRepo) ListDue(ctx context.Context, platform str
 }
 
 func (s *stubSMSCampaignStatusJobRepo) Update(ctx context.Context, job *models.CampaignStatusJob) error {
+	if s.updateFn != nil {
+		if err := s.updateFn(ctx, job); err != nil {
+			return err
+		}
+	}
 	clone := *job
 	s.updated = append(s.updated, &clone)
 	return nil
@@ -558,6 +564,38 @@ func TestSMSHandleStatusJobFetchFailureKeepsJobRetryable(t *testing.T) {
 	}
 	if job.RawProviderResponse == nil || *job.RawProviderResponse != `{"error":"temporarily unavailable"}` {
 		t.Fatalf("expected raw provider response to be retained, got=%v", job.RawProviderResponse)
+	}
+}
+
+func TestSMSHandleStatusJobFetchFailurePersistsAfterDeadline(t *testing.T) {
+	t.Parallel()
+
+	jobRepo := &stubSMSCampaignStatusJobRepo{
+		updateFn: func(ctx context.Context, _ *models.CampaignStatusJob) error {
+			if err := ctx.Err(); err != nil {
+				t.Fatalf("retry-state persistence received expired context: %v", err)
+			}
+			return nil
+		},
+	}
+	s := &SMSCampaignScheduler{
+		jobRepo: jobRepo,
+		smsClient: &stubSMSClient{
+			fetchStatusFn: func(context.Context, string, []string) (PayamStatusFetchResult, error) {
+				return PayamStatusFetchResult{}, context.DeadlineExceeded
+			},
+		},
+	}
+	job := &models.CampaignStatusJob{ID: 13, ProcessedCampaignID: 90, TrackingIDs: []string{"trk-3"}}
+	expiredCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s.handleStatusJob(expiredCtx, job, "token-3")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected provider deadline error, got %v", err)
+	}
+	if job.RetryCount != 1 || len(jobRepo.updated) != 1 {
+		t.Fatalf("failed retry state was not persisted: retry_count=%d updates=%d", job.RetryCount, len(jobRepo.updated))
 	}
 }
 
