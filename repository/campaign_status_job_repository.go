@@ -81,6 +81,31 @@ func (r *CampaignStatusJobRepositoryImpl) Update(ctx context.Context, job *model
 	return db.Save(job).Error
 }
 
+// DeliveryStatusFinal reports whether every scheduled provider-status check
+// for a processed campaign completed successfully. A zero delivery count is
+// financially meaningful only after this point; before then it may simply be
+// an incomplete provider snapshot.
+func (r *CampaignStatusJobRepositoryImpl) DeliveryStatusFinal(ctx context.Context, processedCampaignID uint) (bool, error) {
+	if processedCampaignID == 0 {
+		return false, nil
+	}
+	var summary struct {
+		Total      int64
+		Incomplete int64
+		Failed     int64
+	}
+	err := r.getDB(ctx).Table("campaign_status_jobs").
+		Select(`COUNT(*) AS total,
+			COALESCE(SUM(CASE WHEN executed_at IS NULL THEN 1 ELSE 0 END), 0) AS incomplete,
+			COALESCE(SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END), 0) AS failed`).
+		Where("processed_campaign_id = ?", processedCampaignID).
+		Scan(&summary).Error
+	if err != nil {
+		return false, err
+	}
+	return summary.Total > 0 && summary.Incomplete == 0 && summary.Failed == 0, nil
+}
+
 // ByFilter: since no filter is defined, apply order/limit/offset only
 func (r *CampaignStatusJobRepositoryImpl) ByFilter(ctx context.Context, _ any, orderBy string, limit, offset int) ([]*models.CampaignStatusJob, error) {
 	db := r.getDB(ctx)
