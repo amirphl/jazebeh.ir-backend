@@ -1,4 +1,7 @@
-BEGIN;
+-- Do not wrap this file in an explicit transaction. The legacy backfill below
+-- can run for a long time; an outer transaction would retain the exclusive
+-- locks acquired by ALTER TABLE and block normal redirect traffic until it
+-- finishes. psql autocommit still makes the DO block itself atomic.
 
 CREATE TABLE IF NOT EXISTS links (
     link_id BIGSERIAL PRIMARY KEY,
@@ -104,5 +107,3 @@ CREATE TABLE IF NOT EXISTS click_acknowledgements (
 INSERT INTO click_acknowledgements(singleton, through_click_id)
 VALUES (TRUE, 0)
 ON CONFLICT (singleton) DO NOTHING;
-
-COMMIT;
