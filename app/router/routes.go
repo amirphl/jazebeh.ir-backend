@@ -289,6 +289,9 @@ func (r *FiberRouter) SetupRoutes() {
 	campaigns.Get("/summary", r.campaignHandler.GetApprovedRunningSummary)
 	campaigns.Get("/initiated/last", r.campaignHandler.GetLastInitiatedCampaign)
 	campaigns.Post("/audience-click-report", r.campaignHandler.ExportCampaignAudienceClickReport)
+	campaigns.Post("/audience-click-report/jobs", r.campaignHandler.CreateCampaignAudienceReportJob)
+	campaigns.Get("/audience-click-report/jobs/:id", r.campaignHandler.GetCampaignAudienceReportJob)
+	campaigns.Get("/audience-click-report/jobs/:id/download", r.campaignHandler.DownloadCampaignAudienceReportJob)
 	campaigns.Get("/:uuid/action-metrics", r.campaignHandler.GetCampaignActionMetrics)
 	// ExportCampaignReport resolves the path parameter as a campaign UUID.
 	// Keep the route name aligned with the handler (and the OpenAPI contract),
