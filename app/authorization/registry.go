@@ -82,13 +82,13 @@ var RoutePermissionRegistry = []RoutePermission{
 	{"PUT", "/api/v1/admin/platform-base-prices", PermissionPlatformBasePriceEdit, "Update platform base price"},
 
 	// Access control (maker-checker)
-	{"POST", "/api/v1/admin/access-control/requests", PermissionACLManage, "Create ACL change request"},
 	{
 		"POST",
 		"/api/v1/admin/access-control/requests/",
 		PermissionACLApprove,
 		"Approve/reject ACL change request",
 	}, // path prefix covers /requests/:uuid/decision
+	{"POST", "/api/v1/admin/access-control/requests", PermissionACLManage, "Create ACL change request"},
 }
 
 // PermissionForRoute returns the permission bucket for the given method/path if any.
