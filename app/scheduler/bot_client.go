@@ -52,7 +52,6 @@ type BotClient interface {
 	AllocateShortLinks(ctx context.Context, token string, req *dto.BotAllocateShortLinksRequest) ([]string, error)
 	PushCampaignStatistics(ctx context.Context, processedCampaignID uint, stats map[string]any) error
 	PushCampaignAudienceUIDs(ctx context.Context, campaignID uint, uids, codes []string) error
-	CreateShortLinks(ctx context.Context, token string, reqBody *dto.BotCreateShortLinksRequest) error
 	DownloadCampaignMedia(ctx context.Context, token, mediaUUID string) (string, error)
 }
 
@@ -418,44 +417,6 @@ func (c *httpBotClient) PushCampaignAudienceUIDs(ctx context.Context, campaignID
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return fmt.Errorf("push audience UIDs chunk [%d,%d) http status: %d", start, end, resp.StatusCode)
 		}
-	}
-	return nil
-}
-
-func (c *httpBotClient) CreateShortLinks(ctx context.Context, token string, reqBody *dto.BotCreateShortLinksRequest) error {
-	if reqBody == nil {
-		return fmt.Errorf("create short-links request body is nil")
-	}
-
-	endpoint := c.endpoint("/api/v1/bot/short-links")
-	payload, err := marshalJSON(reqBody)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return statusErr("create short-links", resp)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-	var apiResp dto.APIResponse
-	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return fmt.Errorf("failed to decode JSON into APIResponse: %w", err)
-	}
-	if !apiResp.Success {
-		return fmt.Errorf("create short-links failed: %v", apiResp.Message)
 	}
 	return nil
 }
