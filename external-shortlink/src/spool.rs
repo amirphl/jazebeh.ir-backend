@@ -12,6 +12,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::domain::ClickEvent;
+use crate::logging;
 
 const COMPACT_AFTER_DRAIN_BYTES: u64 = 64 * 1024 * 1024;
 #[derive(Clone)]
@@ -148,6 +149,8 @@ impl DurableSpool {
                 transaction.commit().map_err(storage)?;
                 refresh_capacity_state(connection)?;
                 warn!(
+                    component = logging::COMPONENT,
+                    event = "spool_corrupt_records_quarantined",
                     quarantined_events,
                     "quarantined corrupt durable click spool records"
                 );
