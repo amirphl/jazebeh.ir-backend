@@ -46,9 +46,9 @@ CREATE TABLE IF NOT EXISTS clicks (
 
 CREATE INDEX IF NOT EXISTS idx_clicks_link_id ON clicks (link_id);
 CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at ON clicks (clicked_at);
-CREATE INDEX IF NOT EXISTS idx_clicks_acknowledged_at
-    ON clicks (acknowledged_at)
-    WHERE acknowledged_at IS NOT NULL;
+-- Acknowledgement is represented by the singleton cursor below. Do not index
+-- acknowledged_at: advancing a cursor would rewrite an index entry per click.
+DROP INDEX IF EXISTS idx_clicks_acknowledged_at;
 ALTER TABLE links
     ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
 
