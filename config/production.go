@@ -17,6 +17,7 @@ import (
 
 // ProductionConfig holds all configuration for production environment
 type ProductionConfig struct {
+	MockExternal       bool                     `json:"-"`
 	Database           DatabaseConfig           `json:"database"`
 	Server             ServerConfig             `json:"server"`
 	Security           SecurityConfig           `json:"security"`
@@ -61,50 +62,28 @@ type DatabaseConfig struct {
 }
 
 type ServerConfig struct {
-	Host              string        `json:"host"`
-	Port              int           `json:"port"`
-	ReadTimeout       time.Duration `json:"read_timeout"`
-	WriteTimeout      time.Duration `json:"write_timeout"`
-	IdleTimeout       time.Duration `json:"idle_timeout"`
-	ShutdownTimeout   time.Duration `json:"shutdown_timeout"`
-	BodyLimit         int           `json:"body_limit"`
-	EnablePprof       bool          `json:"enable_pprof"`
-	EnableMetrics     bool          `json:"enable_metrics"`
-	TrustedProxies    []string      `json:"trusted_proxies"`
-	ProxyHeader       string        `json:"proxy_header"`
-	EnableCompression bool          `json:"enable_compression"`
-	CompressionLevel  int           `json:"compression_level"`
+	Host            string        `json:"host"`
+	Port            int           `json:"port"`
+	ReadTimeout     time.Duration `json:"read_timeout"`
+	WriteTimeout    time.Duration `json:"write_timeout"`
+	IdleTimeout     time.Duration `json:"idle_timeout"`
+	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
+	BodyLimit       int           `json:"body_limit"`
+	EnablePprof     bool          `json:"enable_pprof"`
+	EnableMetrics   bool          `json:"enable_metrics"`
+	TrustedProxies  []string      `json:"trusted_proxies"`
+	ProxyHeader     string        `json:"proxy_header"`
 }
 
 type SecurityConfig struct {
 	// TLS/HTTPS
-	TLSEnabled         bool   `json:"tls_enabled"`
-	TLSCertFile        string `json:"tls_cert_file"`
-	TLSKeyFile         string `json:"tls_key_file"`
-	TLSMinVersion      string `json:"tls_min_version"`
-	HSTSMaxAge         int    `json:"hsts_max_age"`
-	HSTSIncludeSubDoms bool   `json:"hsts_include_subdomains"`
-	HSTSPreload        bool   `json:"hsts_preload"`
+	TLSEnabled    bool   `json:"tls_enabled"`
+	TLSCertFile   string `json:"tls_cert_file"`
+	TLSKeyFile    string `json:"tls_key_file"`
+	TLSMinVersion string `json:"tls_min_version"`
 
 	// CORS
-	AllowedOrigins   []string `json:"allowed_origins"`
-	AllowedMethods   []string `json:"allowed_methods"`
-	AllowedHeaders   []string `json:"allowed_headers"`
-	AllowCredentials bool     `json:"allow_credentials"`
-	CORSMaxAge       int      `json:"cors_max_age"`
-
-	// Rate Limiting
-	AuthRateLimit   int           `json:"auth_rate_limit"`   // requests per minute
-	GlobalRateLimit int           `json:"global_rate_limit"` // requests per minute
-	RateLimitWindow time.Duration `json:"rate_limit_window"`
-	RateLimitMemory int           `json:"rate_limit_memory"` // MB
-
-	// Content Security
-	CSPPolicy           string `json:"csp_policy"`
-	XFrameOptions       string `json:"x_frame_options"`
-	XContentTypeOptions string `json:"x_content_type_options"`
-	XSSProtection       string `json:"xss_protection"`
-	ReferrerPolicy      string `json:"referrer_policy"`
+	AllowedOrigins []string `json:"allowed_origins"`
 
 	// API Security
 	RequireAPIKey  bool     `json:"require_api_key"`
@@ -122,9 +101,6 @@ type SecurityConfig struct {
 	BcryptCost            int  `json:"bcrypt_cost"`
 
 	// Session Security
-	SessionCookieSecure    bool          `json:"session_cookie_secure"`
-	SessionCookieHTTPOnly  bool          `json:"session_cookie_httponly"`
-	SessionCookieSameSite  string        `json:"session_cookie_samesite"`
 	SessionTimeout         time.Duration `json:"session_timeout"`
 	SessionCleanupInterval time.Duration `json:"session_cleanup_interval"`
 }
@@ -259,6 +235,7 @@ type DeploymentConfig struct {
 }
 
 type AtipayConfig struct {
+	Mock     bool   `json:"-"`
 	APIKey   string `json:"api_key"`
 	Terminal string `json:"terminal"`
 }
@@ -488,6 +465,7 @@ type SchedulerConfig struct {
 
 // ExternalShortLinkConfig controls outbound mapping publication and inbound click synchronization.
 type ExternalShortLinkConfig struct {
+	Mock                bool          `json:"-"`
 	Enabled             bool          `json:"enabled"`
 	BaseURL             string        `json:"base_url"`
 	APIToken            string        `json:"api_token"`
@@ -600,6 +578,7 @@ type SmartTagPromptConfig struct {
 }
 
 type SmartTagOpenAIConfig struct {
+	Mock                 bool          `json:"-"`
 	APIKeyEnv            string        `json:"api_key_env"`
 	BaseURL              string        `json:"base_url"`
 	Model                string        `json:"model"`
@@ -631,27 +610,49 @@ const (
 // LoadProductionConfig loads and validates configuration from environment variables
 func LoadProductionConfig() (*ProductionConfig, error) {
 	// Load environment variables from .env file
-	if err := loadEnvFile(); err != nil {
-		return nil, fmt.Errorf("failed to load .env file: %w", err)
+	if env := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV"))); env != "development" && env != "staging" {
+		if err := loadEnvFile(); err != nil {
+			return nil, fmt.Errorf("failed to load .env file: %w", err)
+		}
 	}
+	environment := strings.ToLower(getEnvString("APP_ENV", "production"))
+	if environment != "production" && environment != "development" && environment != "staging" {
+		return nil, fmt.Errorf("APP_ENV must be production, development or staging")
+	}
+	defaultMode := "live"
+	if environment != "production" {
+		defaultMode = "mock"
+	}
+	mode := strings.ToLower(getEnvString("EXTERNAL_SERVICES_MODE", defaultMode))
+	if mode != "mock" && mode != "live" {
+		return nil, fmt.Errorf("EXTERNAL_SERVICES_MODE must be mock or live")
+	}
+	if environment != "production" && mode != "mock" {
+		return nil, fmt.Errorf("development and staging require EXTERNAL_SERVICES_MODE=mock")
+	}
+	if environment == "production" && mode != "live" {
+		return nil, fmt.Errorf("production requires EXTERNAL_SERVICES_MODE=live")
+	}
+	mockExternal := mode == "mock"
 
 	smartTagEvaluationEnabled := getEnvBool("SMART_TAG_EVALUATION_ENABLED", false)
 	personaAnalysisSystemPrompt, err := readConfigTextFile(
 		smartTagPersonaAnalysisSystemPromptFile,
-		smartTagEvaluationEnabled,
+		smartTagEvaluationEnabled && !mockExternal,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load smart tag persona analysis system prompt: %w", err)
 	}
 	tagScoringSystemPrompt, err := readConfigTextFile(
 		smartTagTagScoringSystemPromptFile,
-		smartTagEvaluationEnabled,
+		smartTagEvaluationEnabled && !mockExternal,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load smart tag scoring system prompt: %w", err)
 	}
 
 	cfg := &ProductionConfig{
+		MockExternal: mockExternal,
 		Database: DatabaseConfig{
 			Host:            getEnvString("DB_HOST", "localhost"),
 			Port:            getEnvInt("DB_PORT", 5432),
@@ -673,26 +674,21 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			Port: getEnvInt("SERVER_PORT", 8080),
 			// A large allocation can contain hundreds of thousands of recipients.
 			// Keep the backend timeout beyond the handler and reverse-proxy budgets.
-			ReadTimeout:       getEnvDuration("SERVER_READ_TIMEOUT", 70*time.Minute),
-			WriteTimeout:      getEnvDuration("SERVER_WRITE_TIMEOUT", 70*time.Minute),
-			IdleTimeout:       getEnvDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
-			ShutdownTimeout:   getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
-			BodyLimit:         getEnvInt("SERVER_BODY_LIMIT", 256*1024*1024), // 256 MiB
-			EnablePprof:       getEnvBool("SERVER_ENABLE_PPROF", false),
-			EnableMetrics:     getEnvBool("SERVER_ENABLE_METRICS", true),
-			TrustedProxies:    getEnvStringSlice("SERVER_TRUSTED_PROXIES", []string{"127.0.0.1"}),
-			ProxyHeader:       getEnvString("SERVER_PROXY_HEADER", "X-Forwarded-For"),
-			EnableCompression: getEnvBool("SERVER_ENABLE_COMPRESSION", true),
-			CompressionLevel:  getEnvInt("SERVER_COMPRESSION_LEVEL", 6),
+			ReadTimeout:     getEnvDuration("SERVER_READ_TIMEOUT", 70*time.Minute),
+			WriteTimeout:    getEnvDuration("SERVER_WRITE_TIMEOUT", 70*time.Minute),
+			IdleTimeout:     getEnvDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
+			ShutdownTimeout: getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
+			BodyLimit:       getEnvInt("SERVER_BODY_LIMIT", 256*1024*1024), // 256 MiB
+			EnablePprof:     getEnvBool("SERVER_ENABLE_PPROF", false),
+			EnableMetrics:   getEnvBool("SERVER_ENABLE_METRICS", true),
+			TrustedProxies:  getEnvStringSlice("SERVER_TRUSTED_PROXIES", []string{"127.0.0.1"}),
+			ProxyHeader:     getEnvString("SERVER_PROXY_HEADER", "X-Forwarded-For"),
 		},
 		Security: SecurityConfig{
-			TLSEnabled:         getEnvBool("TLS_ENABLED", true),
-			TLSCertFile:        getEnvString("TLS_CERT_FILE", "/etc/ssl/certs/yamata.crt"),
-			TLSKeyFile:         getEnvString("TLS_KEY_FILE", "/etc/ssl/private/yamata.key"),
-			TLSMinVersion:      getEnvString("TLS_MIN_VERSION", "1.3"),
-			HSTSMaxAge:         getEnvInt("HSTS_MAX_AGE", 31536000), // 1 year
-			HSTSIncludeSubDoms: getEnvBool("HSTS_INCLUDE_SUBDOMAINS", true),
-			HSTSPreload:        getEnvBool("HSTS_PRELOAD", true),
+			TLSEnabled:    getEnvBool("TLS_ENABLED", true),
+			TLSCertFile:   getEnvString("TLS_CERT_FILE", "/etc/ssl/certs/yamata.crt"),
+			TLSKeyFile:    getEnvString("TLS_KEY_FILE", "/etc/ssl/private/yamata.key"),
+			TLSMinVersion: getEnvString("TLS_MIN_VERSION", "1.3"),
 			AllowedOrigins: getEnvStringSlice(
 				"CORS_ALLOWED_ORIGINS",
 				[]string{
@@ -703,25 +699,6 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 					"https://admin.yamata-no-orochi.com",
 				},
 			),
-			AllowedMethods: getEnvStringSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-			AllowedHeaders: getEnvStringSlice(
-				"CORS_ALLOWED_HEADERS",
-				[]string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With", "X-API-Key"},
-			),
-			AllowCredentials: getEnvBool("CORS_ALLOW_CREDENTIALS", true),
-			CORSMaxAge:       getEnvInt("CORS_MAX_AGE", 86400),
-			AuthRateLimit:    getEnvInt("AUTH_RATE_LIMIT", 20),
-			GlobalRateLimit:  getEnvInt("GLOBAL_RATE_LIMIT", 2000),
-			RateLimitWindow:  getEnvDuration("RATE_LIMIT_WINDOW", 1*time.Minute),
-			RateLimitMemory:  getEnvInt("RATE_LIMIT_MEMORY", 64), // MB
-			CSPPolicy: getEnvString(
-				"CSP_POLICY",
-				"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https:; connect-src 'self' https:; frame-ancestors 'none';",
-			),
-			XFrameOptions:          getEnvString("X_FRAME_OPTIONS", "DENY"),
-			XContentTypeOptions:    getEnvString("X_CONTENT_TYPE_OPTIONS", "nosniff"),
-			XSSProtection:          getEnvString("XSS_PROTECTION", "1; mode=block"),
-			ReferrerPolicy:         getEnvString("REFERRER_POLICY", "strict-origin-when-cross-origin"),
 			RequireAPIKey:          getEnvBool("REQUIRE_API_KEY", false),
 			APIKeyHeader:           getEnvString("API_KEY_HEADER", "X-API-Key"),
 			AllowedAPIKeys:         getEnvStringSlice("ALLOWED_API_KEYS", []string{}),
@@ -733,9 +710,6 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			PasswordRequireNum:     getEnvBool("PASSWORD_REQUIRE_NUMBER", true),
 			PasswordRequireSymbol:  getEnvBool("PASSWORD_REQUIRE_SYMBOL", true),
 			BcryptCost:             getEnvInt("BCRYPT_COST", 12),
-			SessionCookieSecure:    getEnvBool("SESSION_COOKIE_SECURE", true),
-			SessionCookieHTTPOnly:  getEnvBool("SESSION_COOKIE_HTTPONLY", true),
-			SessionCookieSameSite:  getEnvString("SESSION_COOKIE_SAMESITE", "Strict"),
 			SessionTimeout:         getEnvDuration("SESSION_TIMEOUT", 24*time.Hour),
 			SessionCleanupInterval: getEnvDuration("SESSION_CLEANUP_INTERVAL", 1*time.Hour),
 		},
@@ -985,6 +959,30 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			},
 		},
 		IRHTTPSProxy: getEnvString("IR_HTTPS_PROXY", ""),
+	}
+	if mockExternal {
+		cfg.SMS.ProviderDomain = "mock"
+		cfg.Email.Host = ""
+		cfg.Scheduler.MessageSendMockEnabled = true
+		cfg.ExternalShortLink.Mock = true
+		cfg.SmartTagEvaluation.OpenAI.Mock = true
+		cfg.Atipay.Mock = true
+		if environment == "development" {
+			cfg.Sentry.DSN = ""
+		}
+		if environment == "staging" && strings.TrimSpace(cfg.Sentry.DSN) != "" {
+			dsn, err := url.Parse(cfg.Sentry.DSN)
+			if err != nil || dsn == nil || dsn.Scheme != "http" || dsn.Hostname() != "sentry-beta" || dsn.Port() != "8000" {
+				return nil, fmt.Errorf("staging SENTRY_DSN must use the internal GlitchTip endpoint (http://<key>@sentry-beta:8000/sentry/<project-id>)")
+			}
+		}
+		if cfg.Scheduler.CampaignExecutionEnabled {
+			botURL, err := url.Parse(cfg.Bot.APIDomain)
+			if err != nil || botURL == nil || (botURL.Scheme != "http" && botURL.Scheme != "https") ||
+				(botURL.Hostname() != "localhost" && botURL.Hostname() != "127.0.0.1" && botURL.Hostname() != "::1" && botURL.Hostname() != "app-beta") {
+				return nil, fmt.Errorf("BOT_API_DOMAIN must point to the local application in mock mode")
+			}
+		}
 	}
 
 	// Validate the loaded configuration
@@ -1253,7 +1251,7 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 			errors = append(errors, "SMS_SOURCE_NUMBER is required for SMS provider")
 		}
 	}
-	if cfg.Scheduler.CampaignExecutionEnabled && cfg.Scheduler.PayamBalanceMonitorEnabled {
+	if cfg.Scheduler.CampaignExecutionEnabled && cfg.Scheduler.PayamBalanceMonitorEnabled && !cfg.MockExternal {
 		if strings.TrimSpace(cfg.PayamSMS.RootAccessToken) == "" {
 			errors = append(errors, "PAYAM_SMS_ROOT_ACCESS_TOKEN is required when PAYAM_BALANCE_MONITOR_ENABLED is true")
 		}
@@ -1271,7 +1269,7 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 	if cfg.Scheduler.SMSCampaignBatchSendConcurrency < 1 || cfg.Scheduler.SMSCampaignBatchSendConcurrency > 5 {
 		errors = append(errors, "SMS_CAMPAIGN_BATCH_SEND_CONCURRENCY must be between 1 and 5")
 	}
-	if cfg.CandooSMS.Enabled {
+	if cfg.CandooSMS.Enabled && !cfg.MockExternal {
 		if strings.TrimSpace(cfg.CandooSMS.APIKey) == "" {
 			errors = append(errors, "CANDOO_SMS_API_KEY is required when CANDOO_SMS_ENABLED is true")
 		}
@@ -1515,7 +1513,9 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		errors = append(errors, "SYSTEM_SHEBA_NUMBER is invalid")
 	}
 
-	errors = append(errors, validateCryptoConfig(cfg.Crypto)...)
+	if !cfg.MockExternal {
+		errors = append(errors, validateCryptoConfig(cfg.Crypto)...)
+	}
 
 	// Return validation errors if any
 	if len(errors) > 0 {
@@ -1550,6 +1550,12 @@ func validateExternalShortLinkConfig(cfg ExternalShortLinkConfig) []string {
 		return nil
 	}
 	var errors []string
+	if cfg.Mock {
+		if cfg.MappingSyncInterval <= 0 || cfg.ClickSyncInterval <= 0 || cfg.MappingBatchSize <= 0 || cfg.ClickPageSize <= 0 || cfg.MaxClickPagesPerRun <= 0 {
+			return []string{"mock external short-link sync intervals and batch sizes must be positive"}
+		}
+		return nil
+	}
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	if baseURL == "" {
 		errors = append(errors, "EXTERNAL_SHORTLINK_BASE_URL is required when external short links are enabled")
