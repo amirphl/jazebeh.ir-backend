@@ -142,9 +142,7 @@ def unique_paths(paths: list[Path]) -> list[Path]:
 
 
 PAYAM_SMS_TOKEN_URL = "https://www.payamsms.com/auth/oauth/token"
-PAYAM_SMS_SEND_URL = (
-    "https://www.payamsms.com/panel/webservice/sendMultipleWithSrc"
-)
+PAYAM_SMS_SEND_URL = "https://www.payamsms.com/panel/webservice/sendMultipleWithSrc"
 
 
 def _validate_https_endpoint(value: str, name: str) -> None:
@@ -181,8 +179,7 @@ def _payamsms_token(cfg: dict[str, str], timeout_s: float) -> str:
             "username": cfg["PAYAM_SMS_USERNAME"],
             "password": cfg["PAYAM_SMS_PASSWORD"],
             "scope": cfg.get("PAYAM_SMS_SCOPE", "").strip() or "webservice",
-            "grant_type": cfg.get("PAYAM_SMS_GRANT_TYPE", "").strip()
-            or "password",
+            "grant_type": cfg.get("PAYAM_SMS_GRANT_TYPE", "").strip() or "password",
         },
         headers=headers,
         timeout=timeout_s,
@@ -231,6 +228,12 @@ def _send_payamsms(
 
 
 def send_sms(recipient: str, body: str, cfg: dict[str, str], timeout_s: float) -> None:
+    if cfg.get("EXTERNAL_SERVICES_MODE", "").strip().lower() == "mock":
+        logging.info(
+            "mock provider=certificate-alert action=send recipient=***%s",
+            recipient[-4:],
+        )
+        return
     if cfg["SMS_PROVIDER_DOMAIN"].strip().lower() == "payamsms":
         _send_payamsms(recipient, body, cfg, timeout_s)
         return
@@ -286,6 +289,8 @@ def _validate_hostname_with_optional_port(value: str) -> None:
 
 
 def _validate_sms_config(cfg: dict[str, str]) -> None:
+    if cfg.get("EXTERNAL_SERVICES_MODE", "").strip().lower() == "mock":
+        return
     provider = cfg.get("SMS_PROVIDER_DOMAIN", "").strip()
     if not provider:
         raise SystemExit("Missing SMS config env: SMS_PROVIDER_DOMAIN")
