@@ -21,4 +21,27 @@ scrape_configs:
 
   - job_name: 'cadvisor'
     static_configs:
-      - targets: ['cadvisor-beta:8080'] 
+      - targets: ['cadvisor-beta:8080']
+
+  # jzbe.ir is IP-allowlisted by setup-monitoring-debian-12.sh.
+  - job_name: 'external_shortlink'
+    scheme: https
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['jzbe.ir']
+        labels:
+          service: external-shortlink
+          environment: production
+    tls_config:
+      server_name: jzbe.ir
+
+  - job_name: 'external_shortlink_node'
+    scheme: https
+    metrics_path: /node-metrics
+    static_configs:
+      - targets: ['jzbe.ir']
+        labels:
+          service: external-shortlink
+          environment: production
+    tls_config:
+      server_name: jzbe.ir
