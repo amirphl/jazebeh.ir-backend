@@ -58,6 +58,9 @@ readonly DOCKER
 	die "PostgreSQL container does not exist: $POSTGRES_CONTAINER"
 [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$POSTGRES_CONTAINER")" == true ]] ||
 	die "PostgreSQL container is not running"
+project="$("${DOCKER[@]}" inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$POSTGRES_CONTAINER")"
+[[ -n "$project" && "$project" != '<no value>' && "$project" != yamata-staging ]] ||
+	die "Refusing to restore into staging or an unrecognized PostgreSQL container"
 
 if "${DOCKER[@]}" inspect yamata-campaign-scheduler-beta >/dev/null 2>&1 &&
 	[[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' yamata-campaign-scheduler-beta)" == true ]]; then
