@@ -30,7 +30,7 @@ class SentryStoreClient:
         if not parsed.netloc or not parsed.username:
             raise RuntimeError("SENTRY_DSN is invalid")
 
-        project_id = parsed.path.strip("/")
+        prefix, _, project_id = parsed.path.strip("/").rpartition("/")
         if not project_id or not project_id.isdigit():
             raise RuntimeError("SENTRY_DSN project ID must be numeric")
 
@@ -41,8 +41,17 @@ class SentryStoreClient:
             port = parsed.port
         except ValueError as exc:
             raise RuntimeError("SENTRY_DSN has an invalid port") from exc
+        if getenv("SENTRY_ENVIRONMENT").lower() == "staging" and (
+            parsed.scheme != "http" or hostname != "sentry-beta" or port != 8000
+        ):
+            raise RuntimeError(
+                "staging SENTRY_DSN must use http://<key>@sentry-beta:8000/sentry/<project-id>"
+            )
         endpoint = hostname if port is None else f"{hostname}:{port}"
-        self.store_url = f"{parsed.scheme}://{endpoint}/api/{project_id}/store/"
+        path_prefix = f"/{prefix}" if prefix else ""
+        self.store_url = (
+            f"{parsed.scheme}://{endpoint}{path_prefix}/api/{project_id}/store/"
+        )
         sentry_key = urllib.parse.unquote(parsed.username)
         sentry_secret = urllib.parse.unquote(parsed.password or "")
         if not re.fullmatch(r"[A-Za-z0-9_-]+", sentry_key) or (
@@ -82,9 +91,17 @@ class SentryStoreClient:
                 or public_url.fragment
                 or (public_port is not None and not 1 <= public_port <= 65535)
             ):
-                raise RuntimeError("SENTRY_PUBLIC_BASE_URL must be an HTTP(S) URL without credentials or query")
+                raise RuntimeError(
+                    "SENTRY_PUBLIC_BASE_URL must be an HTTP(S) URL without credentials or query"
+                )
             self.public_base_url = urllib.parse.urlunsplit(
-                (public_url.scheme, public_url.netloc, public_url.path.rstrip("/"), "", "")
+                (
+                    public_url.scheme,
+                    public_url.netloc,
+                    public_url.path.rstrip("/"),
+                    "",
+                    "",
+                )
             )
 
     def send(self, payload: dict) -> None:
@@ -223,7 +240,9 @@ def strip_query(value: str) -> str:
         return ""
     try:
         parsed = urllib.parse.urlsplit(value)
-        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+        return urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, "", "")
+        )
     except ValueError:
         return value.split("?", 1)[0].split("#", 1)[0]
 
@@ -345,13 +364,23 @@ def main() -> int:
     healthcheck_file = getenv(
         "NGINX_SENTRY_FORWARDER_HEALTHCHECK_FILE", DEFAULT_HEALTHCHECK_FILE
     )
+    if getenv("SENTRY_ENVIRONMENT") == "staging" and not getenv("SENTRY_DSN"):
+        print(
+            "staging Sentry forwarder disabled until SENTRY_DSN is configured",
+            flush=True,
+        )
+        while True:
+            record_healthcheck_success(healthcheck_file)
+            time.sleep(30)
     try:
         poll_interval = float(getenv("NGINX_LOG_POLL_INTERVAL_SECONDS", "0.5"))
     except ValueError:
         print("invalid NGINX_LOG_POLL_INTERVAL_SECONDS", file=sys.stderr)
         return 2
     if poll_interval <= 0:
-        print("NGINX_LOG_POLL_INTERVAL_SECONDS must be greater than zero", file=sys.stderr)
+        print(
+            "NGINX_LOG_POLL_INTERVAL_SECONDS must be greater than zero", file=sys.stderr
+        )
         return 2
 
     try:
