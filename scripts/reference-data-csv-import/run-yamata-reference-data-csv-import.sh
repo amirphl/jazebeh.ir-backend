@@ -5,6 +5,9 @@
 #   run-yamata-reference-data-csv-import.sh STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window [--allow-online-import]
 
 set -Eeuo pipefail
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$script_dir/../guard-environment.sh"
+refuse_mock_production_operation
 
 STATS_CSV="${1:-}"
 REFERENCE_CSV="${2:-}"
@@ -38,6 +41,10 @@ for csv_file in "$STATS_CSV" "$REFERENCE_CSV" "$TAGS_CSV"; do
     [[ -f "$csv_file" && ! -L "$csv_file" ]] || die "CSV must be a regular file: $csv_file"
 done
 [[ -d "$PROJECT_DIR" ]] || die "Project directory does not exist: $PROJECT_DIR"
+STATS_CSV="$(readlink -f -- "$STATS_CSV")"
+REFERENCE_CSV="$(readlink -f -- "$REFERENCE_CSV")"
+TAGS_CSV="$(readlink -f -- "$TAGS_CSV")"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 readonly HELPER="$PROJECT_DIR/scripts/reference-data-csv-import/import-yamata-reference-data-csv.sh"
 [[ -x "$HELPER" ]] || die "Importer must be executable: $HELPER"
 
@@ -56,6 +63,7 @@ fi
 
 "${SYSTEM[@]}" systemd-run --unit="$unit" --description='Yamata reference-data CSV import' \
     --property=Type=exec --property=Restart=no --property=TimeoutStartSec=infinity \
+    --setenv=APP_ENV=production --setenv=EXTERNAL_SERVICES_MODE=live \
     "$HELPER" "$STATS_CSV" "$REFERENCE_CSV" "$TAGS_CSV" "$PROJECT_DIR" "${HELPER_OPTIONS[@]}"
 
 printf '[reference-data-csv-import-launcher] Started %s.service\n' "$unit"
