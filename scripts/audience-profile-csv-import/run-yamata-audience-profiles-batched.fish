@@ -83,7 +83,7 @@ if not set -q argv[1]
 end
 
 set -l mode $argv[1]
-if not contains -- "$mode" --start --run
+if not contains -- "$mode" --start --run --locked
     usage >&2
     exit 2
 end
@@ -168,8 +168,19 @@ set -l header_sha (printf '%s' "$header" | sha256sum | awk '{print $1}')
 
 mkdir -p (dirname "$state_file"); or die "Cannot create state directory for: $state_file"
 set -l lock_file "$state_file.lock"
-exec 9>"$lock_file"; or die "Cannot open lock file: $lock_file"
-flock -n 9; or die "Another importer owns this state file: $state_file"
+
+# Fish's exec builtin does not support Bash's `exec 9>file` locking idiom.
+# Re-exec the worker under flock instead; flock retains the lock until this
+# child process exits, including while it is waiting for PostgreSQL.
+if test "$mode" = --run
+    set -l script_file (realpath -- (status filename))
+    command flock -n -E 75 "$lock_file" "$script_file" --locked "$csv_file" "$project_dir" "$state_file"
+    set -l flock_status $status
+    if test "$flock_status" -eq 75
+        die "Another importer owns this state file: $state_file"
+    end
+    exit "$flock_status"
+end
 
 set -l last_batch 0
 set -l next_line 2
