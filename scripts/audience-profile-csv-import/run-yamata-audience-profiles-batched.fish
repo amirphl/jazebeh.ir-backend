@@ -161,6 +161,10 @@ test -f "$suffix_sql"; or die "Missing SQL suffix: $suffix_sql"
 
 docker info >/dev/null 2>&1; or die 'Docker is unavailable.'
 test (docker inspect -f '{{.State.Running}}' "$POSTGRES_CONTAINER" 2>/dev/null) = true; or die "PostgreSQL container is not running: $POSTGRES_CONTAINER"
+set -l project (docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$POSTGRES_CONTAINER"); or die 'Cannot inspect PostgreSQL container ownership.'
+if test -z "$project"; or test "$project" = '<no value>'; or test "$project" = yamata-staging
+    die 'Refusing to import into staging or an unrecognized PostgreSQL container.'
+end
 
 set -l db_user (docker exec "$POSTGRES_CONTAINER" printenv POSTGRES_USER); or die 'Could not read POSTGRES_USER.'
 set -l db_name (docker exec "$POSTGRES_CONTAINER" printenv POSTGRES_DB); or die 'Could not read POSTGRES_DB.'
