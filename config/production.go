@@ -459,6 +459,8 @@ type SchedulerConfig struct {
 	BundleActionFileSchedulerEnabled                   bool          `json:"bundle_action_file_scheduler_enabled"`
 	BundleActionFileSchedulerInterval                  time.Duration `json:"bundle_action_file_scheduler_interval"`
 	BundleActionFileSchedulerMaxParallelRuns           int           `json:"bundle_action_file_scheduler_max_parallel_runs"`
+	BundleActionFileSchedulerJobTimeout                time.Duration `json:"bundle_action_file_scheduler_job_timeout"`
+	BundleActionFileSchedulerLeaseDuration             time.Duration `json:"bundle_action_file_scheduler_lease_duration"`
 	CampaignRefundReconciliationSchedulerEnabled       bool          `json:"campaign_refund_reconciliation_scheduler_enabled"`
 	CampaignRefundReconciliationPollInterval           time.Duration `json:"campaign_refund_reconciliation_poll_interval"`
 	CampaignRefundReconciliationEligibilityDelay       time.Duration `json:"campaign_refund_reconciliation_eligibility_delay"`
@@ -520,6 +522,8 @@ func loadSchedulerConfig() SchedulerConfig {
 		BundleActionFileSchedulerEnabled:                   getEnvBool("BUNDLE_ACTION_FILE_SCHEDULER_ENABLED", false),
 		BundleActionFileSchedulerInterval:                  getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_INTERVAL", time.Minute),
 		BundleActionFileSchedulerMaxParallelRuns:           getEnvInt("BUNDLE_ACTION_FILE_SCHEDULER_MAX_PARALLEL_RUNS", 2),
+		BundleActionFileSchedulerJobTimeout:                getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_JOB_TIMEOUT", 30*time.Minute),
+		BundleActionFileSchedulerLeaseDuration:             getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_LEASE_DURATION", 35*time.Minute),
 		CampaignRefundReconciliationSchedulerEnabled:       getEnvBool("CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED", false),
 		CampaignRefundReconciliationPollInterval:           getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL", time.Minute),
 		CampaignRefundReconciliationEligibilityDelay:       getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY", 72*time.Hour),
@@ -646,7 +650,7 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			WriteTimeout:      getEnvDuration("SERVER_WRITE_TIMEOUT", 70*time.Minute),
 			IdleTimeout:       getEnvDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
 			ShutdownTimeout:   getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
-			BodyLimit:         getEnvInt("SERVER_BODY_LIMIT", 100*1024*1024), // 100MB
+			BodyLimit:         getEnvInt("SERVER_BODY_LIMIT", 256*1024*1024), // 256 MiB
 			EnablePprof:       getEnvBool("SERVER_ENABLE_PPROF", false),
 			EnableMetrics:     getEnvBool("SERVER_ENABLE_METRICS", true),
 			TrustedProxies:    getEnvStringSlice("SERVER_TRUSTED_PROXIES", []string{"127.0.0.1"}),
@@ -1310,6 +1314,12 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		}
 		if cfg.Scheduler.BundleActionFileSchedulerMaxParallelRuns <= 0 {
 			errors = append(errors, "BUNDLE_ACTION_FILE_SCHEDULER_MAX_PARALLEL_RUNS must be positive")
+		}
+		if cfg.Scheduler.BundleActionFileSchedulerJobTimeout <= 0 {
+			errors = append(errors, "BUNDLE_ACTION_FILE_SCHEDULER_JOB_TIMEOUT must be positive")
+		}
+		if cfg.Scheduler.BundleActionFileSchedulerLeaseDuration <= cfg.Scheduler.BundleActionFileSchedulerJobTimeout {
+			errors = append(errors, "BUNDLE_ACTION_FILE_SCHEDULER_LEASE_DURATION must exceed BUNDLE_ACTION_FILE_SCHEDULER_JOB_TIMEOUT")
 		}
 	}
 	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
