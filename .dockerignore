@@ -2,6 +2,12 @@
 .env
 .env.*
 config.env.template
+atipay.txt
+data/
+backups/
+*.dump
+*.p12
+*.pfx
 
 # Runtime-mounted smart-tag prompts
 SMART_TAG_EVALUATION_PERSONA_ANALYSIS_SYSTEM_PROMPT
