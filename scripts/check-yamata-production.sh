@@ -109,8 +109,16 @@ log "PostgreSQL shared_buffers: $((postgres_shared_buffers / 1024 / 1024 / 1024)
 
 [[ "$(env_value yamata-app-beta CAMPAIGN_EXECUTION_ENABLED)" == false ]] ||
 	die "yamata-app-beta must have CAMPAIGN_EXECUTION_ENABLED=false"
+[[ "$(env_value yamata-app-beta APP_ENV)" == production ]] ||
+	die "yamata-app-beta must have APP_ENV=production"
+[[ "$(env_value yamata-app-beta EXTERNAL_SERVICES_MODE)" == live ]] ||
+	die "yamata-app-beta must have EXTERNAL_SERVICES_MODE=live"
 [[ "$(env_value yamata-campaign-scheduler-beta CAMPAIGN_EXECUTION_ENABLED)" == true ]] ||
 	die "yamata-campaign-scheduler-beta must have CAMPAIGN_EXECUTION_ENABLED=true"
+[[ "$(env_value yamata-campaign-scheduler-beta APP_ENV)" == production ]] ||
+	die "yamata-campaign-scheduler-beta must have APP_ENV=production"
+[[ "$(env_value yamata-campaign-scheduler-beta EXTERNAL_SERVICES_MODE)" == live ]] ||
+	die "yamata-campaign-scheduler-beta must have EXTERNAL_SERVICES_MODE=live"
 [[ "$(env_value yamata-campaign-scheduler-beta EXTERNAL_SHORTLINK_ENABLED)" == false ]] ||
 	die "External short-link sync must be disabled in the campaign scheduler; app-beta is the sole sync owner"
 [[ "$(env_value yamata-app-beta SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED)" == true ]] ||
@@ -241,8 +249,8 @@ pgadmin_listener_count="$(printf '%s\n' "$pgadmin_listener_binding" | awk 'NF { 
 [[ "$pgadmin_listener_count" -eq 1 ]] ||
 	die "Nginx must publish exactly one pgAdmin listener on 14433/tcp"
 read -r pgadmin_listener_ip pgadmin_listener_port <<<"$pgadmin_listener_binding"
-[[ "$pgadmin_listener_port" == "14433" && -n "$pgadmin_listener_ip" && \
-	"$pgadmin_listener_ip" != "0.0.0.0" && "$pgadmin_listener_ip" != "::" && \
+[[ "$pgadmin_listener_port" == "14433" && -n "$pgadmin_listener_ip" &&
+	"$pgadmin_listener_ip" != "0.0.0.0" && "$pgadmin_listener_ip" != "::" &&
 	"$pgadmin_listener_ip" != 127.* ]] ||
 	die "Nginx pgAdmin listener must be bound to a specific host interface"
 [[ "$(env_value yamata-pgadmin-beta PGADMIN_LISTEN_ADDRESS)" == "172.31.0.10" ]] ||
@@ -285,8 +293,7 @@ scheduler_password_hash="$(
 )"
 [[ "$app_password_hash" == "$scheduler_password_hash" ]] ||
 	die "BOT_PASSWORD differs between API and scheduler; run deploy-production-beta.sh"
-[[ "$(env_value yamata-app-beta BOT_USERNAME)" == \
-	"$(env_value yamata-campaign-scheduler-beta BOT_USERNAME)" ]] ||
+[[ "$(env_value yamata-app-beta BOT_USERNAME)" == "$(env_value yamata-campaign-scheduler-beta BOT_USERNAME)" ]] ||
 	die "BOT_USERNAME differs between API and scheduler; run deploy-production-beta.sh"
 log "BOT_PASSWORD hashes match (secret not displayed)"
 
