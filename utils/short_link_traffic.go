@@ -22,5 +22,7 @@ func IsAutomatedShortLinkRequest(userAgent, clientIP string) bool {
 		return false
 	}
 	octets := ip.As4()
-	return octets[0] == 66 && octets[1] == 249 || octets[0] == 74 && octets[1] == 125
+	return (octets[0] == 66 && (octets[1] == 102 || octets[1] == 249)) ||
+		(octets[0] == 74 && octets[1] == 125) ||
+		(octets[0] == 192 && octets[1] == 178)
 }
