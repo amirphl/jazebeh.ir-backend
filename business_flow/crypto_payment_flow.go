@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // CryptoPaymentFlow defines crypto payment operations
@@ -57,6 +57,32 @@ type CryptoPaymentFlowImpl struct {
 	db                  *gorm.DB
 	sysCfg              config.SystemConfig
 	deploymentCfg       config.DeploymentConfig
+}
+
+// lockCryptoRequest serializes all settlement and cancellation decisions for a
+// request and reloads the state after any concurrent transaction has committed.
+func lockCryptoRequest(ctx context.Context, id uint) (*models.CryptoPaymentRequest, error) {
+	tx, ok := ctx.Value(repository.TxContextKey).(*gorm.DB)
+	if !ok || tx == nil {
+		return nil, fmt.Errorf("crypto request lock requires a transaction")
+	}
+	var request models.CryptoPaymentRequest
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&request, id).Error; err != nil {
+		return nil, err
+	}
+	return &request, nil
+}
+
+func oxapayPaid(status string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), "paid") || strings.EqualFold(strings.TrimSpace(status), "manual_accept")
+}
+
+func cryptoCredited(cpr *models.CryptoPaymentRequest) bool {
+	return cpr.CreditedAt != nil || cpr.Status == models.CryptoPaymentStatusCredited
+}
+
+func cryptoDepositBelongsTo(dep *models.CryptoDeposit, cpr *models.CryptoPaymentRequest) bool {
+	return dep.CryptoPaymentRequestID != nil && *dep.CryptoPaymentRequestID == cpr.ID
 }
 
 func NewCryptoPaymentFlow(
@@ -342,6 +368,10 @@ func (f *CryptoPaymentFlowImpl) GetStatus(
 		if cpr == nil {
 			return ErrCryptoRequestNotFound
 		}
+		cpr, err = lockCryptoRequest(txCtx, cpr.ID)
+		if err != nil {
+			return err
+		}
 		customer, err = getCustomer(txCtx, f.customerRepo, cpr.CustomerID)
 		if err != nil {
 			return err
@@ -359,7 +389,9 @@ func (f *CryptoPaymentFlowImpl) GetStatus(
 		if cpr.Status == models.CryptoPaymentStatusPending && cpr.ExpiresAt != nil && cpr.ExpiresAt.Before(utils.UTCNow()) {
 			cpr.Status = models.CryptoPaymentStatusExpired
 			cpr.StatusReason = "payment window expired"
-			_ = f.cprRepo.Update(txCtx, cpr)
+			if err := f.cprRepo.Update(txCtx, cpr); err != nil {
+				return err
+			}
 		}
 
 		// Special handling: Oxapay invoice status via track_id
@@ -374,17 +406,28 @@ func (f *CryptoPaymentFlowImpl) GetStatus(
 					}); ok {
 						info, ierr := infoProv.GetPaymentInfo(txCtx, trackID)
 						if ierr == nil && info != nil {
-							// update request status from invoice status table
-							st, reason := mapOxapayInvoiceStatus(info.Status)
-							cpr.Status = st
-							cpr.StatusReason = "oxapay:" + reason
-							_ = f.cprRepo.Update(txCtx, cpr)
+							// Preserve completed credits and non-paid terminal states, but
+							// permit a later paid invoice to settle an uncredited request.
+							if !cryptoCredited(cpr) && (!cpr.IsFinal() || oxapayPaid(info.Status)) {
+								st, reason := mapOxapayInvoiceStatus(info.Status)
+								cpr.Status = st
+								cpr.StatusReason = "oxapay:" + reason
+								if err := f.cprRepo.Update(txCtx, cpr); err != nil {
+									return err
+								}
+							}
 
 							b, _ := json.Marshal(info)
 
 							// upsert txs
 							for _, t := range info.Txs {
-								existing, _ := f.cdRepo.ByTxHash(txCtx, t.TxHash)
+								existing, err := f.cdRepo.ByTxHash(txCtx, t.TxHash)
+								if err != nil {
+									return err
+								}
+								if existing != nil && !cryptoDepositBelongsTo(existing, cpr) {
+									return fmt.Errorf("crypto transaction belongs to another request")
+								}
 								if existing == nil {
 									dep := &models.CryptoDeposit{
 										UUID:                   uuid.New(),
@@ -412,41 +455,43 @@ func (f *CryptoPaymentFlowImpl) GetStatus(
 										dt := time.Unix(t.Date, 0).UTC()
 										dep.DetectedAt = &dt
 									}
-									if strings.EqualFold(t.Status, "confirmed") {
+									if mapOxapayTxStatus(t.Status) == "confirmed" {
 										now := utils.UTCNow()
 										dep.ConfirmedAt = &now
 									}
-									_ = f.cdRepo.Save(txCtx, dep)
+									if err := f.cdRepo.Save(txCtx, dep); err != nil {
+										return err
+									}
 								} else {
 									existing.Confirmations = t.Confirmations
 									existing.Status = mapOxapayTxStatus(t.Status)
 									existing.Metadata = b
-									if strings.EqualFold(t.Status, "confirmed") && existing.ConfirmedAt == nil {
+									if mapOxapayTxStatus(t.Status) == "confirmed" && existing.ConfirmedAt == nil {
 										now := utils.UTCNow()
 										existing.ConfirmedAt = &now
 									}
-									_ = f.cdRepo.Update(txCtx, existing)
+									if err := f.cdRepo.Update(txCtx, existing); err != nil {
+										return err
+									}
 								}
 							}
 							// credit on invoice paid
-							if strings.EqualFold(info.Status, "paid") || strings.EqualFold(info.Status, "manual_accept") {
+							if !cryptoCredited(cpr) && oxapayPaid(info.Status) {
 								// fetch current deposits for this request
-								ds, _ := f.cdRepo.ByFilter(
+								ds, err := f.cdRepo.ByFilter(
 									txCtx,
 									models.CryptoDepositFilter{CryptoPaymentRequestID: &cpr.ID},
 									"id ASC",
 									100,
 									0,
 								)
+								if err != nil {
+									return err
+								}
 								for _, d := range ds {
-									if d.CreditedAt == nil && d.ConfirmedAt != nil {
+									if !cryptoCredited(cpr) && d.CreditedAt == nil && d.ConfirmedAt != nil {
 										if err := f.creditOnConfirmed(txCtx, cpr, d, metadata); err != nil {
-											// proceed but update status reason
-											s := fmt.Sprintf("credit failed: %v", err)
-											cpr.Status = models.CryptoPaymentStatusFailed
-											cpr.StatusReason = s
-											_ = f.cprRepo.Update(txCtx, cpr)
-											log.Printf("credit on confirmed failed: %v", err)
+											return fmt.Errorf("credit confirmed crypto payment: %w", err)
 										}
 									}
 								}
@@ -461,6 +506,20 @@ func (f *CryptoPaymentFlowImpl) GetStatus(
 		provDeposits, perr := provider.GetDeposits(txCtx, cpr.ProviderRequestID)
 		if perr == nil && len(provDeposits) > 0 {
 			for _, d := range provDeposits {
+				existing, err := f.cdRepo.ByTxHash(txCtx, d.TxHash)
+				if err != nil {
+					return err
+				}
+				// The invoice-status endpoint and deposit polling can report the
+				// same transaction.  Preserve the existing (possibly credited)
+				// record rather than attempting a duplicate insert or clearing its
+				// credit timestamp.
+				if existing != nil {
+					if !cryptoDepositBelongsTo(existing, cpr) {
+						return fmt.Errorf("crypto transaction belongs to another request")
+					}
+					continue
+				}
 				dep := &models.CryptoDeposit{
 					UUID:                   uuid.New(),
 					CorrelationID:          cpr.CorrelationID,
@@ -485,8 +544,9 @@ func (f *CryptoPaymentFlowImpl) GetStatus(
 				}
 				dep.DetectedAt = d.DetectedAt
 				dep.ConfirmedAt = d.ConfirmedAt
-				dep.CreditedAt = d.CreditedAt
-				_ = f.cdRepo.Save(txCtx, dep)
+				if err := f.cdRepo.Save(txCtx, dep); err != nil {
+					return err
+				}
 			}
 		}
 		// fetch current deposits
@@ -499,17 +559,10 @@ func (f *CryptoPaymentFlowImpl) GetStatus(
 
 		// finalize on confirmed not yet credited
 		for _, dep := range deposits {
-			// For OxaPay, only auto-credit after invoice is paid (mapped to Confirmed)
-			// if strings.EqualFold(string(cpr.Platform), "oxapay") && cpr.Status != models.CryptoPaymentStatusConfirmed {
-			// 	continue
-			// }
-			if dep.CreditedAt == nil && dep.ConfirmedAt != nil && cpr.CreditedAt == nil {
+			// OxaPay is settled only in the paid-invoice branch above.
+			if !strings.EqualFold(string(cpr.Platform), "oxapay") && !cryptoCredited(cpr) && dep.CreditedAt == nil && dep.ConfirmedAt != nil {
 				if err := f.creditOnConfirmed(txCtx, cpr, dep, metadata); err != nil {
-					// proceed but update status reason
-					s := fmt.Sprintf("credit failed: %v", err)
-					cpr.Status = models.CryptoPaymentStatusFailed
-					cpr.StatusReason = s
-					_ = f.cprRepo.Update(txCtx, cpr)
+					return fmt.Errorf("credit confirmed crypto payment: %w", err)
 				}
 			}
 		}
@@ -581,6 +634,10 @@ func (f *CryptoPaymentFlowImpl) ManualVerify(
 		if cpr == nil {
 			return ErrCryptoRequestNotFound
 		}
+		cpr, err = lockCryptoRequest(txCtx, cpr.ID)
+		if err != nil {
+			return err
+		}
 		customer, err = getCustomer(txCtx, f.customerRepo, cpr.CustomerID)
 		if err != nil {
 			return err
@@ -600,7 +657,13 @@ func (f *CryptoPaymentFlowImpl) ManualVerify(
 		}
 
 		// upsert deposit
-		existing, _ := f.cdRepo.ByTxHash(txCtx, req.TxHash)
+		existing, err := f.cdRepo.ByTxHash(txCtx, req.TxHash)
+		if err != nil {
+			return err
+		}
+		if existing != nil && !cryptoDepositBelongsTo(existing, cpr) {
+			return fmt.Errorf("crypto transaction belongs to another request")
+		}
 		if existing == nil {
 			dep = &models.CryptoDeposit{
 				UUID:                   uuid.New(),
@@ -621,7 +684,6 @@ func (f *CryptoPaymentFlowImpl) ManualVerify(
 				// BlockHeight: ,
 				DetectedAt:  info.DetectedAt,
 				ConfirmedAt: info.ConfirmedAt,
-				CreditedAt:  info.CreditedAt,
 				Status:      info.Status,
 			}
 			if err := f.cdRepo.Save(txCtx, dep); err != nil {
@@ -632,15 +694,13 @@ func (f *CryptoPaymentFlowImpl) ManualVerify(
 			dep.Confirmations = info.Confirmations
 			dep.RequiredConfirmations = info.RequiredConfirmations
 			dep.ConfirmedAt = info.ConfirmedAt
-			dep.CreditedAt = info.CreditedAt
 			dep.Status = info.Status
 			if err := f.cdRepo.Update(txCtx, dep); err != nil {
 				return err
 			}
 		}
 
-		if dep.CreditedAt == nil && dep.ConfirmedAt != nil && cpr.CreditedAt == nil {
-			// ISSUE: cpr.CreditedAt == nil
+		if dep.CreditedAt == nil && dep.ConfirmedAt != nil && !cryptoCredited(cpr) {
 			if err := f.creditOnConfirmed(txCtx, cpr, dep, metadata); err != nil {
 				return err
 			}
@@ -672,6 +732,10 @@ func (f *CryptoPaymentFlowImpl) CancelRequest(ctx context.Context, req *dto.Canc
 		}
 		if cpr == nil {
 			return ErrCryptoRequestNotFound
+		}
+		cpr, err = lockCryptoRequest(txCtx, cpr.ID)
+		if err != nil {
+			return err
 		}
 		if cpr.CustomerID != req.CustomerID {
 			return ErrCustomerNotFound
@@ -773,14 +837,29 @@ func (f *CryptoPaymentFlowImpl) HandleOxapayWebhook(
 			}
 			cpr = reqs[0]
 		}
-		// Update request status from invoice status mapping (paying/paid)
-		st, reason := mapOxapayInvoiceStatus(payload.Status)
-		cpr.Status = st
-		cpr.StatusReason = "oxapay:" + reason
-		_ = f.cprRepo.Update(txCtx, cpr)
+		cpr, err = lockCryptoRequest(txCtx, cpr.ID)
+		if err != nil {
+			return err
+		}
+		// Paid callbacks may settle expired, cancelled, or failed requests;
+		// completed credits and non-paid terminal states remain unchanged.
+		if !cryptoCredited(cpr) && (!cpr.IsFinal() || oxapayPaid(payload.Status)) {
+			st, reason := mapOxapayInvoiceStatus(payload.Status)
+			cpr.Status = st
+			cpr.StatusReason = "oxapay:" + reason
+			if err := f.cprRepo.Update(txCtx, cpr); err != nil {
+				return err
+			}
+		}
 
 		for _, t := range payload.Txs {
-			dep, _ := f.cdRepo.ByTxHash(txCtx, t.TxHash)
+			dep, err := f.cdRepo.ByTxHash(txCtx, t.TxHash)
+			if err != nil {
+				return err
+			}
+			if dep != nil && !cryptoDepositBelongsTo(dep, cpr) {
+				return fmt.Errorf("crypto transaction belongs to another request")
+			}
 			if dep == nil {
 				dep = &models.CryptoDeposit{
 					UUID:                   uuid.New(),
@@ -809,7 +888,7 @@ func (f *CryptoPaymentFlowImpl) HandleOxapayWebhook(
 					dt := time.Unix(t.Date, 0).UTC()
 					dep.DetectedAt = &dt
 				}
-				if strings.EqualFold(t.Status, "confirmed") {
+				if mapOxapayTxStatus(t.Status) == "confirmed" {
 					now := utils.UTCNow()
 					dep.ConfirmedAt = &now
 				}
@@ -819,18 +898,19 @@ func (f *CryptoPaymentFlowImpl) HandleOxapayWebhook(
 			} else {
 				dep.Confirmations = t.Confirmations
 				dep.Status = mapOxapayTxStatus(t.Status)
-				if strings.EqualFold(t.Status, "confirmed") && dep.ConfirmedAt == nil {
+				if mapOxapayTxStatus(t.Status) == "confirmed" && dep.ConfirmedAt == nil {
 					now := utils.UTCNow()
 					dep.ConfirmedAt = &now
 				}
 				if err := f.cdRepo.Update(txCtx, dep); err != nil {
 					return err
 				}
-				// Credit on Paid once per request
-				if (strings.EqualFold(payload.Status, "paid") || strings.EqualFold(payload.Status, "manual_accept")) && dep.ConfirmedAt != nil && dep.CreditedAt == nil && cpr.CreditedAt == nil {
-					if err := f.creditOnConfirmed(txCtx, cpr, dep, metadata); err != nil {
-						return err
-					}
+			}
+			// Credit on Paid once per request.  This applies equally to a newly
+			// received transaction and a provider retry of an existing one.
+			if !cryptoCredited(cpr) && oxapayPaid(payload.Status) && dep.ConfirmedAt != nil && dep.CreditedAt == nil {
+				if err := f.creditOnConfirmed(txCtx, cpr, dep, metadata); err != nil {
+					return err
 				}
 			}
 		}
@@ -901,6 +981,19 @@ func (f *CryptoPaymentFlowImpl) creditOnConfirmed(
 	dep *models.CryptoDeposit,
 	metadata *ClientMetadata,
 ) error {
+	// Older versions could commit partial ledger writes after a failed credit.
+	// Never replay such a request without reconciling those records first.
+	snapshots, err := f.balanceSnapshotRepo.ByCorrelationID(ctx, cpr.CorrelationID)
+	if err != nil {
+		return err
+	}
+	transactions, err := f.transactionRepo.ByCorrelationID(ctx, cpr.CorrelationID)
+	if err != nil {
+		return err
+	}
+	if len(snapshots) != 0 || len(transactions) != 0 {
+		return fmt.Errorf("crypto payment has existing ledger entries; reconciliation required")
+	}
 	// decode metadata
 	var m map[string]any
 	if err := json.Unmarshal(cpr.Metadata, &m); err != nil {
