@@ -185,6 +185,16 @@ services:
           if pg_dump -h "$${DB_HOST}" -p "$${DB_PORT}" -U "$${DB_USER}" -d "$${DB_NAME}" -Fc -f "$${temporary}" &&
              pg_restore --list "$${temporary}" >/dev/null; then
             mv "$${temporary}" "/backups/$${backup}"
+            # Keep only the seven newest completed backups.  The UTC timestamp
+            # in each filename sorts lexicographically, newest first.  Cleanup
+            # happens only after the new dump has passed validation and has
+            # been atomically moved into place, so a failed backup never
+            # reduces the restore set.
+            find /backups -maxdepth 1 -type f -name '*.dump' -print | sort -r | sed -n '8,$p' |
+              while IFS= read -r expired_backup; do
+                rm -f -- "$${expired_backup}"
+                echo "[backup] $$(date -u +%Y-%m-%dT%H:%M:%SZ) removed expired backup: $${expired_backup##*/}"
+              done
             rm -f /backups/.last-failure
             touch /backups/.last-success
             echo "[backup] $$(date -u +%Y-%m-%dT%H:%M:%SZ) backup completed: $${backup}"
