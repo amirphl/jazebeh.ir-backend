@@ -1,6 +1,6 @@
 # Multi-server deployment
 
-The repository supports one self-contained beta Compose stack per host. It does
+The repository supports one self-contained production Compose stack per host. It does
 not currently include an environment generator, Kubernetes manifests,
 multi-region orchestration, or the `deployments/environments/*` scripts that
 older versions of this guide described.
