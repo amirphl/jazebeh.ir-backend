@@ -1,6 +1,6 @@
 # pgAdmin deployment and operations
 
-The beta stack publishes pgAdmin only through a dedicated Nginx reverse proxy at
+The production stack publishes pgAdmin only through a dedicated Nginx reverse proxy at
 `https://pg.<domain>:14433`. The pgAdmin container has no host port. Nginx and
 pgAdmin share a dedicated internal Docker network; pgAdmin listens only on that
 network address. A second, separate internal network connects only pgAdmin and
