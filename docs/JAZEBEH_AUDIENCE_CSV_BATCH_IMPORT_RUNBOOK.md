@@ -39,9 +39,11 @@ same time.
 ## Start a nightly run
 
 The runner permits starts only from 23:00 through 07:59, Asia/Tehran. It will
-not start another batch after 08:00. The batch currently running at the cutoff
-has a deadline; if it cannot finish in time, PostgreSQL rolls it back and the
-next night resumes at that same batch.
+not start another batch unless at least three minutes remain before 08:00; this
+is a safety margin above the observed two-minute batch duration. It logs
+`WINDOW_CLOSED` and exits successfully, leaving the next unstarted batch for a
+later night. PostgreSQL's per-batch deadline remains a final safety net if a
+batch is unexpectedly slow.
 
 Choose one unique state file per CSV export. Run this command as root through
 `sudo`; it starts a detached systemd unit, so the terminal can disconnect.
@@ -87,7 +89,7 @@ sudo systemctl show yamata-audience-batch-import-20261012 \
   -p ActiveState -p SubState -p Result -p ExecMainStatus
 ```
 
-`WINDOW_CLOSED` means the run reached 08:00 at a batch boundary; it is an
+`WINDOW_CLOSED` means the run paused before 08:00 at a batch boundary; it is an
 intentional pause, not a completed import. `IMPORT_COMPLETE` means the final
 partial or full batch has committed.
 

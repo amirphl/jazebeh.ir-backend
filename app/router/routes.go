@@ -117,8 +117,13 @@ func NewFiberRouter(
 		IdleTimeout:  serverCfg.IdleTimeout,
 		JSONEncoder:  json.Marshal,
 		JSONDecoder:  json.Unmarshal,
-		// Trust proxy headers from nginx to get real client IP
-		ProxyHeader: serverCfg.ProxyHeader,
+		// Fiber only reads ProxyHeader when the direct TCP peer is trusted.
+		// Limit that trust to the configured Nginx proxy addresses so clients
+		// cannot spoof their IP with forwarded headers.
+		TrustProxy:         true,
+		TrustProxyConfig:   fiber.TrustProxyConfig{Proxies: serverCfg.TrustedProxies},
+		ProxyHeader:        serverCfg.ProxyHeader,
+		EnableIPValidation: true,
 	})
 
 	return &FiberRouter{

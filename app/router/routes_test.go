@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -67,6 +68,29 @@ func TestLogRequestTimeoutMarksIncompleteRequestUnavailable(t *testing.T) {
 		if fields[key] != "<unavailable>" {
 			t.Fatalf("%s = %v, want <unavailable>", key, fields[key])
 		}
+	}
+}
+
+func TestFiberUsesForwardedIPOnlyFromTrustedProxy(t *testing.T) {
+	app := fiber.New(fiber.Config{
+		TrustProxy:         true,
+		TrustProxyConfig:   fiber.TrustProxyConfig{Proxies: []string{"172.30.0.30"}},
+		ProxyHeader:        "X-Real-IP",
+		EnableIPValidation: true,
+	})
+	requestContext := &fasthttp.RequestCtx{}
+	requestContext.SetRemoteAddr(net.Addr(&net.TCPAddr{IP: net.ParseIP("172.30.0.30")}))
+	requestContext.Request.Header.Set("X-Real-IP", "66.102.6.101")
+	ctx := app.AcquireCtx(requestContext)
+	t.Cleanup(func() { app.ReleaseCtx(ctx) })
+
+	if got := ctx.IP(); got != "66.102.6.101" {
+		t.Fatalf("trusted proxy client IP = %q, want forwarded IP", got)
+	}
+
+	requestContext.SetRemoteAddr(net.Addr(&net.TCPAddr{IP: net.ParseIP("172.30.0.31")}))
+	if got := ctx.IP(); got != "172.30.0.31" {
+		t.Fatalf("untrusted proxy client IP = %q, want remote peer", got)
 	}
 }
 
