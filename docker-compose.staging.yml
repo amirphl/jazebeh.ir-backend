@@ -1,0 +1,198 @@
+# Mock staging has no need to contact the public Internet. Published ports
+# remain reachable from the host, while containers on these networks cannot
+# create an outbound route to external services.
+networks:
+  yamata-network-beta:
+    internal: true
+  pgadmin-edge-network-beta:
+    internal: true
+
+services:
+  postgres-beta:
+    shm_size: 512m
+    mem_limit: 1536m
+    cpus: 2
+    volumes:
+      - ./docker/postgres/postgresql.staging.conf:/etc/postgresql/postgresql.staging.conf:ro
+      - ./docker/postgres/staging-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./docker/postgres/staging-init.sql:/docker-entrypoint-initdb.d/02-init-database.sql:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.staging.conf
+  redis-beta:
+    mem_limit: 256m
+  postgres-backup-beta:
+    mem_limit: 128m
+    command:
+      - /bin/sh
+      - -eu
+      - -c
+      - |
+        mkdir -p /backups
+        export PGPASSWORD="$${DB_PASSWORD}"
+        test -e /backups/.scheduler-started || touch /backups/.scheduler-started
+        legacy=/backups/.legacy-backups-before-two-day-retention
+        if [ ! -e "$${legacy}" ]; then
+          find /backups -maxdepth 1 -type f -name '*.dump' -print | sed 's#^.*/##' > "$${legacy}"
+        fi
+        while true; do
+          now=$$(date -u +%s)
+          next=$$(( (now / 172800 + 1) * 172800 ))
+          sleep $$((next - now))
+          name="$${DB_NAME}-$$(date -u +%Y%m%dT%H%M%SZ).dump"
+          tmp="/backups/.$${name}.tmp"
+          if pg_dump -h "$${DB_HOST}" -p "$${DB_PORT}" -U "$${DB_USER}" -d "$${DB_NAME}" -Fc -f "$${tmp}" && pg_restore --list "$${tmp}" >/dev/null; then
+            mv "$${tmp}" "/backups/$${name}"
+            find /backups -maxdepth 1 -type f -name '*.dump' -print | sed 's#^.*/##' | sort -r | awk 'FILENAME == ARGV[1] { legacy[$$0] = 1; next } !($$0 in legacy)' "$${legacy}" - | sed -n '4,$$p' | while IFS= read -r old; do rm -f -- "/backups/$${old}"; done
+            rm -f /backups/.last-failure
+            touch /backups/.last-success
+          else
+            rm -f "$${tmp}"
+            touch /backups/.last-failure
+          fi
+        done
+  sentry-postgres-beta:
+    shm_size: 128m
+    mem_limit: 384m
+  sentry-redis-beta:
+    mem_limit: 128m
+  sentry-beta:
+    image: glitchtip/glitchtip:6.2.2
+    mem_limit: 768m
+    cpus: 1
+    environment:
+      BASE_PATH: /sentry
+      GLITCHTIP_DOMAIN: https://staging.jazebeh.ir
+      CSRF_TRUSTED_ORIGINS: https://staging.jazebeh.ir
+      SENTRY_UI_DOMAIN: staging.jazebeh.ir
+      ALLOWED_HOSTS: staging.jazebeh.ir,sentry-beta
+      GLITCHTIP_UPTIME_ALLOW_PRIVATE_IPS: "False"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/sentry/', headers={'Host':'staging.jazebeh.ir'}); urllib.request.urlopen(r, timeout=5).close()"]
+  app-beta:
+    image: yamata-no-orochi-staging
+    mem_limit: 768m
+    cpus: 2
+    environment:
+      APP_ENV: staging
+      EXTERNAL_SERVICES_MODE: mock
+      CAMPAIGN_EXECUTION_ENABLED: "false"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_TRUSTED_PROXIES: 172.30.0.30
+      SERVER_PROXY_HEADER: X-Real-IP
+      BOT_API_DOMAIN: http://app-beta:8080
+      CANDOO_SMS_ENABLED: "true"
+      SMART_TAG_EVALUATION_OPENAI_MODEL: mock
+      SMART_TAG_EVALUATION_SCHEDULER_MAX_PARALLEL_RUNS: "2"
+      SMART_TAG_EVALUATION_BATCHING_MAX_PARALLEL_BATCHES: "2"
+      CAMPAIGN_AUDIENCE_REPORT_MAX_PARALLEL_RUNS: "2"
+      BUNDLE_ACTION_FILE_SCHEDULER_MAX_PARALLEL_RUNS: "2"
+      EXTERNAL_SHORTLINK_ENABLED: "true"
+      MOCK_OTP_OUTBOX: /data/mock-otp.jsonl
+      SENTRY_ENVIRONMENT: staging
+    volumes:
+      - ./config/mock-persona-prompt.txt:/SMART_TAG_EVALUATION_PERSONA_ANALYSIS_SYSTEM_PROMPT:ro
+      - ./config/mock-scoring-prompt.txt:/SMART_TAG_EVALUATION_TAG_SCORING_SYSTEM_PROMPT:ro
+  campaign-scheduler-beta:
+    image: yamata-no-orochi-staging
+    container_name: yamata-campaign-scheduler-beta
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1
+    env_file: ${STAGING_ENV_FILE:-.env.staging}
+    environment:
+      APP_ENV: staging
+      EXTERNAL_SERVICES_MODE: mock
+      DB_HOST: postgres-beta
+      CACHE_REDIS_URL: redis://redis-beta:6379
+      SERVER_HOST: 127.0.0.1
+      SERVER_PORT: "8080"
+      BOT_API_DOMAIN: http://app-beta:8080
+      CAMPAIGN_EXECUTION_ENABLED: "true"
+      CAMPAIGN_EXECUTION_MAX_PARALLEL_RUNS: "2"
+      SMS_CAMPAIGN_BATCH_SEND_CONCURRENCY: "2"
+      CANDOO_SMS_ENABLED: "true"
+      SMART_TAG_EVALUATION_ENABLED: "false"
+      SMART_TAG_EVALUATION_SCHEDULER_ENABLED: "false"
+      SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED: "false"
+      SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED: "false"
+      SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED: "false"
+      TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED: "false"
+      BUNDLE_ACTION_FILE_SCHEDULER_ENABLED: "false"
+      CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_ENABLED: "false"
+      CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED: "false"
+      EXTERNAL_SHORTLINK_ENABLED: "false"
+      METRICS_ENABLED: "true"
+      METRICS_PORT: "9091"
+      METRICS_ENABLE_PROMETHEUS: "true"
+      LOG_OUTPUT: stdout
+      SENTRY_ENVIRONMENT: staging
+    depends_on:
+      app-beta:
+        condition: service_healthy
+    networks:
+      yamata-network-beta:
+    volumes:
+      - ./config/mock-persona-prompt.txt:/SMART_TAG_EVALUATION_PERSONA_ANALYSIS_SYSTEM_PROMPT:ro
+      - ./config/mock-scoring-prompt.txt:/SMART_TAG_EVALUATION_TAG_SCORING_SYSTEM_PROMPT:ro
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /data
+      - /var/cache
+  pgadmin-beta:
+    mem_limit: 256m
+    environment:
+      PGADMIN_ALLOWED_HOST: staging.jazebeh.ir
+  pgadmin-nginx-beta:
+    image: yamata-pgadmin-nginx-staging
+    mem_limit: 128m
+    volumes:
+      - ./docker/nginx/sites-available/generated/staging-pgadmin:/etc/nginx/sites-available:ro
+      - ./docker/nginx/staging-vendor-security.conf:/etc/nginx/staging-vendor-security.conf:ro
+  nginx-beta:
+    image: yamata-nginx-staging
+    mem_limit: 128m
+    networks:
+      yamata-network-beta:
+        ipv4_address: 172.30.0.30
+    volumes:
+      - ./docker/nginx/sites-available/generated/staging:/etc/nginx/sites-available:ro
+      - ./docker/nginx/staging-vendor-security.conf:/etc/nginx/staging-vendor-security.conf:ro
+  nginx-sentry-forwarder-beta:
+    image: yamata-nginx-sentry-forwarder-staging
+    mem_limit: 128m
+    environment:
+      SENTRY_ENVIRONMENT: staging
+  cert-monitor-beta:
+    image: yamata-cert-monitor-staging
+    mem_limit: 128m
+    environment:
+      EXTERNAL_SERVICES_MODE: mock
+    volumes:
+      - ./docker/nginx/sites-available/generated/staging:/etc/nginx/sites-available:ro
+  prometheus-beta:
+    mem_limit: 384m
+    volumes:
+      - ./docker/prometheus_staging.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+  grafana-beta:
+    image: yamata-grafana-staging
+    mem_limit: 256m
+    environment:
+      GF_SERVER_ROOT_URL: https://staging.jazebeh.ir/grafana/
+  postgres-exporter-beta:
+    mem_limit: 128m
+  node-exporter-beta:
+    mem_limit: 128m
+  cadvisor-beta:
+    mem_limit: 128m
+  frontend-beta:
+    mem_limit: 128m
+    environment:
+      REACT_APP_PRODUCTION_DOMAIN: staging.jazebeh.ir
+      REACT_APP_ENABLE_ANALYTICS: "false"
