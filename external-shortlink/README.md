@@ -220,7 +220,7 @@ The central Prometheus configuration includes the `external_shortlink` and
 `external_shortlink_node` HTTPS jobs, while
 `docker/prometheus/rules/external-shortlink.yml` provides baseline availability,
 5xx, spool-age, and click-loss alerts. Apply the configuration on the server
-that hosts the beta Compose stack:
+that hosts the production Compose stack:
 
 ```sh
 cd /path/to/Yamata-no-Orochi
