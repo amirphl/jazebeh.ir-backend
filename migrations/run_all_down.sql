@@ -3,6 +3,15 @@
 
 \set ON_ERROR_STOP on
 
+\echo 'Running 0166_create_campaign_audience_report_jobs_down.sql...'
+\i migrations/0166_create_campaign_audience_report_jobs_down.sql
+
+\echo 'Running 0165_optimize_bundle_action_metric_refresh_down.sql...'
+\i migrations/0165_optimize_bundle_action_metric_refresh_down.sql
+
+\echo 'Running 0164_add_campaign_audience_click_report_audit_actions_down.sql...'
+\i migrations/0164_add_campaign_audience_click_report_audit_actions_down.sql
+
 \echo 'Running 0163_create_short_link_uid_allocator_down.sql...'
 \i migrations/0163_create_short_link_uid_allocator_down.sql
 
