@@ -72,6 +72,33 @@ Both operations are read-only and enforce the customer/bundle relationship.
 Live click totals are deliberately not queried here. The disabled historical
 short-link-click aggregate could be unbounded for a bundle and block listing.
 
+### Business intent between the CRUD queries
+
+The bundle is the customer-owned business context shared by related campaigns;
+it is not itself a sending job. Creation therefore establishes reusable
+campaign inputs (objective, target persona, link/domain, customer/category/job
+context) but deliberately has no audience, price, or delivery side effect.
+
+Update follows the same validation rules as create so an existing bundle cannot
+enter a shape that a new bundle could not have. The success audit is part of the
+same transaction as the bundle mutation: a successful API response means both
+the bundle and its success audit record committed. A failed mutation instead
+attempts a failure audit after rollback, because that record must survive the
+failed business transaction.
+
+Read enrichment intentionally combines two different meanings:
+
+- Campaign aggregates answer “what has this bundle been used for?” They are
+  calculated from each campaign's persisted statistics, so they are summary
+  history rather than a fresh recount of sends/clicks.
+- Evaluation status answers “is there an AI tag-scoring result currently
+  available for this bundle?” It comes from a derived read model and does not
+  change the bundle itself.
+
+Consequently, a caller can list bundles cheaply enough to navigate campaign
+history and know whether Smart Targeting scores are available, without loading
+the full score set or delivery-level data.
+
 ## B. Bundle tag evaluation
 
 Source: [bundle_tag_evaluation_flow.go](bundle_tag_evaluation_flow.go), backed
@@ -106,6 +133,29 @@ atomically creates a run and initial event.
 |  | `ReadRepository.CountCurrentScoresByBundleID` | Counts current score rows for the bundle, joining `tags` and retaining only `is_active = true`. |
 |  | `ReadRepository.ListCurrentScoresByBundleID` | Reads active scores ordered `bundle_fit_score DESC, tag_id ASC`, with limit/offset. |
 
+### Business intent between request, worker, and read queries
+
+An evaluation request is a request to score the **current business description
+of one bundle** against the active tag catalog. It is not a synchronous AI API
+call. The request persists enough input to make later execution reproducible:
+
+- `TargetPersonaSnapshot` captures the bundle target persona used for scoring.
+- The configuration snapshot captures prompts, model parameters, retry limits,
+  validation rules, and batching settings. Credentials and live transport
+  routing remain operational configuration rather than durable run data.
+- The initial `created` event makes the run discoverable by the scheduler.
+
+The first status read is only a fast rejection for an already-running request.
+The second read, after customer and bundle locks, is the actual correctness
+decision. This sequence allows a duplicate request to return the existing run
+ID instead of generating competing scores. The daily limit counts submitted
+runs, not just successful runs, so repeated failures cannot bypass customer
+usage limits.
+
+The read endpoints intentionally expose only current scores attached to active
+tags. They do not expose raw provider attempts or obsolete/inactive catalog
+rows as selectable Smart Targeting inputs.
+
 ### ExecuteBundleTagEvaluationRun
 
 The scheduler invokes this worker for pending derived statuses. A per-bundle
@@ -138,6 +188,35 @@ reads derived statuses where `run_status IN ('created', 'evaluating')`, ordered
 by evaluation creation time. This makes interrupted, nonterminal runs eligible
 for retry.
 
+### Worker decision flow
+
+1. The worker loads the run and acquires the bundle-specific advisory lock. If
+   the derived status is already evaluated, it exits without another provider
+   call.
+2. It reconstructs the run's configuration snapshot, creates an OpenAI client,
+   and records a `started` event only once.
+3. It obtains a persona analysis. A previously successful durable attempt is
+   reused; otherwise every provider response/error is recorded before deciding
+   whether to retry with backoff.
+4. It creates the batch plan once by copying the active tag catalog into batch
+   snapshots. Future retries score those snapshots rather than silently
+   changing the work plan because catalog wording changed later.
+5. Each batch is independently resumable. Existing complete scores or a valid
+   stored provider response are reused. Before a new provider call, the worker
+   confirms every snapshot tag still exists and is active.
+6. A provider response must pass the configured JSON/tag-ID/count validation
+   before score rows are inserted. Provider errors and malformed responses are
+   retained as attempts/events; retryable failures wait and retry, while
+   non-retryable failures fail the run.
+7. Only after every batch has completed and the stored-score total is within
+   the allowed missing-score threshold does the worker append `completed`.
+   Any non-cancellation error appends `failed`; cancellations/timeouts remain
+   nonterminal so a later scheduler pass can resume.
+
+This event/attempt/score separation is intentional: events describe workflow
+state, attempts preserve external-call evidence, batches define immutable work,
+and scores are the durable business output used by targeting.
+
 ## C. Bundle action files and action metrics
 
 Source: [bundle_action_flow.go](bundle_action_flow.go), backed by
@@ -147,7 +226,8 @@ from immutable audience membership/attribution plus delivered-message evidence.
 
 ### Customer-facing action-file operations
 
-All except `CampaignMetric` call `BundleRepository.ByID` through `ownedBundle`
+All except `CampaignMetric` call `BundleRepository.ByID` through
+`bundleActionOwnedBundle`
 and compare `customer_id`. `CampaignMetric` calls `CampaignRepository.ByUUID`
 through `getCampaign`, which verifies campaign ownership first.
 
@@ -176,6 +256,34 @@ scheduler/repository.
 | UID resolver | lateral/CTE update in `StoreUIDsAndResult` | Finds membership only in the same bundle; joins selection, campaign, audience, and immutable tag attribution. Four `EXISTS` branches require a current processed campaign and fully delivered message parts for SMS/Bale/Rubika/Splus. Classification: outside bundle, unassigned tag, missing delivery, or eligible. |
 | Completion | `Complete` | Transaction locks the file and `SELECT id FROM bundles ... FOR UPDATE`, changes processing->processed or delete-pending->deleted, refreshes metrics, and updates `bundles.action_data_updated_at`. |
 
+### Business intent between upload, processing, and metrics
+
+An action file is evidence supplied by a customer after campaign delivery: its
+UID list identifies audiences that performed the business action of interest.
+Upload verifies bundle ownership, accepts only XLSX, applies compressed and
+uncompressed-size limits, records a SHA-256 checksum, and creates a pending
+job. It intentionally defers workbook parsing and all delivery joins to the
+scheduler so the request does not perform expensive work.
+
+The parser reads the first worksheet. It accepts either a `uid` header column
+or a headerless first-column UID list, trims values, rejects empty or overly
+long UIDs, de-duplicates UIDs within the file, and retains total/duplicate/
+invalid diagnostics. A parse failure changes the job to `failed`; a successful
+parse does not itself make a UID eligible for a metric.
+
+Eligibility is a historical attribution decision. A supplied UID must:
+
+1. belong to an audience selected for a campaign in the same bundle;
+2. have an immutable tag attribution for that campaign/bundle/audience; and
+3. have a fully delivered message in at least one supported platform's current
+   processed-campaign and sent/status records.
+
+This is why a valid spreadsheet UID can be classified as outside the bundle,
+unassigned to a tag, or missing delivery instead of counting as an action.
+Only `eligible` UIDs contribute to action-rate metrics. A delete request is
+asynchronous: it changes a processed file to `delete_pending`; the worker then
+removes its contribution by rebuilding the bundle's derived metrics.
+
 ### Metric refresh
 
 `Complete` first counts processed files and deletes prior campaign/tag metric
@@ -192,6 +300,17 @@ It then inserts grouped campaign action/eligible-delivery counts, grouped tag
 test/overall counts, and upserts the bundle summary. The query intentionally
 does not consult mutable `audience_profiles.tags`: it preserves the tag
 attribution in effect at send time.
+
+The resulting metrics answer three separate questions:
+
+- Bundle summary: among all historically eligible delivered audience members
+  in the bundle, how many UIDs appear in any currently processed action file?
+- Campaign metric: the same action/eligible denominator split for one campaign.
+- Tag metric: test-phase and overall action/eligible splits for the tag that
+  was assigned when the audience was selected.
+
+They are rebuilt rather than incremented so deletion and reprocessing of a file
+cannot leave a stale contribution behind.
 
 ## Review invariants
 
@@ -213,7 +332,7 @@ the need to make database state and filesystem state atomic together.
 
 | Severity | Issue | Evidence and effect | Recommended correction |
 | --- | --- | --- | --- |
-| High | Missing bundle can panic action-file endpoints | `BundleActionFlowImpl.ownedBundle` calls `bundleRepo.ByID` and immediately reads `b.CustomerID`. `BundleRepository.ByID` returns `(nil, nil)` for a missing row, so `Upload`, `Get`, `List`, `Delete`, `Summary`, and `TagMetrics` can dereference nil instead of returning `ErrBundleNotFound`. | Check `b == nil` before the owner comparison and return the normal not-found business error. Add endpoint-level tests for a nonexistent bundle. |
+| High | Missing bundle can panic action-file endpoints | `BundleActionFlowImpl.bundleActionOwnedBundle` calls `bundleRepo.ByID` and immediately reads `b.CustomerID`. `BundleRepository.ByID` returns `(nil, nil)` for a missing row, so `Upload`, `Get`, `List`, `Delete`, `Summary`, and `TagMetrics` can dereference nil instead of returning `ErrBundleNotFound`. | Check `b == nil` before the owner comparison and return the normal not-found business error. Add endpoint-level tests for a nonexistent bundle. |
 | High | Action-file worker leases are not fenced | `ClaimPending` treats an old `processing` row as reclaimable by replacing `started_at`. `ExecuteBundleActionFile` receives the claimed lease but never uses it. `StoreUIDsAndResult` and `Complete` only check `status='processing'`, not the claimed `started_at`/lease token. An over-deadline worker can therefore publish after the same row was reclaimed locally, deleting/reinserting UIDs or completing work owned by the newer worker. This remains possible on one instance when one goroutine exceeds its context deadline or a blocking operation ignores cancellation. | Add a durable lease token or require `started_at = claimedLease` in every worker mutation (`StoreUIDsAndResult`, `Fail`, and `Complete`). Return a lease-lost error when no row matches. |
 | High | Upload persistence and file storage can diverge | `Upload` inserts a pending `bundle_action_files` row before creating the directory/writing the XLSX, and later updates `storage_path` separately. Any filesystem or final database-update failure leaves a pending row pointing to `pending` or a missing path; the scheduler will claim it and mark it parse-failed. A scheduler goroutine can also claim the row in the interval before `storage_path` is updated. | Stage bytes to a temporary path first; then transactionally create a row in a non-claimable state and promote it to `pending` only after the final path is durable. Compensate/clean up on failure. |
 | Medium | Delete can report success after losing a race | `Delete` checks `processed`, then `RequestDelete` runs a conditional update on `id AND status='processed'` but ignores `RowsAffected`. If completion/deletion changes the status between read and update, the method returns nil despite not scheduling deletion. | Have `RequestDelete` return whether exactly one row was updated; surface a conflict/not-deletable response when it was not. |
