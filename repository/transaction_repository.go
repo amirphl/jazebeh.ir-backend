@@ -559,8 +559,9 @@ func (r *TransactionRepositoryImpl) AggregateCustomerTransactionsByDiscounts(ctx
 	return rows, nil
 }
 
-// AggregateCustomersShares aggregates agency/system/tax shares per customer across the platform
-func (r *TransactionRepositoryImpl) AggregateCustomersShares(ctx context.Context, startDate, endDate *time.Time) ([]*CustomerShareAggregate, error) {
+// AggregateCustomersShares aggregates agency/system/tax shares for one bounded
+// report page. Callers must require a date range before reaching this query.
+func (r *TransactionRepositoryImpl) AggregateCustomersShares(ctx context.Context, startDate, endDate *time.Time, limit, offset int) ([]*CustomerShareAggregate, error) {
 	db := r.getDB(ctx)
 	rows := make([]*CustomerShareAggregate, 0)
 
@@ -615,6 +616,12 @@ func (r *TransactionRepositoryImpl) AggregateCustomersShares(ctx context.Context
 		Joins("LEFT JOIN (?) sys ON sys.customer_id = c.id", sysSub).
 		Joins("LEFT JOIN (?) tax ON tax.customer_id = c.id", taxSub).
 		Order("c.id ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
 
 	if err := query.Scan(&rows).Error; err != nil {
 		return nil, err
