@@ -2,6 +2,8 @@ package businessflow
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,6 +18,7 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	"github.com/amirphl/Yamata-no-Orochi/app/scheduler"
 	"github.com/amirphl/Yamata-no-Orochi/models"
+	"github.com/amirphl/Yamata-no-Orochi/repository"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 	"github.com/google/uuid"
 )
@@ -213,53 +216,91 @@ func (s *CampaignFlowImpl) resolveCampaignTestLink(
 		return &longLink, nil
 	}
 
-	lockShortLinkGen()
-	defer unlockShortLinkGen()
-
-	fakeCode, err := s.allocateNextCampaignTestShortCode(ctx)
-	if err != nil {
-		return nil, err
-	}
 	normalizedRecipient, err := normalizeOTPMobile(recipient)
 	if err != nil {
 		return nil, err
 	}
-	messageShortLink := buildCampaignShortLink(*campaign.Spec.ShortLinkDomain, fakeCode)
-	shortLinkRow := &models.ShortLink{
-		UID:         fakeCode,
-		CampaignID:  &campaign.ID,
-		PhoneNumber: utils.ToPtr(normalizedRecipient),
-		LongLink:    longLink,
-		ShortLink:   canonicalShortLinkURL(messageShortLink),
-		IsTest:      true,
-	}
-	if err := s.shortLinkRepo.Save(ctx, shortLinkRow); err != nil {
-		return nil, err
+	allocationKey := campaignTestShortLinkAllocationKey(campaign.ID, normalizedRecipient, longLink, *campaign.Spec.ShortLinkDomain)
+	var shortLinkRow *models.ShortLink
+	if existing, lookupErr := s.shortLinkRepo.ByAllocationKey(ctx, allocationKey); lookupErr != nil {
+		return nil, lookupErr
+	} else if len(existing) > 0 {
+		shortLinkRow, err = campaignTestShortLinkAllocation(existing)
+		if err != nil {
+			return nil, err
+		}
+	} else if s.db == nil {
+		return nil, fmt.Errorf("short-link allocator database is not configured")
+	} else if err := repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+		// Recheck after opening the transaction. A concurrent retry that wins
+		// the allocation-key race is reused, and this transaction never
+		// commits its reserved UID range.
+		existing, err := s.shortLinkRepo.ByAllocationKey(txCtx, allocationKey)
+		if err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			shortLinkRow, err = campaignTestShortLinkAllocation(existing)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+		codes, err := s.shortLinkRepo.ReserveSequentialUIDs(txCtx, 1)
+		if err != nil {
+			return err
+		}
+		position := 0
+		messageShortLink := buildCampaignShortLink(*campaign.Spec.ShortLinkDomain, codes[0])
+		shortLinkRow = &models.ShortLink{
+			UID:                codes[0],
+			CampaignID:         &campaign.ID,
+			PhoneNumber:        utils.ToPtr(normalizedRecipient),
+			LongLink:           longLink,
+			ShortLink:          canonicalShortLinkURL(messageShortLink),
+			IsTest:             true,
+			AllocationKey:      &allocationKey,
+			AllocationPosition: &position,
+		}
+		return s.shortLinkRepo.Save(txCtx, shortLinkRow)
+	}); err != nil {
+		// If another worker committed the same deterministic allocation while
+		// this transaction waited on the allocator row, reuse it. Its failed
+		// reservation rolled back with this transaction.
+		existing, lookupErr := s.shortLinkRepo.ByAllocationKey(ctx, allocationKey)
+		if lookupErr != nil {
+			return nil, err
+		}
+		shortLinkRow, lookupErr = campaignTestShortLinkAllocation(existing)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
 	}
 	if err := publishShortLinkMappings(ctx, s.shortLinkRepo, s.shortLinkPublisher, []*models.ShortLink{shortLinkRow}); err != nil {
 		return nil, fmt.Errorf("publish campaign test short link: %w", err)
 	}
 
+	messageShortLink := buildCampaignShortLink(*campaign.Spec.ShortLinkDomain, shortLinkRow.UID)
 	return &messageShortLink, nil
 }
 
-func (s *CampaignFlowImpl) allocateNextCampaignTestShortCode(ctx context.Context) (string, error) {
-	cutoff := time.Date(2025, 11, 10, 15, 45, 11, 401492000, time.UTC)
-	lastUID, err := s.shortLinkRepo.GetMaxUIDSince(ctx, cutoff)
-	if err != nil {
-		return "", err
+// campaignTestShortLinkAllocation validates every path that reuses a
+// campaign-test allocation. A deterministic key must map to exactly one row
+// at position zero; otherwise publication could expose a corrupt mapping.
+func campaignTestShortLinkAllocation(rows []*models.ShortLink) (*models.ShortLink, error) {
+	if len(rows) != 1 || rows[0] == nil || rows[0].AllocationPosition == nil || *rows[0].AllocationPosition != 0 {
+		return nil, fmt.Errorf("campaign test short-link allocation is corrupt")
 	}
+	return rows[0], nil
+}
 
-	var seq uint64
-	if lastUID != "" {
-		seq, err = decodeBase36Compat(lastUID)
-		if err != nil {
-			return "", err
-		}
-		seq++
-	}
-
-	return formatSequentialUIDCompat(seq)
+func campaignTestShortLinkAllocationKey(campaignID uint, recipient, longLink, domain string) string {
+	// Tests can be retried after a request, provider, or publication timeout.
+	// Include all token-defining fields in the durable idempotency key so that
+	// the retry returns the existing mapping instead of reserving another UID.
+	payload := strconv.FormatUint(uint64(campaignID), 10) + "\x00" + recipient + "\x00" + longLink + "\x00" + strings.TrimSpace(domain)
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
