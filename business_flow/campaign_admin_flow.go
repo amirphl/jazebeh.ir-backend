@@ -118,7 +118,9 @@ func NewAdminCampaignFlow(
 	}
 }
 
-// ListCampaigns retrieves campaigns for admin using optional filters: title (name), status, start/end dates
+// ListCampaigns retrieves campaigns for admin using optional filters: customer
+// name, status, and start/end dates. Campaign and bundle title fields are
+// intentionally ignored for now.
 func (s *AdminCampaignFlowImpl) ListCampaigns(ctx context.Context, filter dto.AdminListCampaignsFilter) (*dto.AdminListCampaignsResponse, error) {
 	page := max(1, filter.Page)
 	limit := filter.Limit
@@ -131,12 +133,9 @@ func (s *AdminCampaignFlowImpl) ListCampaigns(ctx context.Context, filter dto.Ad
 	offset := (page - 1) * limit
 
 	cf := models.CampaignFilter{}
-	if filter.CampaignTitle != nil && *filter.CampaignTitle != "" {
-		cf.CampaignTitle = filter.CampaignTitle
-	}
-	if filter.BundleTitle != nil && *filter.BundleTitle != "" {
-		cf.BundleTitle = filter.BundleTitle
-	}
+	// TODO: Apply CampaignTitle and BundleTitle when the admin campaign-list
+	// search contract is finalized. The handler and DTO currently accept these
+	// parameters, but this endpoint intentionally does not filter on them yet.
 	if filter.CustomerName != nil && *filter.CustomerName != "" {
 		cf.CustomerName = filter.CustomerName
 	}
