@@ -6,10 +6,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// AdminCustomersSharesRequest holds optional date filters for the report
+// AdminCustomersSharesRequest holds the bounded period and page for the report.
 type AdminCustomersSharesRequest struct {
-	StartDate *string `json:"start_date,omitempty" validate:"omitempty"`
-	EndDate   *string `json:"end_date,omitempty" validate:"omitempty"`
+	StartDate *string `json:"start_date" validate:"required"`
+	EndDate   *string `json:"end_date" validate:"required"`
+	Page      int     `json:"page" validate:"min=1"`
+	PageSize  int     `json:"page_size" validate:"min=1,max=100"`
 }
 
 // AdminCustomersSharesItem represents a single row in the report
@@ -37,6 +39,9 @@ type AdminCustomersSharesResponse struct {
 	SumSystemShare        uint64                     `json:"sum_system_share"`
 	SumTaxShare           uint64                     `json:"sum_tax_share"`
 	SumTotalSent          uint64                     `json:"sum_total_sent"`
+	Page                  int                        `json:"page"`
+	PageSize              int                        `json:"page_size"`
+	HasMore               bool                       `json:"has_more"`
 }
 
 // AdminCustomerDetailDTO contains full customer info for admin
