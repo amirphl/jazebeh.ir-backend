@@ -3907,63 +3907,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/bot/short-links": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Bot ShortLinks"
-                ],
-                "summary": "Bot Create Short Links (Batch)",
-                "parameters": [
-                    {
-                        "description": "Short links creation",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.BotCreateShortLinksRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/dto.APIResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/dto.BotCreateShortLinksResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/dto.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/dto.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/bot/short-links/allocate": {
             "post": {
                 "consumes": [
@@ -4000,63 +3943,6 @@ const docTemplate = `{
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/dto.BotAllocateShortLinksResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/dto.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/dto.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/bot/short-links/one": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Bot ShortLinks"
-                ],
-                "summary": "Bot Create Short Link",
-                "parameters": [
-                    {
-                        "description": "Short link creation",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.BotCreateShortLinkRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/dto.APIResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/dto.BotCreateShortLinkResponse"
                                         }
                                     }
                                 }
@@ -11144,76 +11030,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.BotCreateShortLinkRequest": {
-            "type": "object",
-            "required": [
-                "long_link",
-                "short_link",
-                "uid"
-            ],
-            "properties": {
-                "campaign_id": {
-                    "type": "integer"
-                },
-                "client_id": {
-                    "type": "integer"
-                },
-                "long_link": {
-                    "type": "string"
-                },
-                "phone_number": {
-                    "type": "string",
-                    "maxLength": 20
-                },
-                "short_link": {
-                    "type": "string"
-                },
-                "uid": {
-                    "type": "string",
-                    "maxLength": 64
-                }
-            }
-        },
-        "dto.BotCreateShortLinkResponse": {
-            "type": "object",
-            "properties": {
-                "item": {
-                    "$ref": "#/definitions/dto.ShortLinkDTO"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "dto.BotCreateShortLinksRequest": {
-            "type": "object",
-            "required": [
-                "items"
-            ],
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "$ref": "#/definitions/dto.BotCreateShortLinkRequest"
-                    }
-                }
-            }
-        },
-        "dto.BotCreateShortLinksResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.ShortLinkDTO"
-                    }
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
         "dto.BotDTO": {
             "type": "object",
             "properties": {
@@ -13328,32 +13144,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "warning": {
-                    "type": "string"
-                }
-            }
-        },
-        "dto.ShortLinkDTO": {
-            "type": "object",
-            "properties": {
-                "campaign_id": {
-                    "type": "integer"
-                },
-                "client_id": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "long_link": {
-                    "type": "string"
-                },
-                "phone_number": {
-                    "type": "string"
-                },
-                "short_link": {
-                    "type": "string"
-                },
-                "uid": {
                     "type": "string"
                 }
             }
