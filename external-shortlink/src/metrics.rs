@@ -83,6 +83,7 @@ pub struct Metrics {
     redirects: LabelledCounter,
     redirect_latency: Histogram,
     unknown_codes: AtomicU64,
+    suppressed_bot_redirects: AtomicU64,
     postgres_errors: LabelledCounter,
     pool_timeouts: AtomicU64,
     spool_events: AtomicI64,
@@ -104,6 +105,7 @@ impl Default for Metrics {
             redirects: LabelledCounter::default(),
             redirect_latency: Histogram::new(),
             unknown_codes: AtomicU64::new(0),
+            suppressed_bot_redirects: AtomicU64::new(0),
             postgres_errors: LabelledCounter::default(),
             pool_timeouts: AtomicU64::new(0),
             spool_events: AtomicI64::new(0),
@@ -125,6 +127,11 @@ impl Metrics {
     pub fn redirect(&self, status: u16, elapsed_seconds: f64) {
         self.redirects.increment(status.to_string());
         self.redirect_latency.observe(elapsed_seconds);
+    }
+
+    pub fn suppressed_bot_redirect(&self) {
+        self.suppressed_bot_redirects
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn unknown_code(&self) {
@@ -190,6 +197,12 @@ impl Metrics {
 
     pub fn render(&self) -> String {
         let mut output = String::with_capacity(4096);
+        emit_atomic_counter(
+            &mut output,
+            "external_shortlink_suppressed_bot_redirects_total",
+            "Tracked automated visits returned without redirecting",
+            &self.suppressed_bot_redirects,
+        );
         emit_help_type(
             &mut output,
             "external_shortlink_redirect_requests_total",
