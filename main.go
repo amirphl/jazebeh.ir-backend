@@ -734,9 +734,9 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	shortLinkVisitFlow := businessflow.NewShortLinkVisitFlow(shortLinkRepo, shortLinkClickRepo)
 
 	// Admin short-links flows and handler
-	adminShortLinkFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, shortLinkPublishers...)
-	adminShortLinkDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, shortLinkPublishers...)
-	adminShortLinkClicksDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, shortLinkPublishers...)
+	adminShortLinkFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, db, shortLinkPublishers...)
+	adminShortLinkDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, db, shortLinkPublishers...)
+	adminShortLinkClicksDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, db, shortLinkPublishers...)
 
 	// Profile flow
 	profileFlow := businessflow.NewProfileFlow(customerRepo)
