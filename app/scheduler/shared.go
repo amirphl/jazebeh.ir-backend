@@ -138,6 +138,34 @@ func shouldPushCurrentProcessedCampaignStatistics(pc *models.ProcessedCampaign, 
 	return ok && sent > 0
 }
 
+// deliveryStatusFinalRepository is intentionally optional so lightweight test
+// doubles and alternate status-job repositories remain compatible. Zero-result
+// publication fails closed when finality cannot be established.
+type deliveryStatusFinalRepository interface {
+	DeliveryStatusFinal(ctx context.Context, processedCampaignID uint) (bool, error)
+}
+
+// shouldPublishCurrentProcessedCampaignStatistics keeps the historical
+// positive-delivery behavior, but permits an explicit zero only when all
+// provider status checks for the elected processing attempt succeeded.
+func shouldPublishCurrentProcessedCampaignStatistics(ctx context.Context, jobRepo repository.CampaignStatusJobRepository, pc *models.ProcessedCampaign, stats map[string]any) (bool, error) {
+	if shouldPushCurrentProcessedCampaignStatistics(pc, stats) {
+		return true, nil
+	}
+	if pc == nil || !pc.IsCurrent || stats == nil {
+		return false, nil
+	}
+	sent, ok := stats["aggregatedTotalSent"].(int64)
+	if !ok || sent != 0 {
+		return false, nil
+	}
+	finalityRepo, ok := jobRepo.(deliveryStatusFinalRepository)
+	if !ok {
+		return false, nil
+	}
+	return finalityRepo.DeliveryStatusFinal(ctx, pc.ID)
+}
+
 // releaseUnpreparedCampaignOnFailure settles a failed claim. A checkpoint
 // without send intent is retired and requeued; a persisted send intent becomes
 // interrupted so an uncertain provider dispatch is never replayed.
