@@ -212,12 +212,6 @@ func parseBundleActionXLSX(path string) (uids []string, total, duplicates, inval
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	if !rows.Next() {
-		if err := rows.Error(); err != nil {
-			return nil, 0, 0, 0, err
-		}
-		return nil, 0, 0, 0, errors.New("no data rows")
-	}
 	uidColumn := -1
 	for i, h := range header {
 		if strings.EqualFold(strings.TrimSpace(h), "uid") {
@@ -227,18 +221,25 @@ func parseBundleActionXLSX(path string) (uids []string, total, duplicates, inval
 			uidColumn = i
 		}
 	}
+	// A uid header is optional. A first row with a uid column is treated as the
+	// header; otherwise the first column is a headerless UID list and its first
+	// row is processed as data.
+	row := header
 	if uidColumn < 0 {
-		return nil, 0, 0, 0, errors.New("missing uid column")
+		uidColumn = 0
+	} else if !rows.Next() {
+		if err := rows.Error(); err != nil {
+			return nil, 0, 0, 0, err
+		}
+		return nil, 0, 0, 0, errors.New("no data rows")
+	} else if row, err = rows.Columns(excelize.Options{RawCellValue: true}); err != nil {
+		return nil, 0, 0, 0, err
 	}
 	seen := map[string]struct{}{}
 	for {
 		total++
 		if total > maxBundleActionFileRows {
 			return nil, total, duplicates, invalid, fmt.Errorf("action file exceeds the %d row limit", maxBundleActionFileRows)
-		}
-		row, rowErr := rows.Columns(excelize.Options{RawCellValue: true})
-		if rowErr != nil {
-			return nil, total, duplicates, invalid, rowErr
 		}
 		var uid string
 		if uidColumn < len(row) {
@@ -253,6 +254,10 @@ func parseBundleActionXLSX(path string) (uids []string, total, duplicates, inval
 		}
 		if !rows.Next() {
 			break
+		}
+		row, err = rows.Columns(excelize.Options{RawCellValue: true})
+		if err != nil {
+			return nil, total, duplicates, invalid, err
 		}
 	}
 	if err := rows.Error(); err != nil {
