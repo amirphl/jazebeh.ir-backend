@@ -33,6 +33,7 @@ use crate::{
         ClickRecord, LinkRecord, LinkUploadRequest, click_from_link, is_valid_code,
         unique_validated_links,
     },
+    logging,
     metrics::Metrics,
     spool::{DurableSpool, SpoolError},
 };
@@ -78,13 +79,19 @@ impl AppState {
         if let Some(stats) = state.refresh_spool_metrics().await {
             if stats.events > 0 || stats.dead_letter_events > 0 {
                 warn!(
+                    component = logging::COMPONENT,
+                    event = "spool_recovered_with_backlog",
                     pending_events = stats.events,
                     queued_bytes = stats.queued_bytes,
                     dead_letter_events = stats.dead_letter_events,
                     "durable click spool recovered pending state at startup"
                 );
             } else {
-                info!("durable click spool initialized empty");
+                info!(
+                    component = logging::COMPONENT,
+                    event = "spool_initialized_empty",
+                    "durable click spool initialized empty"
+                );
             }
         }
         Ok(state)
@@ -109,7 +116,7 @@ impl AppState {
             Err(error) => {
                 self.database_ready.store(false, Ordering::Release);
                 self.metrics.postgres_error("preload");
-                warn!(error = %error, "initial link cache preload deferred because PostgreSQL is unavailable");
+                warn!(component = logging::COMPONENT, event = "cache_preload_failed", error = %error, "initial link cache preload deferred because PostgreSQL is unavailable");
             }
         }
     }
@@ -131,7 +138,7 @@ impl AppState {
                 None
             }
             Err(error) => {
-                error!(error = %error, "could not read durable click spool metrics");
+                error!(component = logging::COMPONENT, event = "spool_metrics_failed", error = %error, "could not read durable click spool metrics");
                 None
             }
         }
@@ -163,6 +170,8 @@ pub async fn serve(state: AppState) -> Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let workers = start_background_workers(state.clone(), shutdown_rx);
     info!(
+        component = logging::COMPONENT,
+        event = "service_listening",
         address = %state.settings.bind_addr,
         database_pool_max = state.settings.pool_max_size,
         cache_capacity = state.settings.cache_max_entries,
@@ -181,7 +190,7 @@ pub async fn serve(state: AppState) -> Result<()> {
         .context("run HTTP server")?;
     for worker in workers {
         if let Err(error) = worker.await {
-            error!(error = %error, "background worker did not stop cleanly");
+            error!(component = logging::COMPONENT, event = "background_worker_failed", error = %error, "background worker did not stop cleanly");
         }
     }
     Ok(())
@@ -207,13 +216,13 @@ async fn database_reconnect_loop(state: AppState, mut shutdown: watch::Receiver<
             _ = interval.tick() => {
                 match state.database.ping().await {
                     Ok(()) if !state.database_ready.swap(true, Ordering::AcqRel) => {
-                        info!("PostgreSQL recovered; preloading link cache");
+                        info!(component = logging::COMPONENT, event = "postgres_recovered", "PostgreSQL recovered; preloading link cache");
                         state.refresh_cache_if_available().await;
                     }
                     Ok(()) => {}
                     Err(error) => {
                         if state.database_ready.swap(false, Ordering::AcqRel) {
-                            warn!(error = %error, "PostgreSQL became unavailable; cached redirects remain available");
+                            warn!(component = logging::COMPONENT, event = "postgres_unavailable", error = %error, "PostgreSQL became unavailable; cached redirects remain available");
                         }
                     }
                 }
@@ -244,6 +253,8 @@ async fn spool_replay_loop(state: AppState, mut shutdown: watch::Receiver<bool>)
                                     state.metrics.spool_dropped("remove_error");
                                     if !replay_failure_reported {
                                         error!(
+                                        component = logging::COMPONENT,
+                                        event = "spool_replay_remove_failed",
                                             error = %error,
                                             batch_events = ids.len(),
                                             "clicks were stored in PostgreSQL but could not be removed from spool"
@@ -260,6 +271,8 @@ async fn spool_replay_loop(state: AppState, mut shutdown: watch::Receiver<bool>)
                                 state.metrics.postgres_error("spool_replay");
                                 if !replay_failure_reported {
                                     warn!(
+                                        component = logging::COMPONENT,
+                                        event = "spool_replay_deferred",
                                         error = %error,
                                         batch_events = events.len(),
                                         "durable click replay deferred because PostgreSQL is unavailable"
@@ -272,6 +285,8 @@ async fn spool_replay_loop(state: AppState, mut shutdown: watch::Receiver<bool>)
                     Ok(_) => {
                         if spool_backlog_active {
                             info!(
+                                component = logging::COMPONENT,
+                                event = "spool_drained",
                                 replayed_events = replayed_since_drain,
                                 "durable click spool drained"
                             );
@@ -285,7 +300,7 @@ async fn spool_replay_loop(state: AppState, mut shutdown: watch::Receiver<bool>)
                     }
                     Err(error) => {
                         if !replay_failure_reported {
-                            error!(error = %error, "could not read durable click spool");
+                            error!(component = logging::COMPONENT, event = "spool_replay_read_failed", error = %error, "could not read durable click spool");
                             replay_failure_reported = true;
                         }
                     }
@@ -293,8 +308,12 @@ async fn spool_replay_loop(state: AppState, mut shutdown: watch::Receiver<bool>)
                 state.refresh_spool_metrics().await;
             }
             _ = database_size_interval.tick() => {
-                if let Ok(bytes) = state.database.database_size().await {
-                    state.metrics.database_size(bytes);
+                match state.database.database_size().await {
+                    Ok(bytes) => state.metrics.database_size(bytes),
+                    Err(error) => {
+                        state.metrics.postgres_error("database_size");
+                        warn!(component = logging::COMPONENT, event = "database_size_read_failed", error = %error, "could not read PostgreSQL database size");
+                    }
                 }
             }
         }
@@ -309,11 +328,11 @@ async fn purge_loop(state: AppState, mut shutdown: watch::Receiver<bool>) {
         tokio::select! {
             _ = shutdown.changed() => return,
             _ = interval.tick() => match state.database.purge_acknowledged(state.settings.acknowledged_retention_days).await {
-                Ok(count) if count > 0 => info!(count, "purged acknowledged click records"),
+                Ok(count) if count > 0 => info!(component = logging::COMPONENT, event = "acknowledged_clicks_purged", count, "purged acknowledged click records"),
                 Ok(_) => {},
                 Err(error) => {
                     state.metrics.postgres_error("purge");
-                    error!(error = %error, "could not purge acknowledged clicks");
+                    error!(component = logging::COMPONENT, event = "acknowledged_click_purge_failed", error = %error, "could not purge acknowledged clicks");
                 }
             }
         }
@@ -347,10 +366,13 @@ async fn readyz(State(state): State<AppState>) -> Response {
             StatusCode::OK,
             serde_json::json!({"status": "ready", "postgres": true}),
         ),
-        Err(_) => json_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            serde_json::json!({"status": "not_ready", "postgres": false}),
-        ),
+        Err(error) => {
+            warn!(component = logging::COMPONENT, event = "readiness_check_failed", error = %error, "PostgreSQL readiness check failed");
+            json_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                serde_json::json!({"status": "not_ready", "postgres": false}),
+            )
+        }
     }
 }
 
@@ -382,8 +404,10 @@ async fn redirect(
 }
 
 async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> Response {
+    let request_id = request_id(headers);
     if !is_valid_code(&code) {
         state.metrics.unknown_code();
+        warn!(component = logging::COMPONENT, event = "redirect_rejected_invalid_code", request_id = %request_id, code_length = code.len(), "redirect request used an invalid short code");
         return text_response(StatusCode::NOT_FOUND, "not found");
     }
     let link = if let Some(link) = state.cache.get(&code) {
@@ -404,14 +428,17 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
             }
             Ok(Ok(None)) => {
                 state.metrics.unknown_code();
+                warn!(component = logging::COMPONENT, event = "redirect_unknown_code", request_id = %request_id, code_length = code.len(), "redirect request referenced an unknown short code");
                 return text_response(StatusCode::NOT_FOUND, "not found");
             }
-            Ok(Err(_)) => {
+            Ok(Err(error)) => {
                 state.metrics.postgres_error("lookup_link");
+                warn!(component = logging::COMPONENT, event = "redirect_lookup_failed", request_id = %request_id, code_length = code.len(), error = %error, "redirect lookup failed");
                 return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
             }
             Err(_) => {
                 state.metrics.pool_timeout();
+                warn!(component = logging::COMPONENT, event = "redirect_lookup_timed_out", request_id = %request_id, code_length = code.len(), timeout_ms = state.settings.link_lookup_timeout.as_millis(), "redirect lookup exceeded its timeout");
                 return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
             }
         }
@@ -429,13 +456,15 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
     .await
     {
         Ok(Ok(())) => {}
-        Ok(Err(_)) => {
+        Ok(Err(error)) => {
             state.metrics.postgres_error("insert_click");
-            spool_click(state, &event).await;
+            warn!(component = logging::COMPONENT, event = "click_write_failed_spooling", request_id = %request_id, error = %error, "click write failed; attempting durable spool fallback");
+            spool_click(state, &event, &request_id).await;
         }
         Err(_) => {
             state.metrics.pool_timeout();
-            spool_click(state, &event).await;
+            warn!(component = logging::COMPONENT, event = "click_write_timed_out_spooling", request_id = %request_id, timeout_ms = state.settings.click_insert_timeout.as_millis(), "click write exceeded its timeout; attempting durable spool fallback");
+            spool_click(state, &event, &request_id).await;
         }
     }
     // Preserve click tracking, but prevent automated clients from following the destination.
@@ -452,25 +481,25 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
     redirect_response(&link.long_url)
 }
 
-async fn spool_click(state: &AppState, event: &crate::domain::ClickEvent) {
+async fn spool_click(state: &AppState, event: &crate::domain::ClickEvent, request_id: &str) {
     match state.spool.enqueue(event).await {
         Ok(()) => {}
         Err(SpoolError::Full) => {
             state.metrics.spool_dropped("capacity");
             if should_log_spool_failure(state) {
-                error!("click processor discarded events because spool capacity is exhausted");
+                error!(component = logging::COMPONENT, event = "click_dropped_spool_full", request_id = %request_id, "click processor discarded events because spool capacity is exhausted");
             }
         }
         Err(SpoolError::Busy) => {
             state.metrics.spool_dropped("backpressure");
             if should_log_spool_failure(state) {
-                error!("click processor discarded events because the spool is saturated");
+                error!(component = logging::COMPONENT, event = "click_dropped_spool_busy", request_id = %request_id, "click processor discarded events because the spool is saturated");
             }
         }
         Err(error) => {
             state.metrics.spool_dropped("write_error");
             if should_log_spool_failure(state) {
-                error!(error = %error, "click processor could not write to durable spool");
+                error!(component = logging::COMPONENT, event = "click_dropped_spool_write_failed", request_id = %request_id, error = %error, "click processor could not write to durable spool");
             }
         }
     }
@@ -495,15 +524,18 @@ fn should_log_spool_failure(state: &AppState) -> bool {
 
 async fn upload_links(State(state): State<AppState>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    let parsed: LinkUploadRequest = match decode_admin_json(&state, &parts.headers, body).await {
-        Ok(value) => value,
-        Err(response) => {
-            state.metrics.mapping_upload("auth_or_validation_error");
-            return response;
-        }
-    };
+    let request_id = request_id(&parts.headers);
+    let parsed: LinkUploadRequest =
+        match decode_admin_json(&state, &parts.headers, body, "mapping_upload").await {
+            Ok(value) => value,
+            Err(response) => {
+                state.metrics.mapping_upload("auth_or_validation_error");
+                return response;
+            }
+        };
     if parsed.links.is_empty() || parsed.links.len() > state.settings.admin_batch_max_links {
         state.metrics.mapping_upload("validation_error");
+        warn!(component = logging::COMPONENT, event = "mapping_upload_rejected", request_id = %request_id, reason = "batch_size", link_count = parsed.links.len(), maximum_links = state.settings.admin_batch_max_links, "mapping upload rejected by batch-size validation");
         return json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": format!("links must contain 1-{} items", state.settings.admin_batch_max_links)}),
@@ -513,6 +545,7 @@ async fn upload_links(State(state): State<AppState>, request: Request) -> Respon
         Ok(links) => links,
         Err(error) => {
             state.metrics.mapping_upload("validation_error");
+            warn!(component = logging::COMPONENT, event = "mapping_upload_rejected", request_id = %request_id, reason = "link_validation", error = %error, "mapping upload rejected by link validation");
             return json_response(
                 StatusCode::BAD_REQUEST,
                 serde_json::json!({"error": error.to_string()}),
@@ -529,6 +562,9 @@ async fn upload_links(State(state): State<AppState>, request: Request) -> Respon
             state.metrics.mapping_upload("success");
             state.metrics.mapping_upload_succeeded();
             info!(
+                component = logging::COMPONENT,
+                event = "mapping_batch_persisted",
+                request_id = %request_id,
                 persisted = result.persisted.len(),
                 created = result.created,
                 existing = result.existing,
@@ -542,6 +578,9 @@ async fn upload_links(State(state): State<AppState>, request: Request) -> Respon
         Err(DatabaseError::MappingConflict(codes)) => {
             state.metrics.mapping_upload("conflict");
             warn!(
+                component = logging::COMPONENT,
+                event = "mapping_upload_conflict",
+                request_id = %request_id,
                 conflicting_codes = codes.len(),
                 "mapping batch rejected due to destination conflict"
             );
@@ -553,7 +592,7 @@ async fn upload_links(State(state): State<AppState>, request: Request) -> Respon
         Err(error) => {
             state.metrics.postgres_error("upload_links");
             state.metrics.mapping_upload("database_error");
-            error!(error = %error, "mapping upload failed");
+            error!(component = logging::COMPONENT, event = "mapping_upload_database_failed", request_id = %request_id, error = %error, "mapping upload failed");
             json_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 serde_json::json!({"error": "mapping persistence failed"}),
@@ -588,12 +627,15 @@ async fn fetch_clicks(
     headers: HeaderMap,
     query: Result<Query<ClickQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Response {
+    let request_id = request_id(&headers);
     if !authorized(&headers, &state.settings.api_token) {
+        warn!(component = logging::COMPONENT, event = "click_fetch_unauthorized", request_id = %request_id, "unauthorized click fetch request");
         return unauthorized();
     }
     let Query(query) = match query {
         Ok(query) => query,
-        Err(_) => {
+        Err(error) => {
+            warn!(component = logging::COMPONENT, event = "click_fetch_rejected", request_id = %request_id, reason = "invalid_query", error = %error, "click fetch rejected by query validation");
             return json_response(
                 StatusCode::BAD_REQUEST,
                 serde_json::json!({"error": "after_id and limit must be integers"}),
@@ -602,6 +644,7 @@ async fn fetch_clicks(
     };
     let limit = effective_click_limit(query.limit, state.settings.click_fetch_max_limit);
     if query.after_id < 0 || limit < 1 || limit > state.settings.click_fetch_max_limit {
+        warn!(component = logging::COMPONENT, event = "click_fetch_rejected", request_id = %request_id, reason = "out_of_range", after_id = query.after_id, limit, maximum_limit = state.settings.click_fetch_max_limit, "click fetch rejected by range validation");
         return json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": format!("after_id must be non-negative and limit must be 1-{}", state.settings.click_fetch_max_limit)}),
@@ -621,7 +664,7 @@ async fn fetch_clicks(
         }
         Err(error) => {
             state.metrics.postgres_error("fetch_clicks");
-            error!(error = %error, "click fetch failed");
+            error!(component = logging::COMPONENT, event = "click_fetch_database_failed", request_id = %request_id, after_id = query.after_id, limit, error = %error, "click fetch failed");
             json_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 serde_json::json!({"error": "click fetch failed"}),
@@ -637,11 +680,14 @@ struct AcknowledgeRequest {
 
 async fn acknowledge_clicks(State(state): State<AppState>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    let payload: AcknowledgeRequest = match decode_admin_json(&state, &parts.headers, body).await {
-        Ok(payload) => payload,
-        Err(response) => return response,
-    };
+    let request_id = request_id(&parts.headers);
+    let payload: AcknowledgeRequest =
+        match decode_admin_json(&state, &parts.headers, body, "click_acknowledgement").await {
+            Ok(payload) => payload,
+            Err(response) => return response,
+        };
     if payload.through_click_id < 0 {
+        warn!(component = logging::COMPONENT, event = "click_acknowledgement_rejected", request_id = %request_id, reason = "negative_click_id", through_click_id = payload.through_click_id, "click acknowledgement rejected by validation");
         return json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": "through_click_id must be a non-negative integer"}),
@@ -651,6 +697,9 @@ async fn acknowledge_clicks(State(state): State<AppState>, request: Request) -> 
         Ok(acknowledged) => {
             state.metrics.acknowledged_through(acknowledged);
             info!(
+                component = logging::COMPONENT,
+                event = "click_cursor_acknowledged",
+                request_id = %request_id,
                 through_click_id = acknowledged,
                 "click import cursor acknowledged"
             );
@@ -659,13 +708,16 @@ async fn acknowledge_clicks(State(state): State<AppState>, request: Request) -> 
                 serde_json::json!({"through_click_id": acknowledged}),
             )
         }
-        Err(DatabaseError::UnknownAcknowledgement) => json_response(
-            StatusCode::CONFLICT,
-            serde_json::json!({"error": "through_click_id is not a persisted click_id"}),
-        ),
+        Err(DatabaseError::UnknownAcknowledgement) => {
+            warn!(component = logging::COMPONENT, event = "click_acknowledgement_conflict", request_id = %request_id, through_click_id = payload.through_click_id, "click acknowledgement referenced an unknown click ID");
+            json_response(
+                StatusCode::CONFLICT,
+                serde_json::json!({"error": "through_click_id is not a persisted click_id"}),
+            )
+        }
         Err(error) => {
             state.metrics.postgres_error("acknowledge");
-            error!(error = %error, "click acknowledgement failed");
+            error!(component = logging::COMPONENT, event = "click_acknowledgement_database_failed", request_id = %request_id, through_click_id = payload.through_click_id, error = %error, "click acknowledgement failed");
             json_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 serde_json::json!({"error": "acknowledgement failed"}),
@@ -678,8 +730,11 @@ async fn decode_admin_json<T: DeserializeOwned>(
     state: &AppState,
     headers: &HeaderMap,
     body: Body,
+    operation: &'static str,
 ) -> Result<T, Response> {
+    let request_id = request_id(headers);
     if !authorized(headers, &state.settings.api_token) {
+        warn!(component = logging::COMPONENT, event = "admin_request_unauthorized", request_id = %request_id, operation, "unauthorized administrative request");
         return Err(unauthorized());
     }
     if let Some(length) = headers.get(header::CONTENT_LENGTH) {
@@ -688,12 +743,14 @@ async fn decode_admin_json<T: DeserializeOwned>(
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .ok_or_else(|| {
+                warn!(component = logging::COMPONENT, event = "admin_request_rejected", request_id = %request_id, operation, reason = "invalid_content_length", "administrative request has an invalid content-length");
                 json_response(
                     StatusCode::BAD_REQUEST,
                     serde_json::json!({"error": "invalid content-length"}),
                 )
             })?;
         if length > state.settings.max_admin_body_bytes {
+            warn!(component = logging::COMPONENT, event = "admin_request_rejected", request_id = %request_id, operation, reason = "body_too_large", content_length = length, maximum_bytes = state.settings.max_admin_body_bytes, "administrative request body exceeds the configured limit");
             return Err(json_response(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 serde_json::json!({"error": "request body too large"}),
@@ -702,13 +759,15 @@ async fn decode_admin_json<T: DeserializeOwned>(
     }
     let bytes = to_bytes(body, state.settings.max_admin_body_bytes)
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            warn!(component = logging::COMPONENT, event = "admin_request_rejected", request_id = %request_id, operation, reason = "body_read_failed", error = %error, "administrative request body could not be read");
             json_response(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 serde_json::json!({"error": "request body too large"}),
             )
         })?;
-    serde_json::from_slice(&bytes).map_err(|_| {
+    serde_json::from_slice(&bytes).map_err(|error| {
+        warn!(component = logging::COMPONENT, event = "admin_request_rejected", request_id = %request_id, operation, reason = "invalid_json", error = %error, "administrative request contains invalid JSON");
         json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": "invalid JSON"}),
@@ -736,6 +795,15 @@ fn unauthorized() -> Response {
         axum::Json(serde_json::json!({"error": "unauthorized"})),
     )
         .into_response()
+}
+
+fn request_id(headers: &HeaderMap) -> String {
+    headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty() && value.len() <= 128 && value.is_ascii())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "unavailable".to_owned())
 }
 
 fn client_ip(headers: &HeaderMap) -> Option<String> {
