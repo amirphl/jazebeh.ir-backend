@@ -223,29 +223,34 @@ log 'The API and scheduler are not stopped. They must not insert audience_profil
 # CSV fields in this export have no embedded newlines. A physical line is thus
 # one CSV record; COPY remains PostgreSQL's CSV parser and validates every field.
 tail -n +"$next_line" -- "$csv_file" | begin
-    set -l batch_number (math "$last_batch + 1")
-    set -l line_number "$next_line"
-    set -l rows_in_batch 0
-    set -l batch_file ''
+    # These are global inside this short-lived worker so the helper functions
+    # mutate the same checkpoint values as the read loop. Fish function scope
+    # would otherwise create local shadow variables.
+    set -g IMPORT_BATCH_NUMBER (math "$last_batch + 1")
+    set -g IMPORT_LINE_NUMBER "$next_line"
+    set -g IMPORT_ROWS_IN_BATCH 0
+    set -g IMPORT_BATCH_FILE ''
+    set -g IMPORT_LAST_BATCH "$last_batch"
+    set -g IMPORT_COMPLETED_ROWS "$completed_rows"
 
     function open_batch_file
-        set batch_file (mktemp "$project_dir/var/audience-batch.XXXXXXXX"); or die 'Could not create batch file.'
-        set -g CURRENT_BATCH_FILE "$batch_file"
-        printf '%s\n' "$header" >"$batch_file"; or die "Could not write batch file: $batch_file"
+        set -g IMPORT_BATCH_FILE (mktemp "$project_dir/var/audience-batch.XXXXXXXX"); or die 'Could not create batch file.'
+        set -g CURRENT_BATCH_FILE "$IMPORT_BATCH_FILE"
+        printf '%s\n' "$header" >"$IMPORT_BATCH_FILE"; or die "Could not write batch file: $IMPORT_BATCH_FILE"
     end
 
     function commit_batch
         set -l timeout_ms (batch_timeout_ms)
         if test "$timeout_ms" -le 0
-            log "WINDOW_CLOSED batch=$batch_number completed_rows=$completed_rows; no new batch started."
+            log "WINDOW_CLOSED batch=$IMPORT_BATCH_NUMBER completed_rows=$IMPORT_COMPLETED_ROWS; no new batch started."
             return 10
         end
 
-        set -l result_file "$batch_file.result"
-        log "BATCH_START batch=$batch_number rows=$rows_in_batch source_lines=$line_number-"(math "$line_number + $rows_in_batch - 1")" timeout_ms=$timeout_ms"
+        set -l result_file "$IMPORT_BATCH_FILE.result"
+        log "BATCH_START batch=$IMPORT_BATCH_NUMBER rows=$IMPORT_ROWS_IN_BATCH source_lines=$IMPORT_LINE_NUMBER-"(math "$IMPORT_LINE_NUMBER + $IMPORT_ROWS_IN_BATCH - 1")" timeout_ms=$timeout_ms"
         begin
             cat -- "$prefix_sql"
-            cat -- "$batch_file"
+            cat -- "$IMPORT_BATCH_FILE"
             printf '\\.\n'
             cat -- "$suffix_sql"
         end | docker exec -i -e "PGAPPNAME=$APP_NAME" "$POSTGRES_CONTAINER" \
@@ -253,60 +258,60 @@ tail -n +"$next_line" -- "$csv_file" | begin
         set -l pipeline_status $pipestatus
         for pipeline_exit in $pipeline_status
             if test "$pipeline_exit" -ne 0
-                log "BATCH_FAILED batch=$batch_number rows=$rows_in_batch source_line=$line_number pipeline_status=$pipeline_status; state remains at batch=$last_batch."
+                log "BATCH_FAILED batch=$IMPORT_BATCH_NUMBER rows=$IMPORT_ROWS_IN_BATCH source_line=$IMPORT_LINE_NUMBER pipeline_status=$pipeline_status; state remains at batch=$IMPORT_LAST_BATCH."
                 test -s "$result_file"; and cat -- "$result_file" >&2
-                rm -f -- "$result_file" "$batch_file"
+                rm -f -- "$result_file" "$IMPORT_BATCH_FILE"
                 set -e CURRENT_BATCH_FILE
                 return 1
             end
         end
         if not test -s "$result_file"
-            log "BATCH_FAILED batch=$batch_number rows=$rows_in_batch source_line=$line_number: psql produced no result."
+            log "BATCH_FAILED batch=$IMPORT_BATCH_NUMBER rows=$IMPORT_ROWS_IN_BATCH source_line=$IMPORT_LINE_NUMBER: psql produced no result."
             test -s "$result_file"; and cat -- "$result_file" >&2
-            rm -f -- "$result_file" "$batch_file"
+            rm -f -- "$result_file" "$IMPORT_BATCH_FILE"
             set -e CURRENT_BATCH_FILE
             return 1
         end
 
         set -l plan_line (string match -r '^BATCH_PLAN .*' <"$result_file")
         string match -q 'BATCH_COMMITTED' <"$result_file"; or begin
-            log "BATCH_FAILED batch=$batch_number: psql exited without the commit marker."
-            rm -f -- "$result_file" "$batch_file"
+            log "BATCH_FAILED batch=$IMPORT_BATCH_NUMBER: psql exited without the commit marker."
+            rm -f -- "$result_file" "$IMPORT_BATCH_FILE"
             set -e CURRENT_BATCH_FILE
             return 1
         end
 
-        set last_batch "$batch_number"
-        set completed_rows (math "$completed_rows + $rows_in_batch")
-        set line_number (math "$line_number + $rows_in_batch")
-        write_state "$state_file" "$csv_sha" "$csv_bytes" "$header_sha" "$last_batch" "$line_number" "$completed_rows"
-        log "BATCH_SUCCESS batch=$last_batch rows=$rows_in_batch completed_rows=$completed_rows next_source_line=$line_number $plan_line"
-        rm -f -- "$result_file" "$batch_file"
+        set -g IMPORT_LAST_BATCH "$IMPORT_BATCH_NUMBER"
+        set -g IMPORT_COMPLETED_ROWS (math "$IMPORT_COMPLETED_ROWS + $IMPORT_ROWS_IN_BATCH")
+        set -g IMPORT_LINE_NUMBER (math "$IMPORT_LINE_NUMBER + $IMPORT_ROWS_IN_BATCH")
+        write_state "$state_file" "$csv_sha" "$csv_bytes" "$header_sha" "$IMPORT_LAST_BATCH" "$IMPORT_LINE_NUMBER" "$IMPORT_COMPLETED_ROWS"
+        log "BATCH_SUCCESS batch=$IMPORT_LAST_BATCH rows=$IMPORT_ROWS_IN_BATCH completed_rows=$IMPORT_COMPLETED_ROWS next_source_line=$IMPORT_LINE_NUMBER $plan_line"
+        rm -f -- "$result_file" "$IMPORT_BATCH_FILE"
         set -e CURRENT_BATCH_FILE
-        set batch_number (math "$batch_number + 1")
-        set rows_in_batch 0
+        set -g IMPORT_BATCH_NUMBER (math "$IMPORT_BATCH_NUMBER + 1")
+        set -g IMPORT_ROWS_IN_BATCH 0
         return 0
     end
 
     while read -l row
-        if test "$rows_in_batch" -eq 0
+        if test "$IMPORT_ROWS_IN_BATCH" -eq 0
             in_tehran_window; or begin
-                log "WINDOW_CLOSED completed_rows=$completed_rows; resume manually on a later night."
+                log "WINDOW_CLOSED completed_rows=$IMPORT_COMPLETED_ROWS; resume manually on a later night."
                 exit 0
             end
             open_batch_file
         end
-        printf '%s\n' "$row" >>"$batch_file"; or die "Could not append batch file: $batch_file"
-        set rows_in_batch (math "$rows_in_batch + 1")
-        if test "$rows_in_batch" -eq "$BATCH_SIZE"
+        printf '%s\n' "$row" >>"$IMPORT_BATCH_FILE"; or die "Could not append batch file: $IMPORT_BATCH_FILE"
+        set -g IMPORT_ROWS_IN_BATCH (math "$IMPORT_ROWS_IN_BATCH + 1")
+        if test "$IMPORT_ROWS_IN_BATCH" -eq "$BATCH_SIZE"
             commit_batch; or exit $status
         end
     end
 
-    if test "$rows_in_batch" -gt 0
+    if test "$IMPORT_ROWS_IN_BATCH" -gt 0
         commit_batch; or exit $status
     end
-    log "IMPORT_COMPLETE batches=$last_batch rows=$completed_rows"
+    log "IMPORT_COMPLETE batches=$IMPORT_LAST_BATCH rows=$IMPORT_COMPLETED_ROWS"
 end
 
 set -l worker_status $pipestatus[-1]
