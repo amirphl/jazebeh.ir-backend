@@ -9,6 +9,9 @@
 
 set -Eeuo pipefail
 umask 077
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$script_dir/../guard-environment.sh"
+refuse_mock_production_operation
 
 STATS_ARGUMENT="${1:-}"
 REFERENCE_ARGUMENT="${2:-}"
@@ -85,6 +88,8 @@ readonly DOCKER
 
 [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$POSTGRES_CONTAINER" 2>/dev/null || true)" == true ]] ||
     die "PostgreSQL container is not running: $POSTGRES_CONTAINER"
+project="$("${DOCKER[@]}" inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$POSTGRES_CONTAINER")"
+[[ "$project" != yamata-staging ]] || die 'Refusing to import into the staging PostgreSQL container'
 for container in yamata-campaign-scheduler-beta yamata-app-beta; do
     if "${DOCKER[@]}" inspect "$container" >/dev/null 2>&1 &&
         [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$container")" == true ]]; then
