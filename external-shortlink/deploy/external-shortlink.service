@@ -9,7 +9,11 @@ User=external-shortlink
 Group=external-shortlink
 WorkingDirectory=/opt/external-shortlink
 EnvironmentFile=/etc/external-shortlink.env
-Environment=RUST_LOG=info
+Environment=RUST_LOG=info,sqlx=warn,tower_http=warn
+Environment=RUST_BACKTRACE=1
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=external-shortlink
 ExecStart=/opt/external-shortlink/bin/external-shortlink
 Restart=on-failure
 RestartSec=2s
