@@ -415,6 +415,12 @@ the audience-selection/allocation phase. It prevents a ready-campaign burst
 from starting unbounded simultaneous allocations; raise it only after
 monitoring lock waits and database headroom.
 
+`SMS_CAMPAIGN_BATCH_SEND_CONCURRENCY` controls the per-campaign SMS submission
+window (default `5`, valid range `1`–`5`). Candoo remains bounded by
+`CANDOO_SMS_MAX_REQUESTS_PER_SECOND`, which defaults to `20` (one request per
+50 ms); adjust that separate vendor limit only after confirming gateway
+capacity.
+
 If you specifically need to remove the old container object first, stop and remove only that service container, then start it again through Compose with `.env.beta`:
 
 ```bash
