@@ -50,6 +50,32 @@ COPY public.audience_profiles (id, uid) FROM stdin;
 
 
 class SentryForwarderTests(unittest.TestCase):
+    def test_staging_rejects_external_sentry(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "SENTRY_DSN": "https://key@example.com/1",
+                "SENTRY_ENVIRONMENT": "staging",
+            },
+            clear=True,
+        ):
+            with self.assertRaises(RuntimeError):
+                nginx_sentry_forwarder.SentryStoreClient()
+
+    def test_staging_accepts_internal_glitchtip_dsn(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "SENTRY_DSN": "http://key@sentry-beta:8000/sentry/1",
+                "SENTRY_ENVIRONMENT": "staging",
+            },
+            clear=True,
+        ):
+            client = nginx_sentry_forwarder.SentryStoreClient()
+        self.assertEqual(
+            client.store_url, "http://sentry-beta:8000/sentry/api/1/store/"
+        )
+
     def test_dsn_credentials_are_not_in_store_url(self):
         with mock.patch.dict(
             os.environ,
@@ -216,9 +242,10 @@ class UtilityConsistencyTests(unittest.TestCase):
             "password": "secret-password",
             "root_access_token": "",
         }
-        with mock.patch.object(resend_torobpay_sms, "PAYAM_SMS", config), mock.patch(
-            "urllib.request.urlopen", return_value=response
-        ) as urlopen:
+        with (
+            mock.patch.object(resend_torobpay_sms, "PAYAM_SMS", config),
+            mock.patch("urllib.request.urlopen", return_value=response) as urlopen,
+        ):
             self.assertEqual(resend_torobpay_sms.get_token(5), "token")
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "https://sms.example/token")
@@ -278,9 +305,7 @@ exit 1
     def test_routine_deploy_uses_read_only_schema_verification(self):
         _, _, deploy = self._paths()
         content = deploy.read_text(encoding="utf-8")
-        self.assertIn(
-            "apply-yamata-required-migrations.sh --verify-only", content
-        )
+        self.assertIn("apply-yamata-required-migrations.sh --verify-only", content)
 
     def test_routine_deploy_recreates_nginx_to_refresh_file_bind_mounts(self):
         _, _, deploy = self._paths()
@@ -336,9 +361,9 @@ exit 1
             Path(__file__).resolve().parents[1] / "scripts/check-yamata-production.sh"
         )
         content = production_check.read_text(encoding="utf-8")
-        required_health_checks = content.split(
-            "for container in \\\n", 2
-        )[2].split("done\n", 1)[0]
+        required_health_checks = content.split("for container in \\\n", 2)[2].split(
+            "done\n", 1
+        )[0]
         self.assertNotIn("yamata-nginx-sentry-forwarder-beta", required_health_checks)
         self.assertIn("Nginx errors may not reach Sentry", content)
 
