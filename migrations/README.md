@@ -77,7 +77,7 @@ database.
 It is appropriate for a known empty/disposable database; the manifest’s
 internal `ON_ERROR_STOP` supplies fail-fast behavior.
 
-### Existing beta deployment
+### Existing production deployment
 
 The production release path is
 [`scripts/deploy-production-beta.sh`](../scripts/deploy-production-beta.sh).
@@ -92,8 +92,9 @@ a database table and not independent proof of the database schema. The script
 sorts complete filenames, which correctly handles the duplicate ordinals.
 
 Do not delete or fabricate `.migration_tracker_beta`. If it is missing on a
-non-empty database, the initializer treats the run as a first migration and
-attempts the entire history. Stop and determine the real schema state instead.
+non-empty database, the initializer refuses to replay the history against that
+ambiguous state. Restore the tracker from operational records or follow the
+restored-database workflow instead.
 
 ### Restored production database
 
@@ -149,6 +150,13 @@ indexes and builds the high-volume audience eligibility index with
 `CONCURRENTLY`. It must run outside a transaction block. Monitor the concurrent
 index build and available disk; a failed build can leave an invalid index that
 must be inspected before retrying.
+
+### `0131`: PostgreSQL extensions
+
+This migration creates `pg_stat_statements` and `pgstattuple`, which can require
+superuser privileges. Creating `pg_stat_statements` is separate from enabling
+its server-wide preload and restarting PostgreSQL to query its statistics. For
+local setup and recovery instructions, see [Local development](../docs/DEVELOPMENT.md#postgresql-extensions-and-query-statistics).
 
 ### `0127`: normalized Bundle allocations
 
