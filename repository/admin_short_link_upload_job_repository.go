@@ -81,16 +81,12 @@ func (r *adminShortLinkUploadJobRepository) UpdateClaimed(ctx context.Context, j
 	return result.RowsAffected == 1, result.Error
 }
 
-// PersistAllocation commits all local rows and their progress counters in one
-// transaction. A failed batch can therefore never look like a complete
-// allocation on the next attempt.
+// PersistAllocation commits local rows and their progress counters together.
+// When the caller has already opened a transaction (as the UID allocator
+// does), it joins that transaction so the reservation, rows, and job progress
+// either all commit or all roll back.
 func (r *adminShortLinkUploadJobRepository) PersistAllocation(ctx context.Context, j *models.AdminShortLinkUploadJob, links []*models.ShortLink) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext('short_link_uid_allocation'))").Error; err != nil {
-				return err
-			}
-		}
+	persist := func(tx *gorm.DB) error {
 		if len(links) > 0 {
 			if err := tx.CreateInBatches(links, 500).Error; err != nil {
 				return err
@@ -98,7 +94,7 @@ func (r *adminShortLinkUploadJobRepository) PersistAllocation(ctx context.Contex
 		}
 		result := tx.Model(&models.AdminShortLinkUploadJob{}).
 			Where("id = ? AND lease_token = ?", j.ID, j.LeaseToken).
-			Updates(map[string]any{"total_rows": j.TotalRows, "created": len(links), "skipped": j.Skipped})
+			Updates(map[string]any{"total_rows": j.TotalRows, "created": j.Created, "skipped": j.Skipped})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -106,5 +102,9 @@ func (r *adminShortLinkUploadJobRepository) PersistAllocation(ctx context.Contex
 			return errors.New("upload job lease was lost while persisting allocation")
 		}
 		return nil
-	})
+	}
+	if tx, ok := ctx.Value(TxContextKey).(*gorm.DB); ok && tx != nil {
+		return persist(tx.WithContext(ctx))
+	}
+	return r.db.WithContext(ctx).Transaction(persist)
 }
