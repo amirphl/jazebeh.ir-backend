@@ -421,6 +421,7 @@ func (r *FiberRouter) SetupRoutes() {
 	adminLineNumbers.Get("/", r.lineNumberAdminHandler.ListLineNumbers)
 	adminLineNumbers.Post("/", r.lineNumberAdminHandler.CreateLineNumber)
 	adminLineNumbers.Put("/", r.lineNumberAdminHandler.UpdateLineNumbersBatch)
+	adminLineNumbers.Put("/price-factor", r.lineNumberAdminHandler.UpdateLineNumberPriceFactor)
 	adminLineNumbers.Get("/report", r.lineNumberAdminHandler.GetLineNumbersReport)
 
 	// Tickets
