@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_campaign_audience_report_jobs_customer_status;
