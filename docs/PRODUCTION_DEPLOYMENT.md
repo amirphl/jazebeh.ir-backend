@@ -71,7 +71,8 @@ chmod 600 .env.beta
 Replace all placeholders and review the complete variable groups in
 [`PRODUCTION_CONFIGURATION.md`](PRODUCTION_CONFIGURATION.md). The deployment
 loader rejects unresolved provisioning placeholders and symlinked environment
-files.
+files. Set `APP_ENV=production` and `EXTERNAL_SERVICES_MODE=live`; this pair is
+required by the production deployment and operational scripts.
 
 Production requires this worker split in `.env.beta`:
 
@@ -79,8 +80,11 @@ Production requires this worker split in `.env.beta`:
 CAMPAIGN_EXECUTION_ENABLED=false
 SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED=true
 SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED=true
+SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED=true
 SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS=1
 TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED=true
+BUNDLE_ACTION_FILE_SCHEDULER_ENABLED=true
+CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED=true
 SMART_TAG_EVALUATION_ENABLED=true
 SMART_TAG_EVALUATION_SCHEDULER_ENABLED=true
 SMART_TAG_EVALUATION_DAILY_LIMIT_PER_CUSTOMER=2
@@ -104,7 +108,8 @@ The wrapper performs these operations:
 1. validates `.env.beta` and the required worker ownership;
 2. validates pre-provisioned TLS certificates and renders nginx configuration;
 3. builds/starts the Compose dependencies;
-4. stops application writers and applies migrations through schema head `0128`;
+4. stops application writers and applies pending migrations through the current
+   checked-in manifest (currently `0170_add_bundle_action_file_staging_status.sql`);
 5. starts and health-checks `yamata-app-beta`;
 6. recreates `yamata-campaign-scheduler-beta` from the API image and effective
    environment, with campaign-only worker overrides;
@@ -128,7 +133,7 @@ docker logs --tail 100 yamata-campaign-scheduler-beta
 
 Expected worker settings:
 
-| Container | Campaign execution | Exact-capacity scheduler | Tag Test report scheduler | Smart-tag scheduler |
+| Container | Campaign execution | Capacity, Test, execution calculation | Reports, action files, refunds | Smart-tag / short-link sync |
 |---|---:|---:|---:|---:|
 | `yamata-app-beta` | `false` | `true` | `true` | `true` |
 | `yamata-campaign-scheduler-beta` | `true` | `false` | `false` | `false` |
