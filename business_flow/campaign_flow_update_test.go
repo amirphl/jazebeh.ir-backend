@@ -260,6 +260,17 @@ func TestBuildCampaignAudienceClickReportExcelUsesSingleSafeWorksheet(t *testing
 	}
 }
 
+func TestCampaignAudienceClickReportLimitIsWithinExcelAndSynchronousMemoryBudget(t *testing.T) {
+	t.Parallel()
+
+	if maxCampaignAudienceClickReportRows != 250_000 {
+		t.Fatalf("report row limit = %d, want 250000", maxCampaignAudienceClickReportRows)
+	}
+	if maxCampaignAudienceClickReportRows > maxExcelWorksheetDataRows {
+		t.Fatalf("report row limit = %d, exceeds Excel worksheet capacity %d", maxCampaignAudienceClickReportRows, maxExcelWorksheetDataRows)
+	}
+}
+
 func TestCalculatePartsDoesNotCapLongSMS(t *testing.T) {
 	t.Parallel()
 
