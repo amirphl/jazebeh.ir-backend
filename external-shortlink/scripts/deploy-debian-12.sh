@@ -21,6 +21,7 @@ readonly POSTGRES_ENV='/etc/external-shortlink-postgres.env'
 readonly COMPOSE_FILE="$INSTALL_DIR/app/deploy/postgres.compose.yml"
 readonly NGINX_SITE='/etc/nginx/sites-available/external-shortlink'
 readonly NGINX_ENABLED='/etc/nginx/sites-enabled/external-shortlink'
+readonly NGINX_LOG_FORMAT='/etc/nginx/conf.d/external-shortlink-log-format.conf'
 readonly NGINX_BOOTSTRAP_SITE='/etc/nginx/sites-available/external-shortlink-bootstrap'
 readonly NGINX_BOOTSTRAP_ENABLED='/etc/nginx/sites-enabled/external-shortlink-bootstrap'
 readonly ACME_WEBROOT='/var/www/external-shortlink-acme'
@@ -277,6 +278,8 @@ verify_source_tree() {
         deploy/postgres.compose.yml
         deploy/postgres-init/20-runtime-role.sh
         deploy/nginx.conf
+        deploy/monitoring-nginx.conf
+        deploy/nginx-log-format.conf
         deploy/nginx-bootstrap.conf
     )
     local file
@@ -637,6 +640,12 @@ install_release_files() {
     install -m 0644 "$SOURCE_DIR/deploy/postgres.compose.yml" "$INSTALL_DIR/app/deploy/postgres.compose.yml"
     install -m 0755 "$SOURCE_DIR/deploy/postgres-init/20-runtime-role.sh" "$INSTALL_DIR/app/deploy/postgres-init/20-runtime-role.sh"
     install -m 0644 "$SOURCE_DIR/deploy/nginx.conf" "$INSTALL_DIR/app/deploy/nginx.conf"
+    install -m 0644 "$SOURCE_DIR/deploy/monitoring-nginx.conf" "$INSTALL_DIR/app/deploy/monitoring-nginx.conf"
+    install -d -o root -g root -m 0755 /etc/nginx/snippets
+    if [[ ! -f /etc/nginx/snippets/external-shortlink-monitoring.conf ]]; then
+        install -m 0644 "$INSTALL_DIR/app/deploy/monitoring-nginx.conf" /etc/nginx/snippets/external-shortlink-monitoring.conf
+    fi
+    install -m 0644 "$SOURCE_DIR/deploy/nginx-log-format.conf" "$INSTALL_DIR/app/deploy/nginx-log-format.conf"
     install -m 0644 "$SOURCE_DIR/deploy/nginx-bootstrap.conf" "$INSTALL_DIR/app/deploy/nginx-bootstrap.conf"
     install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 /var/lib/external-shortlink
     install -d -o root -g root -m 0755 "$ACME_WEBROOT"
@@ -731,6 +740,7 @@ configure_nginx() {
         api_source_rule='allow all;'
         api_deny_rule='# No source-IP allowlist: authenticated API access is permitted from any address.'
     fi
+    install -o root -g root -m 0644 "$INSTALL_DIR/app/deploy/nginx-log-format.conf" "$NGINX_LOG_FORMAT"
     temporary="$(mktemp /etc/nginx/sites-available/.external-shortlink.XXXXXX)"
     sed \
         -e "s|# EXTERNAL_SHORTLINK_API_SOURCE_RULE|$api_source_rule|" \
