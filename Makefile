@@ -8,7 +8,7 @@ SHELL := /bin/bash
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  run            - Run the application with go run (loads .env)"
+	@echo "  run            - Run the application package (loads .env)"
 	@echo "  run-dev        - Run in development mode with race detection"
 	@echo "  run-debug      - Run with debug information and race detection"
 	@echo "  run-watch      - Run with file watching (auto-restart on changes)"
@@ -35,7 +35,9 @@ help:
 # Load environment variables from .env if it exists
 LOAD_ENV := if [ -f .env ]; then \
 				echo "Loading environment variables from .env file..."; \
+				set -a; \
 				source .env; \
+				set +a; \
 			else \
 				echo "Warning: .env file not found. Using default environment variables."; \
 			fi
@@ -51,17 +53,17 @@ LOAD_TEST_ENV := if [ -f test.env ]; then \
 # Run the application with go run and load .env file
 run:
 	@echo "Starting Yamata no Orochi application..."
-	@$(LOAD_ENV) && go run main.go
+	@$(LOAD_ENV) && go run .
 
 # Run in development mode with additional flags
 run-dev:
 	@echo "Starting Yamata no Orochi in development mode..."
-	@$(LOAD_ENV) && go run -race main.go
+	@$(LOAD_ENV) && go run -race .
 
 # Run with debug information
 run-debug:
 	@echo "Starting Yamata no Orochi with debug information..."
-	@$(LOAD_ENV) && go run -race -gcflags=all=-N -l main.go
+	@$(LOAD_ENV) && go run -race -gcflags='all=-N -l' .
 
 # Run with file watching (requires air)
 run-watch:
