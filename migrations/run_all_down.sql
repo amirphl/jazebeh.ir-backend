@@ -3,6 +3,9 @@
 
 \set ON_ERROR_STOP on
 
+\echo 'Running 0163_create_short_link_uid_allocator_down.sql...'
+\i migrations/0163_create_short_link_uid_allocator_down.sql
+
 \echo 'Running 0162_order_bundle_action_files_by_upload_time_down.sql...'
 \i migrations/0162_order_bundle_action_files_by_upload_time_down.sql
 
