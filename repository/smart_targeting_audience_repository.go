@@ -45,8 +45,22 @@ type SmartTargetingAudienceRepository interface {
 	CalculateCapacity(ctx context.Context, query SmartTargetingAudienceQuery) (*SmartTargetingAudienceCapacity, error)
 	SelectCandidates(ctx context.Context, query SmartTargetingAudienceQuery, limit int64) ([]*models.AudienceProfile, error)
 	CalculateScoreBounds(ctx context.Context, query SmartTargetingAudienceQuery) (*SmartTargetingScoreBounds, error)
-	SelectIDsForTag(ctx context.Context, query SmartTargetingAudienceQuery, bounds *SmartTargetingScoreBounds, tagID int64, excludeAudienceIDs []int64, limit int64) ([]int64, error)
-	SelectForTag(ctx context.Context, query SmartTargetingAudienceQuery, bounds *SmartTargetingScoreBounds, tagID int64, excludeAudienceIDs []int64, limit int64) ([]*models.AudienceProfile, error)
+	SelectIDsForTag(
+		ctx context.Context,
+		query SmartTargetingAudienceQuery,
+		bounds *SmartTargetingScoreBounds,
+		tagID int64,
+		excludeAudienceIDs []int64,
+		limit int64,
+	) ([]int64, error)
+	SelectForTag(
+		ctx context.Context,
+		query SmartTargetingAudienceQuery,
+		bounds *SmartTargetingScoreBounds,
+		tagID int64,
+		excludeAudienceIDs []int64,
+		limit int64,
+	) ([]*models.AudienceProfile, error)
 }
 
 type SmartTargetingAudienceCapacity struct {
@@ -230,7 +244,10 @@ func (q SmartTargetingAudienceQuery) valid() bool {
 		(q.Phase == SmartTargetingSelectionPhaseTest || q.Phase == SmartTargetingSelectionPhaseExecution)
 }
 
-func (r *smartTargetingAudienceRepository) CalculateCapacity(ctx context.Context, query SmartTargetingAudienceQuery) (*SmartTargetingAudienceCapacity, error) {
+func (r *smartTargetingAudienceRepository) CalculateCapacity(
+	ctx context.Context,
+	query SmartTargetingAudienceQuery,
+) (*SmartTargetingAudienceCapacity, error) {
 	if !query.valid() {
 		return nil, fmt.Errorf("invalid smart-targeting audience count query")
 	}
@@ -252,7 +269,11 @@ FROM classified`
 	return &capacity, err
 }
 
-func (r *smartTargetingAudienceRepository) SelectCandidates(ctx context.Context, query SmartTargetingAudienceQuery, limit int64) ([]*models.AudienceProfile, error) {
+func (r *smartTargetingAudienceRepository) SelectCandidates(
+	ctx context.Context,
+	query SmartTargetingAudienceQuery,
+	limit int64,
+) ([]*models.AudienceProfile, error) {
 	if !query.valid() || limit <= 0 {
 		return nil, fmt.Errorf("invalid smart-targeting audience selection query")
 	}
@@ -282,7 +303,10 @@ LIMIT ?`
 // CalculateScoreBounds computes the selected-tag union's exact p33/p66 once
 // per sampling operation. The former per-tag query rebuilt and sorted this
 // union for every selected tag.
-func (r *smartTargetingAudienceRepository) CalculateScoreBounds(ctx context.Context, query SmartTargetingAudienceQuery) (*SmartTargetingScoreBounds, error) {
+func (r *smartTargetingAudienceRepository) CalculateScoreBounds(
+	ctx context.Context,
+	query SmartTargetingAudienceQuery,
+) (*SmartTargetingScoreBounds, error) {
 	if !query.valid() {
 		return nil, fmt.Errorf("invalid smart-targeting score-bound query")
 	}
@@ -300,7 +324,14 @@ func (r *smartTargetingAudienceRepository) CalculateScoreBounds(ctx context.Cont
 // SelectIDsForTag remains available for count-only callers. Test preview
 // persistence uses SelectForTag so its immutable snapshot contains the exact
 // selected profile IDs and tag attribution.
-func (r *smartTargetingAudienceRepository) SelectIDsForTag(ctx context.Context, query SmartTargetingAudienceQuery, bounds *SmartTargetingScoreBounds, tagID int64, excludeAudienceIDs []int64, limit int64) ([]int64, error) {
+func (r *smartTargetingAudienceRepository) SelectIDsForTag(
+	ctx context.Context,
+	query SmartTargetingAudienceQuery,
+	bounds *SmartTargetingScoreBounds,
+	tagID int64,
+	excludeAudienceIDs []int64,
+	limit int64,
+) ([]int64, error) {
 	sql, args, err := smartTargetingPerTagSelectionQuery(query, bounds, tagID, excludeAudienceIDs, limit, true)
 	if err != nil {
 		return nil, err
@@ -319,7 +350,14 @@ func (r *smartTargetingAudienceRepository) SelectIDsForTag(ctx context.Context, 
 // random and is not reproducible. ORDER BY random() is deliberately avoided
 // because it is prohibitively expensive at the current population size; replace
 // this with a performant indexed or seeded sampling strategy.
-func (r *smartTargetingAudienceRepository) SelectForTag(ctx context.Context, query SmartTargetingAudienceQuery, bounds *SmartTargetingScoreBounds, tagID int64, excludeAudienceIDs []int64, limit int64) ([]*models.AudienceProfile, error) {
+func (r *smartTargetingAudienceRepository) SelectForTag(
+	ctx context.Context,
+	query SmartTargetingAudienceQuery,
+	bounds *SmartTargetingScoreBounds,
+	tagID int64,
+	excludeAudienceIDs []int64,
+	limit int64,
+) ([]*models.AudienceProfile, error) {
 	sql, args, err := smartTargetingPerTagSelectionQuery(query, bounds, tagID, excludeAudienceIDs, limit, false)
 	if err != nil {
 		return nil, err
@@ -372,7 +410,12 @@ FROM (
         AND execution_reserved.state = 'active'
 		AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
   )`
-	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	args = append(
+		args,
+		query.BundleID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+	)
 	sql += `
       AND NOT EXISTS (
           SELECT 1
@@ -384,7 +427,12 @@ FROM (
             AND execution_calculation.status = 'committed'
 			AND (?::bigint = 0 OR execution_calculation.campaign_id <> ?)
       )`
-	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	args = append(
+		args,
+		query.BundleID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+	)
 	sql += `
       AND NOT EXISTS (
           SELECT 1
@@ -398,7 +446,14 @@ FROM (
 	return sql, args
 }
 
-func smartTargetingPerTagSelectionQuery(query SmartTargetingAudienceQuery, bounds *SmartTargetingScoreBounds, tagID int64, excludeAudienceIDs []int64, limit int64, idsOnly bool) (string, []any, error) {
+func smartTargetingPerTagSelectionQuery(
+	query SmartTargetingAudienceQuery,
+	bounds *SmartTargetingScoreBounds,
+	tagID int64,
+	excludeAudienceIDs []int64,
+	limit int64,
+	idsOnly bool,
+) (string, []any, error) {
 	if !query.valid() || tagID <= 0 || limit <= 0 {
 		return "", nil, fmt.Errorf("invalid smart-targeting per-tag sample query")
 	}
@@ -455,7 +510,12 @@ WHERE ap.tags @> ARRAY[?]::integer[]
         AND execution_reserved.state = 'active'
 		AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
   )`
-	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	args = append(
+		args,
+		query.BundleID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+	)
 	sql += `
   AND NOT EXISTS (
       SELECT 1
@@ -467,7 +527,12 @@ WHERE ap.tags @> ARRAY[?]::integer[]
         AND execution_calculation.status = 'committed'
 		AND (?::bigint = 0 OR execution_calculation.campaign_id <> ?)
   )`
-	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	args = append(
+		args,
+		query.BundleID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+	)
 	sql += `
   AND NOT EXISTS (
       SELECT 1

@@ -74,7 +74,12 @@ func (r *depositReceiptRepository) ByUUID(ctx context.Context, uuid string) (*mo
 	return &rec, nil
 }
 
-func (r *depositReceiptRepository) List(ctx context.Context, f models.DepositReceiptFilter, limit, offset int, order string) ([]*models.DepositReceipt, error) {
+func (r *depositReceiptRepository) List(
+	ctx context.Context,
+	f models.DepositReceiptFilter,
+	limit, offset int,
+	order string,
+) ([]*models.DepositReceipt, error) {
 	q := r.db.WithContext(ctx).Model(&models.DepositReceipt{})
 	if f.CustomerID != nil {
 		q = q.Where("customer_id = ?", *f.CustomerID)

@@ -62,7 +62,11 @@ func (r *BalanceSnapshotRepositoryImpl) ByCorrelationID(ctx context.Context, cor
 }
 
 // ByWalletID finds balance snapshots by wallet ID
-func (r *BalanceSnapshotRepositoryImpl) ByWalletID(ctx context.Context, walletID uint, limit, offset int) ([]*models.BalanceSnapshot, error) {
+func (r *BalanceSnapshotRepositoryImpl) ByWalletID(
+	ctx context.Context,
+	walletID uint,
+	limit, offset int,
+) ([]*models.BalanceSnapshot, error) {
 	db := r.getDB(ctx)
 	var snapshots []*models.BalanceSnapshot
 
@@ -82,7 +86,11 @@ func (r *BalanceSnapshotRepositoryImpl) ByWalletID(ctx context.Context, walletID
 }
 
 // ByCustomerID finds balance snapshots by customer ID
-func (r *BalanceSnapshotRepositoryImpl) ByCustomerID(ctx context.Context, customerID uint, limit, offset int) ([]*models.BalanceSnapshot, error) {
+func (r *BalanceSnapshotRepositoryImpl) ByCustomerID(
+	ctx context.Context,
+	customerID uint,
+	limit, offset int,
+) ([]*models.BalanceSnapshot, error) {
 	db := r.getDB(ctx)
 	var snapshots []*models.BalanceSnapshot
 
@@ -118,7 +126,11 @@ func (r *BalanceSnapshotRepositoryImpl) GetLatestByWalletID(ctx context.Context,
 }
 
 // GetLatestByWalletIDBeforeTime gets the latest balance snapshot for a wallet before a specific time
-func (r *BalanceSnapshotRepositoryImpl) GetLatestByWalletIDBeforeTime(ctx context.Context, walletID uint, timestamp time.Time) (*models.BalanceSnapshot, error) {
+func (r *BalanceSnapshotRepositoryImpl) GetLatestByWalletIDBeforeTime(
+	ctx context.Context,
+	walletID uint,
+	timestamp time.Time,
+) (*models.BalanceSnapshot, error) {
 	db := r.getDB(ctx)
 	var snapshot models.BalanceSnapshot
 	err := db.Where("wallet_id = ? AND created_at <= ?", walletID, timestamp).
@@ -134,7 +146,12 @@ func (r *BalanceSnapshotRepositoryImpl) GetLatestByWalletIDBeforeTime(ctx contex
 }
 
 // ByFilter retrieves balance snapshots based on filter criteria
-func (r *BalanceSnapshotRepositoryImpl) ByFilter(ctx context.Context, filter models.BalanceSnapshotFilter, orderBy string, limit, offset int) ([]*models.BalanceSnapshot, error) {
+func (r *BalanceSnapshotRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.BalanceSnapshotFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.BalanceSnapshot, error) {
 	db := r.getDB(ctx)
 	var snapshots []*models.BalanceSnapshot
 

@@ -49,7 +49,9 @@ import (
 
 var (
 	databaseLogURLPattern   = regexp.MustCompile(`(?i)postgres(?:ql)?://[^\s]+`)
-	databaseLogFieldPattern = regexp.MustCompile(`(?i)\b(user(?:name)?|password|dbname|database|host|port)\s*=\s*(?:'[^']*'|"[^"]*"|\x60[^\x60]*\x60|[^\s,;:)\x60]+)`)
+	databaseLogFieldPattern = regexp.MustCompile(
+		`(?i)\b(user(?:name)?|password|dbname|database|host|port)\s*=\s*(?:'[^']*'|"[^"]*"|\x60[^\x60]*\x60|[^\s,;:)\x60]+)`,
+	)
 )
 
 // redactingLogWriter prevents database driver diagnostics from leaking
@@ -104,8 +106,18 @@ func newDBStatsCollector(db *sql.DB, name string) *dbStatsCollector {
 		waitC: prometheus.NewDesc(ns+"_wait_count_total", "The total number of connections waited for.", labels, nil),
 		waitD: prometheus.NewDesc(ns+"_wait_duration_seconds_total", "The total time blocked waiting for a new connection.", labels, nil),
 		maxOC: prometheus.NewDesc(ns+"_max_open_connections", "Maximum number of open connections to the database.", labels, nil),
-		maxIC: prometheus.NewDesc(ns+"_max_idle_closed_total", "The total number of connections closed due to SetMaxIdleConns.", labels, nil),
-		maxLC: prometheus.NewDesc(ns+"_max_lifetime_closed_total", "The total number of connections closed due to SetConnMaxLifetime.", labels, nil),
+		maxIC: prometheus.NewDesc(
+			ns+"_max_idle_closed_total",
+			"The total number of connections closed due to SetMaxIdleConns.",
+			labels,
+			nil,
+		),
+		maxLC: prometheus.NewDesc(
+			ns+"_max_lifetime_closed_total",
+			"The total number of connections closed due to SetConnMaxLifetime.",
+			labels,
+			nil,
+		),
 	}
 }
 
@@ -762,22 +774,56 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	shortLinkVisitFlow := businessflow.NewShortLinkVisitFlow(shortLinkRepo, shortLinkClickRepo)
 
 	// Admin short-links flows and handler
-	adminShortLinkFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, db, shortLinkPublishers...)
-	adminShortLinkDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, db, shortLinkPublishers...)
-	adminShortLinkClicksDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, db, shortLinkPublishers...)
+	adminShortLinkFlow := businessflow.NewAdminShortLinkFlow(
+		shortLinkRepo,
+		shortLinkClickRepo,
+		auditRepo,
+		adminShortLinkUploadJobRepo,
+		db,
+		shortLinkPublishers...)
+	adminShortLinkDownloadFlow := businessflow.NewAdminShortLinkFlow(
+		shortLinkRepo,
+		shortLinkClickRepo,
+		auditRepo,
+		adminShortLinkUploadJobRepo,
+		db,
+		shortLinkPublishers...)
+	adminShortLinkClicksDownloadFlow := businessflow.NewAdminShortLinkFlow(
+		shortLinkRepo,
+		shortLinkClickRepo,
+		auditRepo,
+		adminShortLinkUploadJobRepo,
+		db,
+		shortLinkPublishers...)
 
 	// Profile flow
 	profileFlow := businessflow.NewProfileFlow(customerRepo)
 
 	segmentPriceFactorFlow := businessflow.NewSegmentPriceFactorFlow(segmentPriceFactorRepo, audienceSpecRepo)
-	campaignAudienceReportJobFlow := businessflow.NewCampaignAudienceReportJobFlow(campaignAudienceReportJobRepo, campaignRepo, customerRepo, auditRepo, db, cfg.Scheduler.CampaignAudienceReportStorageRoot, cfg.Scheduler.CampaignAudienceReportMaxRows, cfg.Scheduler.CampaignAudienceReportMaxOutputBytes, cfg.Scheduler.CampaignAudienceReportMaxJobsPerCustomer)
+	campaignAudienceReportJobFlow := businessflow.NewCampaignAudienceReportJobFlow(
+		campaignAudienceReportJobRepo,
+		campaignRepo,
+		customerRepo,
+		auditRepo,
+		db,
+		cfg.Scheduler.CampaignAudienceReportStorageRoot,
+		cfg.Scheduler.CampaignAudienceReportMaxRows,
+		cfg.Scheduler.CampaignAudienceReportMaxOutputBytes,
+		cfg.Scheduler.CampaignAudienceReportMaxJobsPerCustomer,
+	)
 
 	accessControlFlow := businessflow.NewAccessControlFlow(adminRepo, repository.NewACLChangeRequestRepository(db), auditRepo)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(signupFlow, loginFlow)
 	bundleHandler := handlers.NewBundleHandler(bundleFlow, bundleTagEvaluationFlow, bundleActionFlow)
-	campaignHandler := handlers.NewCampaignHandler(campaignFlow, smartTargetingFlow, smartTargetingCapacityFlow, bundleActionFlow, campaignAudienceReportJobFlow)
+	campaignHandler := handlers.NewCampaignHandler(
+		campaignFlow,
+		smartTargetingFlow,
+		smartTargetingCapacityFlow,
+		bundleActionFlow,
+		campaignAudienceReportJobFlow,
+	)
 	paymentHandler := handlers.NewPaymentHandler(paymentFlow)
 	paymentAdminHandler := handlers.NewPaymentAdminHandler(paymentAdminFlow)
 	cryptoPaymentHandler := handlers.NewCryptoPaymentHandler(cryptoPaymentFlow, cfg)
@@ -791,7 +837,11 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	campaignBotHandler := handlers.NewCampaignBotHandler(botCampaignFlow)
 	shortLinkBotHandler := handlers.NewShortLinkBotHandler(botShortLinkFlow)
 	shortLinkHandler := handlers.NewShortLinkHandler(shortLinkVisitFlow)
-	shortLinkAdminHandler := handlers.NewShortLinkAdminHandler(adminShortLinkFlow, adminShortLinkDownloadFlow, adminShortLinkClicksDownloadFlow)
+	shortLinkAdminHandler := handlers.NewShortLinkAdminHandler(
+		adminShortLinkFlow,
+		adminShortLinkDownloadFlow,
+		adminShortLinkClicksDownloadFlow,
+	)
 
 	ticketHandler := handlers.NewTicketHandler(ticketFlow)
 	multimediaHandler := handlers.NewMultimediaHandler(multimediaFlow)
@@ -1080,7 +1130,14 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	}
 
 	if cfg.Scheduler.CampaignAudienceReportSchedulerEnabled {
-		reportScheduler := scheduler.NewCampaignAudienceReportScheduler(campaignAudienceReportJobFlow, log.Default(), cfg.Scheduler.CampaignAudienceReportSchedulerInterval, cfg.Scheduler.CampaignAudienceReportJobTimeout, cfg.Scheduler.CampaignAudienceReportLeaseDuration, cfg.Scheduler.CampaignAudienceReportMaxParallelRuns)
+		reportScheduler := scheduler.NewCampaignAudienceReportScheduler(
+			campaignAudienceReportJobFlow,
+			log.Default(),
+			cfg.Scheduler.CampaignAudienceReportSchedulerInterval,
+			cfg.Scheduler.CampaignAudienceReportJobTimeout,
+			cfg.Scheduler.CampaignAudienceReportLeaseDuration,
+			cfg.Scheduler.CampaignAudienceReportMaxParallelRuns,
+		)
 		stopFuncs = append(stopFuncs, reportScheduler.Start(context.Background()))
 	}
 

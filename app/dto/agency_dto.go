@@ -4,8 +4,8 @@ import "time"
 
 type AgencyCustomerReportFilter struct {
 	StartDate *string `json:"start_date,omitempty" validate:"omitempty"`
-	EndDate   *string `json:"end_date,omitempty" validate:"omitempty"`
-	Name      *string `json:"name,omitempty" validate:"omitempty,max=255"`
+	EndDate   *string `json:"end_date,omitempty"   validate:"omitempty"`
+	Name      *string `json:"name,omitempty"       validate:"omitempty,max=255"`
 }
 
 type AgencyCustomerReportRequest struct {
@@ -61,7 +61,7 @@ type ListAgencyCustomerDiscountsRequest struct {
 type AgencyCustomerDiscountItem struct {
 	DiscountRate       float64    `json:"discount_rate"`
 	CreatedAt          time.Time  `json:"created_at"`
-	ExpiresAt          *time.Time `json:"expires_at,omitempty" validate:"omitempty"`
+	ExpiresAt          *time.Time `json:"expires_at,omitempty"  validate:"omitempty"`
 	TotalSent          uint64     `json:"total_sent"`
 	AgencyShareWithTax uint64     `json:"agency_share_with_tax"`
 }
@@ -73,8 +73,8 @@ type ListAgencyCustomerDiscountsResponse struct {
 
 type CreateAgencyDiscountRequest struct {
 	AgencyID     uint    `json:"-"`
-	CustomerID   uint    `json:"customer_id" validate:"required,min=1"`
-	Name         string  `json:"name" validate:"required,min=1,max=255"`
+	CustomerID   uint    `json:"customer_id"   validate:"required,min=1"`
+	Name         string  `json:"name"          validate:"required,min=1,max=255"`
 	DiscountRate float64 `json:"discount_rate" validate:"gte=0,lte=0.5"`
 }
 
@@ -91,7 +91,7 @@ type AgencyCustomerItem struct {
 	CustomerID              uint      `json:"customer_id"`
 	RepresentativeFirstName string    `json:"representative_first_name"`
 	RepresentativeLastName  string    `json:"representative_last_name"`
-	CompanyName             *string   `json:"company_name,omitempty" validate:"omitempty"`
+	CompanyName             *string   `json:"company_name,omitempty"    validate:"omitempty"`
 	CreatedAt               time.Time `json:"created_at"`
 	IsActive                *bool     `json:"is_active"`
 }

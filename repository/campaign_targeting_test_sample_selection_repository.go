@@ -14,7 +14,9 @@ import (
 
 var (
 	ErrSmartTargetingTestSelectionUnavailable = errors.New("smart targeting test sample selection is unavailable")
-	ErrSmartTargetingTestSelectionConflict    = errors.New("smart targeting test sample selection conflicts with current bundle availability")
+	ErrSmartTargetingTestSelectionConflict    = errors.New(
+		"smart targeting test sample selection conflicts with current bundle availability",
+	)
 )
 
 const testSampleSelectionAvailabilityQuery = `
@@ -92,9 +94,14 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) getDB(ctx context.C
 	return r.db.WithContext(ctx)
 }
 
-func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) Save(ctx context.Context, selection *models.CampaignTargetingTestSampleSelection) error {
-	if selection == nil || selection.CalculationID <= 0 || selection.CampaignID == 0 || selection.BundleID == 0 || selection.Generation <= 0 ||
-		selection.EffectiveAudienceCount < 0 || int64(len(selection.Members)) != selection.EffectiveAudienceCount {
+func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) Save(
+	ctx context.Context,
+	selection *models.CampaignTargetingTestSampleSelection,
+) error {
+	if selection == nil || selection.CalculationID <= 0 || selection.CampaignID == 0 || selection.BundleID == 0 ||
+		selection.Generation <= 0 ||
+		selection.EffectiveAudienceCount < 0 ||
+		int64(len(selection.Members)) != selection.EffectiveAudienceCount {
 		return ErrSmartTargetingTestSelectionUnavailable
 	}
 	seen := make(map[int64]struct{}, len(selection.Members))
@@ -124,7 +131,10 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) Save(ctx context.Co
 	return nil
 }
 
-func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ByID(ctx context.Context, id int64) (*models.CampaignTargetingTestSampleSelection, error) {
+func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ByID(
+	ctx context.Context,
+	id int64,
+) (*models.CampaignTargetingTestSampleSelection, error) {
 	if id <= 0 {
 		return nil, nil
 	}
@@ -141,7 +151,10 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ByID(ctx context.Co
 	return &selection, nil
 }
 
-func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ByCalculationID(ctx context.Context, calculationID int64) (*models.CampaignTargetingTestSampleSelection, error) {
+func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ByCalculationID(
+	ctx context.Context,
+	calculationID int64,
+) (*models.CampaignTargetingTestSampleSelection, error) {
 	if calculationID <= 0 {
 		return nil, nil
 	}
@@ -158,7 +171,10 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ByCalculationID(ctx
 	return &selection, nil
 }
 
-func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) loadMembers(ctx context.Context, selection *models.CampaignTargetingTestSampleSelection) error {
+func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) loadMembers(
+	ctx context.Context,
+	selection *models.CampaignTargetingTestSampleSelection,
+) error {
 	if selection == nil {
 		return ErrSmartTargetingTestSelectionUnavailable
 	}
@@ -169,7 +185,8 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) loadMembers(ctx con
 // the caller holds the Bundle UPDATE lock. It never turns preview history into
 // a permanent bundle allocation; cancellation can release these rows.
 func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReserveForCampaign(ctx context.Context, campaign *models.Campaign) error {
-	if campaign == nil || campaign.ID == 0 || campaign.BundleID == nil || *campaign.BundleID == 0 || campaign.ActiveSmartTargetingTestSelectionID == nil {
+	if campaign == nil || campaign.ID == 0 || campaign.BundleID == nil || *campaign.BundleID == 0 ||
+		campaign.ActiveSmartTargetingTestSelectionID == nil {
 		return ErrSmartTargetingTestSelectionUnavailable
 	}
 	selection, err := r.ByID(ctx, *campaign.ActiveSmartTargetingTestSelectionID)
@@ -231,7 +248,11 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReserveForCampaign(
 	return nil
 }
 
-func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ActiveReservedForCampaign(ctx context.Context, campaignID uint, selectionID int64) (*models.CampaignTargetingTestSampleSelection, error) {
+func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ActiveReservedForCampaign(
+	ctx context.Context,
+	campaignID uint,
+	selectionID int64,
+) (*models.CampaignTargetingTestSampleSelection, error) {
 	if _, err := transactionForLock(ctx); err != nil {
 		return nil, err
 	}
@@ -268,7 +289,12 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ActiveReservedForCa
 // Materialize atomically promotes every active reservation in a previously
 // locked snapshot. A partial or already released transition must fail so its
 // enclosing transaction rolls back the permanent bundle allocation.
-func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) Materialize(ctx context.Context, campaignID uint, selectionID int64, expectedMembers int64) error {
+func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) Materialize(
+	ctx context.Context,
+	campaignID uint,
+	selectionID int64,
+	expectedMembers int64,
+) error {
 	if expectedMembers <= 0 {
 		return ErrSmartTargetingTestSelectionUnavailable
 	}

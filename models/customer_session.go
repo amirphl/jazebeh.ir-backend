@@ -10,20 +10,20 @@ import (
 )
 
 type CustomerSession struct {
-	ID             uint            `gorm:"primaryKey" json:"id"`
-	CorrelationID  uuid.UUID       `gorm:"type:uuid;not null;index:idx_sessions_correlation_id" json:"correlation_id"` // Groups related session records
-	CustomerID     uint            `gorm:"not null;index:idx_sessions_customer_id" json:"customer_id"`
-	Customer       Customer        `gorm:"foreignKey:CustomerID;references:ID" json:"customer,omitempty"`
-	SessionToken   string          `gorm:"size:255;not null;uniqueIndex:idx_sessions_session_token" json:"-"` // Never serialize token
-	RefreshToken   *string         `gorm:"size:255;uniqueIndex:idx_sessions_refresh_token" json:"-"`          // Never serialize refresh token
-	DeviceInfo     json.RawMessage `gorm:"type:jsonb" json:"device_info,omitempty"`
-	IPAddress      *string         `gorm:"type:inet;index:idx_sessions_ip_address" json:"ip_address,omitempty"`
-	UserAgent      *string         `gorm:"type:text" json:"user_agent,omitempty"`
-	IsActive       *bool           `gorm:"default:true;index:idx_sessions_is_active" json:"is_active"`
-	CreatedAt      time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"created_at"`
-	UpdatedAt      time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"updated_at"`
+	ID             uint            `gorm:"primaryKey"                                                                      json:"id"`
+	CorrelationID  uuid.UUID       `gorm:"type:uuid;not null;index:idx_sessions_correlation_id"                            json:"correlation_id"` // Groups related session records
+	CustomerID     uint            `gorm:"not null;index:idx_sessions_customer_id"                                         json:"customer_id"`
+	Customer       Customer        `gorm:"foreignKey:CustomerID;references:ID"                                             json:"customer,omitempty"`
+	SessionToken   string          `gorm:"size:255;not null;uniqueIndex:idx_sessions_session_token"                        json:"-"` // Never serialize token
+	RefreshToken   *string         `gorm:"size:255;uniqueIndex:idx_sessions_refresh_token"                                 json:"-"` // Never serialize refresh token
+	DeviceInfo     json.RawMessage `gorm:"type:jsonb"                                                                      json:"device_info,omitempty"`
+	IPAddress      *string         `gorm:"type:inet;index:idx_sessions_ip_address"                                         json:"ip_address,omitempty"`
+	UserAgent      *string         `gorm:"type:text"                                                                       json:"user_agent,omitempty"`
+	IsActive       *bool           `gorm:"default:true;index:idx_sessions_is_active"                                       json:"is_active"`
+	CreatedAt      time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"                                  json:"created_at"`
+	UpdatedAt      time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"                                  json:"updated_at"`
 	LastAccessedAt time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC');index:idx_sessions_last_accessed" json:"last_accessed_at"`
-	ExpiresAt      time.Time       `gorm:"not null;index:idx_sessions_expires_at" json:"expires_at"`
+	ExpiresAt      time.Time       `gorm:"not null;index:idx_sessions_expires_at"                                          json:"expires_at"`
 }
 
 func (CustomerSession) TableName() string {

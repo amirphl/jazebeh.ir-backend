@@ -294,7 +294,12 @@ func (r *ShortLinkRepositoryImpl) applyFilter(db *gorm.DB, f models.ShortLinkFil
 	return db
 }
 
-func (r *ShortLinkRepositoryImpl) ByFilter(ctx context.Context, filter models.ShortLinkFilter, orderBy string, limit, offset int) ([]*models.ShortLink, error) {
+func (r *ShortLinkRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.ShortLinkFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.ShortLink, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.ShortLink{}), filter)
 	if orderBy != "" {
@@ -331,7 +336,11 @@ func (r *ShortLinkRepositoryImpl) Exists(ctx context.Context, filter models.Shor
 	return c > 0, nil
 }
 
-func (r *ShortLinkRepositoryImpl) ListByScenarioWithClicks(ctx context.Context, scenarioID uint, orderBy string) ([]*models.ShortLink, error) {
+func (r *ShortLinkRepositoryImpl) ListByScenarioWithClicks(
+	ctx context.Context,
+	scenarioID uint,
+	orderBy string,
+) ([]*models.ShortLink, error) {
 	db := realShortLinkClickTraffic(r.getDB(ctx))
 	query := db.Table("short_link_clicks").
 		Select(`DISTINCT ON (short_link_id)
@@ -356,7 +365,11 @@ func (r *ShortLinkRepositoryImpl) ListByScenarioWithClicks(ctx context.Context, 
 	return rows, nil
 }
 
-func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenario(ctx context.Context, scenarioID uint, orderBy string) ([]*ShortLinkWithClick, error) {
+func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenario(
+	ctx context.Context,
+	scenarioID uint,
+	orderBy string,
+) ([]*ShortLinkWithClick, error) {
 	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,
@@ -381,7 +394,11 @@ func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenario(ctx context.Co
 	return out, nil
 }
 
-func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioRange(ctx context.Context, scenarioFrom, scenarioTo uint, orderBy string) ([]*ShortLinkWithClick, error) {
+func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioRange(
+	ctx context.Context,
+	scenarioFrom, scenarioTo uint,
+	orderBy string,
+) ([]*ShortLinkWithClick, error) {
 	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,
@@ -406,7 +423,11 @@ func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioRange(ctx conte
 	return out, nil
 }
 
-func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameRegex(ctx context.Context, pattern string, orderBy string) ([]*ShortLinkWithClick, error) {
+func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameRegex(
+	ctx context.Context,
+	pattern string,
+	orderBy string,
+) ([]*ShortLinkWithClick, error) {
 	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,
@@ -431,7 +452,11 @@ func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameRegex(ctx c
 	return out, nil
 }
 
-func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameLike(ctx context.Context, pattern string, orderBy string) ([]*ShortLinkWithClick, error) {
+func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameLike(
+	ctx context.Context,
+	pattern string,
+	orderBy string,
+) ([]*ShortLinkWithClick, error) {
 	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,

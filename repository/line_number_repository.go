@@ -103,7 +103,12 @@ func (r *LineNumberRepositoryImpl) applyFilter(query *gorm.DB, filter models.Lin
 }
 
 // ByFilter retrieves line numbers based on filter criteria
-func (r *LineNumberRepositoryImpl) ByFilter(ctx context.Context, filter models.LineNumberFilter, orderBy string, limit, offset int) ([]*models.LineNumber, error) {
+func (r *LineNumberRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.LineNumberFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.LineNumber, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.LineNumber{})
 

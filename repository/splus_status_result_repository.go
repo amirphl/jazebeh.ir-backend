@@ -25,18 +25,18 @@ type SplusStatusAggregates struct {
 }
 
 type SplusTrackingResult struct {
-	AudienceProfileUID    *string         `json:"audienceProfileUID" gorm:"column:audience_profile_uid"`
-	PhoneNumber           string          `json:"phoneNumber" gorm:"column:phone_number"`
-	TrackingID            string          `json:"trackingID" gorm:"column:tracking_id"`
-	TotalParts            *int64          `json:"totalParts" gorm:"column:total_parts"`
-	TotalDeliveredParts   *int64          `json:"totalDeliveredParts" gorm:"column:total_delivered_parts"`
+	AudienceProfileUID    *string         `json:"audienceProfileUID"    gorm:"column:audience_profile_uid"`
+	PhoneNumber           string          `json:"phoneNumber"           gorm:"column:phone_number"`
+	TrackingID            string          `json:"trackingID"            gorm:"column:tracking_id"`
+	TotalParts            *int64          `json:"totalParts"            gorm:"column:total_parts"`
+	TotalDeliveredParts   *int64          `json:"totalDeliveredParts"   gorm:"column:total_delivered_parts"`
 	TotalUndeliveredParts *int64          `json:"totalUndeliveredParts" gorm:"column:total_undelivered_parts"`
-	TotalUnknownParts     *int64          `json:"totalUnknownParts" gorm:"column:total_unknown_parts"`
-	Status                *string         `json:"status" gorm:"column:status"`
-	ServerID              *string         `json:"serverID,omitempty" gorm:"column:server_id"`
-	ErrorCode             *string         `json:"errorCode,omitempty" gorm:"column:error_code"`
+	TotalUnknownParts     *int64          `json:"totalUnknownParts"     gorm:"column:total_unknown_parts"`
+	Status                *string         `json:"status"                gorm:"column:status"`
+	ServerID              *string         `json:"serverID,omitempty"    gorm:"column:server_id"`
+	ErrorCode             *string         `json:"errorCode,omitempty"   gorm:"column:error_code"`
 	Description           *string         `json:"description,omitempty" gorm:"column:description"`
-	Metadata              json.RawMessage `json:"metadata" gorm:"column:metadata;type:jsonb"`
+	Metadata              json.RawMessage `json:"metadata"              gorm:"column:metadata;type:jsonb"`
 }
 
 func NewSplusStatusResultRepository(db *gorm.DB) SplusStatusResultRepository {
@@ -99,7 +99,12 @@ func (r *SplusStatusResultRepositoryImpl) SaveBatch(ctx context.Context, rows []
 }
 
 // ByFilter: no filter fields, just order/limit/offset.
-func (r *SplusStatusResultRepositoryImpl) ByFilter(ctx context.Context, _ any, orderBy string, limit, offset int) ([]*models.SplusStatusResult, error) {
+func (r *SplusStatusResultRepositoryImpl) ByFilter(
+	ctx context.Context,
+	_ any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SplusStatusResult, error) {
 	db := r.getDB(ctx)
 	if orderBy != "" {
 		db = db.Order(orderBy)
@@ -126,7 +131,10 @@ func (r *SplusStatusResultRepositoryImpl) Count(ctx context.Context, _ any) (int
 	return count, nil
 }
 
-func (r *SplusStatusResultRepositoryImpl) AggregateByCampaign(ctx context.Context, processedCampaignID uint) (*SplusStatusAggregates, error) {
+func (r *SplusStatusResultRepositoryImpl) AggregateByCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+) (*SplusStatusAggregates, error) {
 	// TODO: Aggregate on status too.
 	// TODO: Query optimization: maintain a summary table updated on insert instead of aggregating on the fly.
 	db := r.getDB(ctx)
@@ -146,7 +154,10 @@ func (r *SplusStatusResultRepositoryImpl) AggregateByCampaign(ctx context.Contex
 	return &agg, nil
 }
 
-func (r *SplusStatusResultRepositoryImpl) TrackingResultsByCampaign(ctx context.Context, processedCampaignID uint) ([]SplusTrackingResult, error) {
+func (r *SplusStatusResultRepositoryImpl) TrackingResultsByCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]SplusTrackingResult, error) {
 	db := r.getDB(ctx)
 	trackingResults := make([]SplusTrackingResult, 0)
 	if err := db.Table("splus_status_results AS ssr").

@@ -33,7 +33,10 @@ func TestReserveTestSampleSelectionChecksCompositeKeyBundleExclusions(t *testing
 		t.Fatalf("reservation availability query must test the exclusion composite key:\n%s", testSampleSelectionAvailabilityQuery)
 	}
 	if strings.Contains(testSampleSelectionAvailabilityQuery, "excluded.id IS NOT NULL") {
-		t.Fatalf("reservation availability query references nonexistent bundle exclusion id column:\n%s", testSampleSelectionAvailabilityQuery)
+		t.Fatalf(
+			"reservation availability query references nonexistent bundle exclusion id column:\n%s",
+			testSampleSelectionAvailabilityQuery,
+		)
 	}
 }
 
@@ -48,11 +51,18 @@ func TestReserveTestSampleSelectionRechecksCurrentTargetingEligibility(t *testin
 		"audience.normalized_score is distinct from member.audience_score",
 	} {
 		if !strings.Contains(query, fragment) {
-			t.Fatalf("reservation availability query is missing current targeting validation %q:\n%s", fragment, testSampleSelectionAvailabilityQuery)
+			t.Fatalf(
+				"reservation availability query is missing current targeting validation %q:\n%s",
+				fragment,
+				testSampleSelectionAvailabilityQuery,
+			)
 		}
 	}
 	if strings.Contains(query, "campaign_targeting_capacity_calculations") || strings.Contains(query, "calculation.allowed_colors") {
-		t.Fatalf("reservation availability query must not join a Test selection to an unrelated capacity calculation:\n%s", testSampleSelectionAvailabilityQuery)
+		t.Fatalf(
+			"reservation availability query must not join a Test selection to an unrelated capacity calculation:\n%s",
+			testSampleSelectionAvailabilityQuery,
+		)
 	}
 }
 

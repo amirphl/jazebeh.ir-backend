@@ -50,7 +50,8 @@ func (h *MultimediaAdminHandler) SuccessResponse(c fiber.Ctx, statusCode int, me
 
 // Upload handles multimedia upload (image/video/excel/pdf) for admins.
 // @Summary Admin upload multimedia
-// @Description Upload an image, video, excel, or pdf file for a customer (jpg/jpeg/png/gif/webp/mp4/mov/webm/mkv/xlsx/xls/xlsm/pdf, <=100MB)
+// @Description Upload an image, video, excel, or pdf file for a customer (jpg/jpeg/png/gif/webp/mp4/mov/webm/mkv/xlsx/xls/xlsm/pdf,
+// <=100MB)
 // @Tags Admin Multimedia
 // @Security BearerAuth
 // @Accept mpfd
@@ -215,7 +216,11 @@ func (h *MultimediaAdminHandler) Preview(c fiber.Ctx) error {
 	return c.Send(data)
 }
 
-func (h *MultimediaAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *MultimediaAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

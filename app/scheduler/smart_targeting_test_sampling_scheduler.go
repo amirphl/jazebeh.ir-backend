@@ -26,7 +26,13 @@ type SmartTargetingTestSamplingScheduler struct {
 	inFlight map[int64]struct{}
 }
 
-func NewSmartTargetingTestSamplingScheduler(executor SmartTargetingTestSamplingExecutor, repo repository.CampaignTargetingTestSamplingRepository, logger *log.Logger, pollInterval time.Duration, maxParallelRuns int) *SmartTargetingTestSamplingScheduler {
+func NewSmartTargetingTestSamplingScheduler(
+	executor SmartTargetingTestSamplingExecutor,
+	repo repository.CampaignTargetingTestSamplingRepository,
+	logger *log.Logger,
+	pollInterval time.Duration,
+	maxParallelRuns int,
+) *SmartTargetingTestSamplingScheduler {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}

@@ -32,7 +32,12 @@ type TagTestPerformanceScheduler struct {
 	batchSize    int
 }
 
-func NewTagTestPerformanceScheduler(repo repository.TagTestPerformanceRepository, logger *log.Logger, pollInterval time.Duration, batchSize int) *TagTestPerformanceScheduler {
+func NewTagTestPerformanceScheduler(
+	repo repository.TagTestPerformanceRepository,
+	logger *log.Logger,
+	pollInterval time.Duration,
+	batchSize int,
+) *TagTestPerformanceScheduler {
 	if pollInterval <= 0 {
 		pollInterval = time.Minute
 	}

@@ -66,7 +66,13 @@ func (h *PlatformBasePriceAdminHandler) List(c fiber.Ctx) error {
 				return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to list platform base prices", be.Code, nil)
 			}
 		}
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to list platform base prices", "PLATFORM_BASE_PRICE_LIST_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to list platform base prices",
+			"PLATFORM_BASE_PRICE_LIST_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Platform base prices retrieved successfully", res)
 }
@@ -102,7 +108,10 @@ func (h *PlatformBasePriceAdminHandler) Update(c fiber.Ctx) error {
 	if err != nil {
 		if be, ok := err.(*businessflow.BusinessError); ok {
 			switch be.Code {
-			case "INVALID_REQUEST", "PLATFORM_BASE_PRICE_PLATFORM_REQUIRED", "PLATFORM_BASE_PRICE_PLATFORM_INVALID", "PLATFORM_BASE_PRICE_INVALID":
+			case "INVALID_REQUEST",
+				"PLATFORM_BASE_PRICE_PLATFORM_REQUIRED",
+				"PLATFORM_BASE_PRICE_PLATFORM_INVALID",
+				"PLATFORM_BASE_PRICE_INVALID":
 				return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid request", be.Code, nil)
 			case "PLATFORM_BASE_PRICE_NOT_FOUND":
 				return h.ErrorResponse(c, fiber.StatusNotFound, "Platform base price not found", be.Code, nil)
@@ -110,13 +119,23 @@ func (h *PlatformBasePriceAdminHandler) Update(c fiber.Ctx) error {
 				return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update platform base price", be.Code, nil)
 			}
 		}
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update platform base price", "PLATFORM_BASE_PRICE_UPDATE_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to update platform base price",
+			"PLATFORM_BASE_PRICE_UPDATE_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Platform base price updated successfully", res)
 }
 
-func (h *PlatformBasePriceAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *PlatformBasePriceAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

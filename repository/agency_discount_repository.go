@@ -65,7 +65,10 @@ func (r *AgencyDiscountRepositoryImpl) ByUUID(ctx context.Context, uuid string) 
 	return &ad, nil
 }
 
-func (r *AgencyDiscountRepositoryImpl) ByAgencyAndCustomer(ctx context.Context, agencyID, customerID uint) ([]*models.AgencyDiscount, error) {
+func (r *AgencyDiscountRepositoryImpl) ByAgencyAndCustomer(
+	ctx context.Context,
+	agencyID, customerID uint,
+) ([]*models.AgencyDiscount, error) {
 	filter := models.AgencyDiscountFilter{AgencyID: &agencyID, CustomerID: &customerID}
 	return r.ByFilter(ctx, filter, "id DESC", 0, 0)
 }
@@ -85,7 +88,11 @@ func (r *AgencyDiscountRepositoryImpl) GetActiveDiscount(ctx context.Context, ag
 }
 
 // ExpireActiveByAgencyAndCustomer sets expires_at for all currently non-expired discounts of an agency for a customer
-func (r *AgencyDiscountRepositoryImpl) ExpireActiveByAgencyAndCustomer(ctx context.Context, agencyID, customerID uint, expiredAt time.Time) error {
+func (r *AgencyDiscountRepositoryImpl) ExpireActiveByAgencyAndCustomer(
+	ctx context.Context,
+	agencyID, customerID uint,
+	expiredAt time.Time,
+) error {
 	db, shouldCommit, err := r.getDBForWrite(ctx)
 	if err != nil {
 		return err
@@ -111,7 +118,11 @@ func (r *AgencyDiscountRepositoryImpl) ExpireActiveByAgencyAndCustomer(ctx conte
 
 // ListActiveDiscountsWithCustomer returns active (non-expired) discounts of an agency joined with customer info
 // Optional nameLike filters by representative first+last name using ILIKE
-func (r *AgencyDiscountRepositoryImpl) ListActiveDiscountsWithCustomer(ctx context.Context, agencyID uint, nameLike, orderBy string) ([]*AgencyDiscountWithCustomer, error) {
+func (r *AgencyDiscountRepositoryImpl) ListActiveDiscountsWithCustomer(
+	ctx context.Context,
+	agencyID uint,
+	nameLike, orderBy string,
+) ([]*AgencyDiscountWithCustomer, error) {
 	db := r.getDB(ctx)
 
 	// Sanitize orderBy to a small whitelist to avoid SQL injection
@@ -162,7 +173,12 @@ func (r *AgencyDiscountRepositoryImpl) ListActiveDiscountsWithCustomer(ctx conte
 }
 
 // ByFilter retrieves records matching filter with ordering/pagination
-func (r *AgencyDiscountRepositoryImpl) ByFilter(ctx context.Context, filter models.AgencyDiscountFilter, orderBy string, limit, offset int) ([]*models.AgencyDiscount, error) {
+func (r *AgencyDiscountRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.AgencyDiscountFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.AgencyDiscount, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.AgencyDiscount{})
 

@@ -175,7 +175,11 @@ func (r *TagTestPerformanceRepositoryImpl) DiscoverPending(ctx context.Context, 
 
 // ClaimPending leases reports across scheduler replicas. A process crash is
 // recovered by reclaiming a stale preparing row.
-func (r *TagTestPerformanceRepositoryImpl) ClaimPending(ctx context.Context, limit int, staleBefore, at time.Time) ([]*models.CampaignTagTestReport, error) {
+func (r *TagTestPerformanceRepositoryImpl) ClaimPending(
+	ctx context.Context,
+	limit int,
+	staleBefore, at time.Time,
+) ([]*models.CampaignTagTestReport, error) {
 	if limit <= 0 {
 		limit = 1
 	}
@@ -364,7 +368,14 @@ WHERE campaign.id = ?
 
 // Fail persists only a stable error code and sanitized message. Database SQL
 // and stack details remain in application logs, never in API-readable state.
-func (r *TagTestPerformanceRepositoryImpl) Fail(ctx context.Context, campaignID uint, leaseStartedAt time.Time, code, message string, retryAt *time.Time, at time.Time) error {
+func (r *TagTestPerformanceRepositoryImpl) Fail(
+	ctx context.Context,
+	campaignID uint,
+	leaseStartedAt time.Time,
+	code, message string,
+	retryAt *time.Time,
+	at time.Time,
+) error {
 	if len(code) > 64 {
 		code = code[:64]
 	}

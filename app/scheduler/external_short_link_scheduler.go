@@ -152,7 +152,12 @@ func NewExternalShortLinkClickScheduler(
 func (s *ExternalShortLinkClickScheduler) Start(parent context.Context) func() {
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
-	s.logger.Printf("external short-link click scheduler: started interval=%s page_size=%d max_pages_per_run=%d", s.interval, s.pageSize, s.maxPagesPerRun)
+	s.logger.Printf(
+		"external short-link click scheduler: started interval=%s page_size=%d max_pages_per_run=%d",
+		s.interval,
+		s.pageSize,
+		s.maxPagesPerRun,
+	)
 	go func() {
 		defer close(done)
 		ticker := time.NewTicker(s.interval)

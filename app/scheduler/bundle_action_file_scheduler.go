@@ -28,7 +28,14 @@ const (
 	defaultBundleActionFileLeaseDuration = 35 * time.Minute
 )
 
-func NewBundleActionFileScheduler(flow BundleActionFileExecutor, repo repository.BundleActionRepository, logger *log.Logger, interval time.Duration, maxRuns int, jobTimeout, leaseDuration time.Duration) *BundleActionFileScheduler {
+func NewBundleActionFileScheduler(
+	flow BundleActionFileExecutor,
+	repo repository.BundleActionRepository,
+	logger *log.Logger,
+	interval time.Duration,
+	maxRuns int,
+	jobTimeout, leaseDuration time.Duration,
+) *BundleActionFileScheduler {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
@@ -50,7 +57,15 @@ func NewBundleActionFileScheduler(flow BundleActionFileExecutor, repo repository
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &BundleActionFileScheduler{flow: flow, repo: repo, logger: logger, interval: interval, maxRuns: maxRuns, jobTimeout: jobTimeout, leaseDuration: leaseDuration}
+	return &BundleActionFileScheduler{
+		flow:          flow,
+		repo:          repo,
+		logger:        logger,
+		interval:      interval,
+		maxRuns:       maxRuns,
+		jobTimeout:    jobTimeout,
+		leaseDuration: leaseDuration,
+	}
 }
 
 func (s *BundleActionFileScheduler) Start(parent context.Context) func() {

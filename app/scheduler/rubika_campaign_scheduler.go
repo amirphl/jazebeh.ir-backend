@@ -150,7 +150,11 @@ func (c *httpRubikaClient) FetchStatus(_ context.Context, _ []string) ([]RubikaS
 	return nil, fmt.Errorf("rubika status tracking is not supported by the configured client yet")
 }
 
-func (c *httpRubikaClient) SendBulkMessages(ctx context.Context, serviceID string, messages []RubikaMessagePayload) (*RubikaSendBulkMessagesResponse, error) {
+func (c *httpRubikaClient) SendBulkMessages(
+	ctx context.Context,
+	serviceID string,
+	messages []RubikaMessagePayload,
+) (*RubikaSendBulkMessagesResponse, error) {
 	if strings.TrimSpace(c.cfg.Token) == "" {
 		return nil, fmt.Errorf("rubika token is not configured")
 	}
@@ -604,10 +608,22 @@ func (s *RubikaCampaignScheduler) processRubikaCampaign(ctx context.Context, tok
 	}); err != nil {
 		return fmt.Errorf("persist campaign data for campaign id=%d: %w", c.ID, err)
 	}
-	s.logger.Printf("Rubika scheduler: persisted processed campaign id=%d num_phones=%d, num_ids=%d, num_codes=%d, num_unmatched=%d", pc.ID, len(phones), len(ids), len(codes), len(unmatchedUID))
+	s.logger.Printf(
+		"Rubika scheduler: persisted processed campaign id=%d num_phones=%d, num_ids=%d, num_codes=%d, num_unmatched=%d",
+		pc.ID,
+		len(phones),
+		len(ids),
+		len(codes),
+		len(unmatchedUID),
+	)
 
 	if len(unmatchedUID) > 0 {
-		s.logger.Printf("Rubika scheduler: campaign id=%d creating %d unmatched sent rows for processed_campaign_id=%d", c.ID, len(unmatchedUID), pc.ID)
+		s.logger.Printf(
+			"Rubika scheduler: campaign id=%d creating %d unmatched sent rows for processed_campaign_id=%d",
+			c.ID,
+			len(unmatchedUID),
+			pc.ID,
+		)
 		if err := s.createUnmatchedSentRubikaRows(ctx, pc.ID, unmatchedUID); err != nil {
 			return fmt.Errorf("create unmatched sent rows for campaign id=%d: %w", c.ID, err)
 		}
@@ -688,15 +704,29 @@ func (s *RubikaCampaignScheduler) processRubikaCampaign(ctx context.Context, tok
 		if batchErr != nil {
 			s.logger.Printf("Rubika scheduler: send batch [%d,%d) failed for campaign id=%d: %v", start, end, c.ID, batchErr)
 		}
-		s.logger.Printf("Rubika scheduler: campaign id=%d batch [%d,%d) Rubika responded: sent=%d responses=%d", c.ID, start, end, len(items), rubikaResponseLen(resp))
+		s.logger.Printf(
+			"Rubika scheduler: campaign id=%d batch [%d,%d) Rubika responded: sent=%d responses=%d",
+			c.ID,
+			start,
+			end,
+			len(items),
+			rubikaResponseLen(resp),
+		)
 
 		sendUpdates := make([]repository.SentRubikaSendResultUpdate, 0, len(items))
 		for i, item := range items {
-			sendUpdates = append(sendUpdates, buildRubikaSendResultUpdate(trackingIDs[i], item.Phone, rubikaResponseItem(resp, i, item.Phone), batchErr))
+			sendUpdates = append(
+				sendUpdates,
+				buildRubikaSendResultUpdate(trackingIDs[i], item.Phone, rubikaResponseItem(resp, i, item.Phone), batchErr),
+			)
 		}
 		if len(sendUpdates) > 0 {
 			if updateErr := s.sentRepo.UpdateSendResultByTrackingIDs(ctx, sendUpdates); updateErr != nil {
-				s.logger.Printf("Rubika scheduler: failed to batch update sent_rubika provider fields for campaign id=%d: %v", c.ID, updateErr)
+				s.logger.Printf(
+					"Rubika scheduler: failed to batch update sent_rubika provider fields for campaign id=%d: %v",
+					c.ID,
+					updateErr,
+				)
 				// NOTE: Error silent here; not returning to avoid blocking further processing
 			}
 		}
@@ -871,7 +901,11 @@ func (s *RubikaCampaignScheduler) extractRubikaServiceID(c dto.BotGetCampaignRes
 	return serviceID, nil
 }
 
-func (s *RubikaCampaignScheduler) sendWithRetry(ctx context.Context, serviceID string, messages []RubikaMessagePayload) (*RubikaSendBulkMessagesResponse, error) {
+func (s *RubikaCampaignScheduler) sendWithRetry(
+	ctx context.Context,
+	serviceID string,
+	messages []RubikaMessagePayload,
+) (*RubikaSendBulkMessagesResponse, error) {
 	var (
 		resp *RubikaSendBulkMessagesResponse
 		err  error
@@ -948,7 +982,10 @@ func rubikaMessageStatusSuccessful(st RubikaMessageStatus) bool {
 	return false
 }
 
-func (s *RubikaCampaignScheduler) resolveScoreConstraint(ctx context.Context, c dto.BotGetCampaignResponse) (*models.NormalizedScoreConstraint, error) {
+func (s *RubikaCampaignScheduler) resolveScoreConstraint(
+	ctx context.Context,
+	c dto.BotGetCampaignResponse,
+) (*models.NormalizedScoreConstraint, error) {
 	if usesSmartAudienceTargeting(c) {
 		return nil, nil
 	}
@@ -956,7 +993,11 @@ func (s *RubikaCampaignScheduler) resolveScoreConstraint(ctx context.Context, c 
 		return nil, nil
 	}
 	if s.statsRepo == nil {
-		return nil, fmt.Errorf("audience score statistics repository is unavailable for campaign id=%d with grades=%v", c.ID, c.AudienceGrades)
+		return nil, fmt.Errorf(
+			"audience score statistics repository is unavailable for campaign id=%d with grades=%v",
+			c.ID,
+			c.AudienceGrades,
+		)
 	}
 	percentiles, err := s.statsRepo.FetchPercentiles(ctx, c.Level1, c.Level2s, c.Level3s)
 	if err != nil {
@@ -965,7 +1006,13 @@ func (s *RubikaCampaignScheduler) resolveScoreConstraint(ctx context.Context, c 
 	if percentiles == nil {
 		return nil, fmt.Errorf("audience score statistics are missing for campaign id=%d levels and grades=%v", c.ID, c.AudienceGrades)
 	}
-	s.logger.Printf("resolveScoreConstraint: campaign id=%d grades=%v p33=%.4f p66=%.4f", c.ID, c.AudienceGrades, percentiles.P33, percentiles.P66)
+	s.logger.Printf(
+		"resolveScoreConstraint: campaign id=%d grades=%v p33=%.4f p66=%.4f",
+		c.ID,
+		c.AudienceGrades,
+		percentiles.P33,
+		percentiles.P66,
+	)
 	return gradesToScoreConstraint(c.AudienceGrades, percentiles.P33, percentiles.P66), nil
 }
 
@@ -1004,7 +1051,13 @@ func (s *RubikaCampaignScheduler) selectRubikaTagAudiences(
 		s.logger.Printf("selectRubikaTagAudiences fetch candidates failed: campaign_id=%d err=%v", campaignID, err)
 		return nil, nil, nil, err
 	}
-	s.logger.Printf("selectRubikaTagAudiences candidates: campaign_id=%d count=%d limit=%d excluded=%d", campaignID, len(candidates), limit, len(excludeIDs))
+	s.logger.Printf(
+		"selectRubikaTagAudiences candidates: campaign_id=%d count=%d limit=%d excluded=%d",
+		campaignID,
+		len(candidates),
+		limit,
+		len(excludeIDs),
+	)
 
 	for _, ap := range candidates {
 		if ap == nil || ap.PhoneNumber == nil || strings.TrimSpace(*ap.PhoneNumber) == "" {
@@ -1034,15 +1087,26 @@ func (s *RubikaCampaignScheduler) fetchRubikaAudiencePhonesByBundle(
 	if err != nil {
 		return nil, err
 	}
-	s.logger.Printf("fetchRubikaAudiencePhonesByBundle start: campaign_id=%d customer_id=%d bundle_id=%d num_audiences=%d correlation_id=%s",
-		c.ID, c.CustomerID, bundleID, numAudiences, correlationID)
+	s.logger.Printf(
+		"fetchRubikaAudiencePhonesByBundle start: campaign_id=%d customer_id=%d bundle_id=%d num_audiences=%d correlation_id=%s",
+		c.ID,
+		c.CustomerID,
+		bundleID,
+		numAudiences,
+		correlationID,
+	)
 
 	executionTags, tagIDs, err := resolveActiveCampaignTagIDs(ctx, s.tagRepo, c)
 	if err != nil {
 		s.logger.Printf("fetchRubikaAudiencePhonesByBundle tags resolution failed: campaign_id=%d err=%v", c.ID, err)
 		return nil, err
 	}
-	s.logger.Printf("fetchRubikaAudiencePhonesByBundle tags resolved: campaign_id=%d requested=%d resolved=%d", c.ID, len(executionTags), len(tagIDs))
+	s.logger.Printf(
+		"fetchRubikaAudiencePhonesByBundle tags resolved: campaign_id=%d requested=%d resolved=%d",
+		c.ID,
+		len(executionTags),
+		len(tagIDs),
+	)
 
 	scoreConstraint, err := s.resolveScoreConstraint(ctx, c)
 	if err != nil {
@@ -1128,11 +1192,22 @@ func (s *RubikaCampaignScheduler) fetchRubikaAudiencePhonesByBundle(
 		ShortLinkDomain: *c.ShortLinkDomain,
 	})
 	if err != nil {
-		s.logger.Printf("fetchRubikaAudiencePhonesByBundle allocate short links failed: campaign_id=%d bundle_id=%d err=%v", c.ID, bundleID, err)
+		s.logger.Printf(
+			"fetchRubikaAudiencePhonesByBundle allocate short links failed: campaign_id=%d bundle_id=%d err=%v",
+			c.ID,
+			bundleID,
+			err,
+		)
 		return nil, err
 	}
 	if len(codes) != len(phones) {
-		return nil, fmt.Errorf("allocate short links length mismatch for campaign id=%d bundle_id=%d: phones=%d codes=%d", c.ID, bundleID, len(phones), len(codes))
+		return nil, fmt.Errorf(
+			"allocate short links length mismatch for campaign id=%d bundle_id=%d: phones=%d codes=%d",
+			c.ID,
+			bundleID,
+			len(phones),
+			len(codes),
+		)
 	}
 	s.logger.Printf("fetchRubikaAudiencePhonesByBundle success: campaign_id=%d bundle_id=%d selected=%d codes=%d selection_id=%d",
 		c.ID, bundleID, len(phones), len(codes), selectionID)
@@ -1166,7 +1241,11 @@ func (s *RubikaCampaignScheduler) buildRubikaMessageBody(c dto.BotGetCampaignRes
 	return strings.ReplaceAll(content, "{YOUR_LINK}", "")
 }
 
-func (s *RubikaCampaignScheduler) createUnmatchedSentRubikaRows(ctx context.Context, processedCampaignID uint, unmatchedUIDs []string) error {
+func (s *RubikaCampaignScheduler) createUnmatchedSentRubikaRows(
+	ctx context.Context,
+	processedCampaignID uint,
+	unmatchedUIDs []string,
+) error {
 	if len(unmatchedUIDs) == 0 {
 		return nil
 	}
@@ -1259,7 +1338,14 @@ func (s *RubikaCampaignScheduler) startStatusJobWorker(parent context.Context) {
 				if err != nil {
 					s.logger.Printf("Rubika scheduler: handle status job id=%d failed: %v", job.ID, err)
 					if job.RetryCount >= rubikaStatusJobMaxRetry {
-						s.notifyAdmin(fmt.Sprintf("Rubika scheduler: status job id=%d has failed %d times with error: %v", job.ID, job.RetryCount, err))
+						s.notifyAdmin(
+							fmt.Sprintf(
+								"Rubika scheduler: status job id=%d has failed %d times with error: %v",
+								job.ID,
+								job.RetryCount,
+								err,
+							),
+						)
 					}
 				} else {
 					s.logger.Printf("Rubika scheduler: handle status job id=%d succeeded", job.ID)
@@ -1392,7 +1478,11 @@ func (s *RubikaCampaignScheduler) handleStatusJob(ctx context.Context, job *mode
 			})
 		}
 		if len(sendUpdates) == 0 {
-			s.logger.Printf("handleStatusJob: all status items filtered out (no valid server_id or matched row) for job_id=%d processed_campaign_id=%d", job.ID, job.ProcessedCampaignID)
+			s.logger.Printf(
+				"handleStatusJob: all status items filtered out (no valid server_id or matched row) for job_id=%d processed_campaign_id=%d",
+				job.ID,
+				job.ProcessedCampaignID,
+			)
 		}
 		if err := s.sentRepo.UpdateSendResultByTrackingIDs(txCtx, sendUpdates); err != nil {
 			return err
@@ -1444,14 +1534,28 @@ func (s *RubikaCampaignScheduler) markStatusJobExecuted(ctx context.Context, job
 	return s.jobRepo.Update(ctx, job)
 }
 
-func mapRubikaProviderStatus(item RubikaStatusResponse) (totalParts int64, deliveredParts int64, undeliveredParts int64, unknownParts int64, status models.RubikaSendStatus) {
+func mapRubikaProviderStatus(
+	item RubikaStatusResponse,
+) (totalParts int64, deliveredParts int64, undeliveredParts int64, unknownParts int64, status models.RubikaSendStatus) {
 	totalParts = 1
 	normalized := strings.ToLower(strings.TrimSpace(item.Status))
 	detail := strings.ToLower(strings.TrimSpace(item.StatusDet))
 	switch {
-	case normalized == "ok", normalized == "success", normalized == "successful", normalized == "sent", normalized == "delivered", strings.Contains(detail, "success"), strings.Contains(detail, "delivered"):
+	case normalized == "ok",
+		normalized == "success",
+		normalized == "successful",
+		normalized == "sent",
+		normalized == "delivered",
+		strings.Contains(detail, "success"),
+		strings.Contains(detail, "delivered"):
 		return 1, 1, 0, 0, models.RubikaSendStatusSuccessful
-	case normalized == "failed", normalized == "fail", normalized == "error", normalized == "rejected", strings.Contains(detail, "fail"), strings.Contains(detail, "error"), strings.Contains(detail, "reject"):
+	case normalized == "failed",
+		normalized == "fail",
+		normalized == "error",
+		normalized == "rejected",
+		strings.Contains(detail, "fail"),
+		strings.Contains(detail, "error"),
+		strings.Contains(detail, "reject"):
 		return 1, 0, 1, 0, models.RubikaSendStatusUnsuccessful
 	default:
 		return 1, 0, 0, 1, models.RubikaSendStatusPending
@@ -1524,7 +1628,8 @@ func (s *RubikaCampaignScheduler) updateProcessedCampaignStats(ctx context.Conte
 	// Fallback before any status jobs land.
 	// if agg.AggregatedTotalRecords == 0 && len(trackingResults) == 0 {
 	if agg.AggregatedTotalRecords == 0 {
-		// s.logger.Printf("updateProcessedCampaignStats: no status results yet for processed_campaign_id=%d, falling back to sent rows", processedCampaignID)
+		// s.logger.Printf("updateProcessedCampaignStats: no status results yet for processed_campaign_id=%d, falling back to sent rows",
+		// processedCampaignID)
 		// return s.updateProcessedCampaignStatsFromSentRows(ctx, pc)
 		return nil, nil
 	}
@@ -1551,7 +1656,10 @@ func (s *RubikaCampaignScheduler) updateProcessedCampaignStats(ctx context.Conte
 	return stats, nil
 }
 
-func (s *RubikaCampaignScheduler) updateProcessedCampaignStatsFromSentRows(ctx context.Context, pc *models.ProcessedCampaign) (map[string]any, error) {
+func (s *RubikaCampaignScheduler) updateProcessedCampaignStatsFromSentRows(
+	ctx context.Context,
+	pc *models.ProcessedCampaign,
+) (map[string]any, error) {
 	s.logger.Printf("updateProcessedCampaignStatsFromSentRows: computing stats from sent rows for processed_campaign_id=%d", pc.ID)
 	type row struct {
 		Total      int64
@@ -1619,7 +1727,12 @@ func rubikaResponseItem(resp *RubikaSendBulkMessagesResponse, index int, phone s
 	return nil
 }
 
-func buildRubikaSendResultUpdate(trackingID string, phone string, resp *RubikaMessageStatus, sendErr error) repository.SentRubikaSendResultUpdate {
+func buildRubikaSendResultUpdate(
+	trackingID string,
+	phone string,
+	resp *RubikaMessageStatus,
+	sendErr error,
+) repository.SentRubikaSendResultUpdate {
 	update := repository.SentRubikaSendResultUpdate{
 		TrackingID:     trackingID,
 		PartsDelivered: 0,

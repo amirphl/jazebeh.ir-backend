@@ -400,7 +400,16 @@ func TestGetTokenClaims(t *testing.T) {
 
 func TestTokenExpiration(t *testing.T) {
 	// Create service with very short TTL for testing expiration
-	service, err := NewTokenService(1*time.Second, 2*time.Second, "test-issuer", "test-audience", false, "", "", "test-secret-key-for-jwt-signing-32-chars")
+	service, err := NewTokenService(
+		1*time.Second,
+		2*time.Second,
+		"test-issuer",
+		"test-audience",
+		false,
+		"",
+		"",
+		"test-secret-key-for-jwt-signing-32-chars",
+	)
 	require.NoError(t, err)
 
 	// Generate tokens
@@ -428,10 +437,28 @@ func TestTokenExpiration(t *testing.T) {
 
 func TestTokenSecurity(t *testing.T) {
 	// Create services with different configurations to ensure different keys
-	service1, err := NewTokenService(15*time.Minute, 7*24*time.Hour, "issuer1", "audience1", false, "", "", "test-secret-key-1-for-jwt-signing-32-chars")
+	service1, err := NewTokenService(
+		15*time.Minute,
+		7*24*time.Hour,
+		"issuer1",
+		"audience1",
+		false,
+		"",
+		"",
+		"test-secret-key-1-for-jwt-signing-32-chars",
+	)
 	require.NoError(t, err)
 
-	service2, err := NewTokenService(15*time.Minute, 7*24*time.Hour, "issuer2", "audience2", false, "", "", "test-secret-key-2-for-jwt-signing-32-chars")
+	service2, err := NewTokenService(
+		15*time.Minute,
+		7*24*time.Hour,
+		"issuer2",
+		"audience2",
+		false,
+		"",
+		"",
+		"test-secret-key-2-for-jwt-signing-32-chars",
+	)
 	require.NoError(t, err)
 
 	// Generate tokens with different services

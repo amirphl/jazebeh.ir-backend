@@ -29,7 +29,12 @@ func NewSrcLayerAllStatsRepository(db *gorm.DB) SrcLayerAllStatsRepository {
 	return &srcLayerAllStatsRepositoryImpl{db: db}
 }
 
-func (r *srcLayerAllStatsRepositoryImpl) FetchPercentiles(ctx context.Context, level1 *string, level2s []string, level3s []string) (*LayerPercentiles, error) {
+func (r *srcLayerAllStatsRepositoryImpl) FetchPercentiles(
+	ctx context.Context,
+	level1 *string,
+	level2s []string,
+	level3s []string,
+) (*LayerPercentiles, error) {
 	q := r.db.WithContext(ctx).Model(&models.SrcLayerAllStats{}).
 		Where("p33 IS NOT NULL AND p66 IS NOT NULL")
 

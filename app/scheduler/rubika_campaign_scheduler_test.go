@@ -31,20 +31,25 @@ func TestDispatchPendingRubikaCampaignsSerializesSameBundle(t *testing.T) {
 		{ID: 3, CustomerID: 10, BundleID: &otherBundleID},
 	}
 
-	s.dispatchPendingRubikaCampaigns(parent, "token-1", pending, func(ctx context.Context, token string, c dto.BotGetCampaignResponse) error {
-		if token != "token-1" {
-			t.Errorf("unexpected token: %q", token)
-		}
-		started <- c.ID
-		if c.ID == 1 {
-			select {
-			case <-releaseFirst:
-			case <-ctx.Done():
-				return ctx.Err()
+	s.dispatchPendingRubikaCampaigns(
+		parent,
+		"token-1",
+		pending,
+		func(ctx context.Context, token string, c dto.BotGetCampaignResponse) error {
+			if token != "token-1" {
+				t.Errorf("unexpected token: %q", token)
 			}
-		}
-		return nil
-	})
+			started <- c.ID
+			if c.ID == 1 {
+				select {
+				case <-releaseFirst:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		},
+	)
 
 	seen := map[uint]bool{}
 	deadline := time.After(time.Second)

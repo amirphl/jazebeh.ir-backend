@@ -126,7 +126,12 @@ type interleavedSMSCampaignStatusJobRepo struct {
 	called bool
 }
 
-func (s *interleavedSMSCampaignStatusJobRepo) ListDueInterleavedByCampaign(_ context.Context, platform string, _ time.Time, limit int) ([]*models.CampaignStatusJob, error) {
+func (s *interleavedSMSCampaignStatusJobRepo) ListDueInterleavedByCampaign(
+	_ context.Context,
+	platform string,
+	_ time.Time,
+	limit int,
+) ([]*models.CampaignStatusJob, error) {
 	s.called = true
 	if platform != models.CampaignPlatformSMS || limit != 1000 {
 		return nil, fmt.Errorf("unexpected interleaved query: platform=%q limit=%d", platform, limit)
@@ -148,12 +153,19 @@ func TestAudienceSelectionAllowedColorsSeparatesSmartCandooFromStandardCandoo(t 
 	if colors := audienceSelectionAllowedColors(standard, models.SMSProviderCandoo); len(colors) != 0 {
 		t.Fatalf("standard Candoo colors = %v, want unrestricted", colors)
 	}
-	if colors := audienceSelectionAllowedColors(standard, models.SMSProviderPayamSMS); len(colors) != 2 || colors[0] != "white" || colors[1] != "pink" {
+	if colors := audienceSelectionAllowedColors(standard, models.SMSProviderPayamSMS); len(colors) != 2 || colors[0] != "white" ||
+		colors[1] != "pink" {
 		t.Fatalf("standard PayamSMS colors = %v, want [white pink]", colors)
 	}
 }
 
-func (s *stubSMSAudienceProfileRepo) ByFilter(context.Context, models.AudienceProfileFilter, string, int, int) ([]*models.AudienceProfile, error) {
+func (s *stubSMSAudienceProfileRepo) ByFilter(
+	context.Context,
+	models.AudienceProfileFilter,
+	string,
+	int,
+	int,
+) ([]*models.AudienceProfile, error) {
 	return nil, nil
 }
 
@@ -192,13 +204,23 @@ func (s *stubSMSAudienceProfileRepo) ByUIDs(ctx context.Context, uids []string) 
 	return nil, nil
 }
 
-func (s *stubSMSAudienceProfileRepo) SelectCampaignCandidates(ctx context.Context, filter models.AudienceProfileFilter, excludeIDs []int64, limit int) ([]*models.AudienceProfile, error) {
+func (s *stubSMSAudienceProfileRepo) SelectCampaignCandidates(
+	ctx context.Context,
+	filter models.AudienceProfileFilter,
+	excludeIDs []int64,
+	limit int,
+) ([]*models.AudienceProfile, error) {
 	return s.selectCandidatesFn(ctx, filter, excludeIDs, limit)
 }
 
 var _ repository.AudienceProfileRepository = (*stubSMSAudienceProfileRepo)(nil)
 
-func (s *stubSMSCampaignStatusJobRepo) ByFilter(ctx context.Context, filter any, orderBy string, limit, offset int) ([]*models.CampaignStatusJob, error) {
+func (s *stubSMSCampaignStatusJobRepo) ByFilter(
+	ctx context.Context,
+	filter any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.CampaignStatusJob, error) {
 	return nil, nil
 }
 
@@ -228,7 +250,12 @@ func (s *stubSMSCampaignStatusJobRepo) ByID(ctx context.Context, id uint) (*mode
 	return nil, nil
 }
 
-func (s *stubSMSCampaignStatusJobRepo) ListDue(ctx context.Context, platform string, now time.Time, limit int) ([]*models.CampaignStatusJob, error) {
+func (s *stubSMSCampaignStatusJobRepo) ListDue(
+	ctx context.Context,
+	platform string,
+	now time.Time,
+	limit int,
+) ([]*models.CampaignStatusJob, error) {
 	return nil, nil
 }
 
@@ -453,33 +480,35 @@ func TestSelectTagAudiencesPushesLimitAndExclusionsIntoRepository(t *testing.T) 
 	}
 
 	call := 0
-	audRepo := &stubSMSAudienceProfileRepo{selectCandidatesFn: func(_ context.Context, filter models.AudienceProfileFilter, excludeIDs []int64, limit int) ([]*models.AudienceProfile, error) {
-		call++
-		if len(excludeIDs) != len(excluded) {
-			t.Fatalf("exclusion count = %d, want %d", len(excludeIDs), len(excluded))
-		}
-		if filter.Color == nil {
-			t.Fatal("standard SMS candidate query must filter audience color")
-		}
-		switch call {
-		case 1:
-			if *filter.Color != "white" || limit != 3 {
-				t.Fatalf("first query color=%q limit=%d, want white/3", *filter.Color, limit)
+	audRepo := &stubSMSAudienceProfileRepo{
+		selectCandidatesFn: func(_ context.Context, filter models.AudienceProfileFilter, excludeIDs []int64, limit int) ([]*models.AudienceProfile, error) {
+			call++
+			if len(excludeIDs) != len(excluded) {
+				t.Fatalf("exclusion count = %d, want %d", len(excludeIDs), len(excluded))
 			}
-			return []*models.AudienceProfile{{ID: 60_002, UID: "u2", PhoneNumber: &phone2}}, nil
-		case 2:
-			if *filter.Color != "pink" || limit != 2 {
-				t.Fatalf("second query color=%q limit=%d, want pink/2", *filter.Color, limit)
+			if filter.Color == nil {
+				t.Fatal("standard SMS candidate query must filter audience color")
 			}
-			return []*models.AudienceProfile{
-				{ID: 60_001, UID: "u1", PhoneNumber: &phone1},
-				{ID: 60_003, UID: "u3", PhoneNumber: &phone3},
-			}, nil
-		default:
-			t.Fatalf("unexpected candidate query %d", call)
-			return nil, nil
-		}
-	}}
+			switch call {
+			case 1:
+				if *filter.Color != "white" || limit != 3 {
+					t.Fatalf("first query color=%q limit=%d, want white/3", *filter.Color, limit)
+				}
+				return []*models.AudienceProfile{{ID: 60_002, UID: "u2", PhoneNumber: &phone2}}, nil
+			case 2:
+				if *filter.Color != "pink" || limit != 2 {
+					t.Fatalf("second query color=%q limit=%d, want pink/2", *filter.Color, limit)
+				}
+				return []*models.AudienceProfile{
+					{ID: 60_001, UID: "u1", PhoneNumber: &phone1},
+					{ID: 60_003, UID: "u3", PhoneNumber: &phone3},
+				}, nil
+			default:
+				t.Fatalf("unexpected candidate query %d", call)
+				return nil, nil
+			}
+		},
+	}
 	s := &SMSCampaignScheduler{audRepo: audRepo, logger: log.New(io.Discard, "", 0)}
 	tags := pq.Int32Array{10, 20}
 
@@ -504,13 +533,15 @@ func TestSelectTagAudiencesPushesLimitAndExclusionsIntoRepository(t *testing.T) 
 func TestSelectTagAudiencesDoesNotFilterCandooCandidatesByColor(t *testing.T) {
 	phone := "09120000001"
 	call := 0
-	audRepo := &stubSMSAudienceProfileRepo{selectCandidatesFn: func(_ context.Context, filter models.AudienceProfileFilter, _ []int64, limit int) ([]*models.AudienceProfile, error) {
-		call++
-		if filter.Color != nil || limit != 1 {
-			t.Fatalf("Candoo candidate query color=%v limit=%d, want unrestricted/1", filter.Color, limit)
-		}
-		return []*models.AudienceProfile{{ID: 7, UID: "u7", PhoneNumber: &phone}}, nil
-	}}
+	audRepo := &stubSMSAudienceProfileRepo{
+		selectCandidatesFn: func(_ context.Context, filter models.AudienceProfileFilter, _ []int64, limit int) ([]*models.AudienceProfile, error) {
+			call++
+			if filter.Color != nil || limit != 1 {
+				t.Fatalf("Candoo candidate query color=%v limit=%d, want unrestricted/1", filter.Color, limit)
+			}
+			return []*models.AudienceProfile{{ID: 7, UID: "u7", PhoneNumber: &phone}}, nil
+		},
+	}
 	s := &SMSCampaignScheduler{audRepo: audRepo, logger: log.New(io.Discard, "", 0)}
 	phones, ids, uids, err := s.selectTagAudiences(context.Background(), 99, pq.Int32Array{10}, 1, nil, nil, nil, nil)
 	if err != nil || call != 1 || len(phones) != 1 || len(ids) != 1 || len(uids) != 1 {

@@ -55,7 +55,26 @@ func (h *BundleHandler) actionBundleRequest(c fiber.Ctx) (uint, uint, error) {
 }
 
 func actionFileDTO(row *models.BundleActionFile) dto.BundleActionFileItem {
-	return dto.BundleActionFileItem{ID: row.ID, OriginalFileName: row.OriginalFileName, ActionLevel: row.ActionLevel, Status: string(row.Status), TotalRowCount: row.TotalRowCount, UniqueUIDCount: row.UniqueUIDCount, NewActionUIDCount: row.NewActionUIDCount, DuplicateInFileCount: row.DuplicateInFileCount, DuplicateInOtherFilesCount: row.DuplicateInOtherFilesCount, InvalidUIDCount: row.InvalidUIDCount, OutsideBundleCount: row.OutsideBundleCount, UnassignedTagCount: row.UnassignedTagCount, MissingDeliveryCount: row.MissingDeliveryCount, EligibleActionUIDCount: row.EligibleActionUIDCount, ErrorCode: row.ErrorCode, ErrorMessage: row.ErrorMessage, CreatedAt: row.CreatedAt, ProcessedAt: row.ProcessedAt}
+	return dto.BundleActionFileItem{
+		ID:                         row.ID,
+		OriginalFileName:           row.OriginalFileName,
+		ActionLevel:                row.ActionLevel,
+		Status:                     string(row.Status),
+		TotalRowCount:              row.TotalRowCount,
+		UniqueUIDCount:             row.UniqueUIDCount,
+		NewActionUIDCount:          row.NewActionUIDCount,
+		DuplicateInFileCount:       row.DuplicateInFileCount,
+		DuplicateInOtherFilesCount: row.DuplicateInOtherFilesCount,
+		InvalidUIDCount:            row.InvalidUIDCount,
+		OutsideBundleCount:         row.OutsideBundleCount,
+		UnassignedTagCount:         row.UnassignedTagCount,
+		MissingDeliveryCount:       row.MissingDeliveryCount,
+		EligibleActionUIDCount:     row.EligibleActionUIDCount,
+		ErrorCode:                  row.ErrorCode,
+		ErrorMessage:               row.ErrorMessage,
+		CreatedAt:                  row.CreatedAt,
+		ProcessedAt:                row.ProcessedAt,
+	}
 }
 
 // DownloadActionFileTemplate returns a minimal XLSX template whose only
@@ -126,7 +145,20 @@ func (h *BundleHandler) ListActionFiles(c fiber.Ctx) error {
 	for _, row := range rows {
 		items = append(items, actionFileDTO(row))
 	}
-	return h.SuccessResponse(c, 200, "Action files retrieved", dto.BundleActionFilesResponse{Items: items, Pagination: dto.PaginationInfo{Page: page, Limit: limit, Total: total, TotalPages: int((total + int64(limit) - 1) / int64(limit))}})
+	return h.SuccessResponse(
+		c,
+		200,
+		"Action files retrieved",
+		dto.BundleActionFilesResponse{
+			Items: items,
+			Pagination: dto.PaginationInfo{
+				Page:       page,
+				Limit:      limit,
+				Total:      total,
+				TotalPages: int((total + int64(limit) - 1) / int64(limit)),
+			},
+		},
+	)
 }
 func (h *BundleHandler) GetActionFile(c fiber.Ctx) error {
 	customer, bundle, err := h.actionBundleRequest(c)
@@ -172,7 +204,19 @@ func (h *BundleHandler) GetActionSummary(c fiber.Ctx) error {
 	if err != nil {
 		return h.handleBundleFlowError(c, err, 500, "Failed to get action summary", "ACTION_SUMMARY_GET_FAILED")
 	}
-	return h.SuccessResponse(c, 200, "Action summary retrieved", dto.BundleActionSummaryResponse{BundleID: x.BundleID, HasActiveActionFiles: x.HasActiveActionFiles, ActionCount: x.ActionCount, EligibleDeliveredCount: x.EligibleDeliveredCount, BundleAvgATR: x.BundleAvgATR, UpdatedAt: x.UpdatedAt})
+	return h.SuccessResponse(
+		c,
+		200,
+		"Action summary retrieved",
+		dto.BundleActionSummaryResponse{
+			BundleID:               x.BundleID,
+			HasActiveActionFiles:   x.HasActiveActionFiles,
+			ActionCount:            x.ActionCount,
+			EligibleDeliveredCount: x.EligibleDeliveredCount,
+			BundleAvgATR:           x.BundleAvgATR,
+			UpdatedAt:              x.UpdatedAt,
+		},
+	)
 }
 func (h *BundleHandler) GetActionTagMetrics(c fiber.Ctx) error {
 	customer, bundle, err := h.actionBundleRequest(c)
@@ -187,12 +231,28 @@ func (h *BundleHandler) GetActionTagMetrics(c fiber.Ctx) error {
 	}
 	items := make([]dto.BundleActionTagMetricItem, 0, len(rows))
 	for _, x := range rows {
-		items = append(items, dto.BundleActionTagMetricItem{TagID: x.TagID, TagDisplayName: x.TagDisplayName, TestActionCount: x.TestActionCount, TestEligibleDeliveredCount: x.TestEligibleDeliveredCount, TestPhaseAvgATR: x.TestPhaseAvgATR, OverallActionCount: x.OverallActionCount, OverallEligibleDeliveredCount: x.OverallEligibleDeliveredCount, OverallAvgATR: x.OverallAvgATR})
+		items = append(
+			items,
+			dto.BundleActionTagMetricItem{
+				TagID:                         x.TagID,
+				TagDisplayName:                x.TagDisplayName,
+				TestActionCount:               x.TestActionCount,
+				TestEligibleDeliveredCount:    x.TestEligibleDeliveredCount,
+				TestPhaseAvgATR:               x.TestPhaseAvgATR,
+				OverallActionCount:            x.OverallActionCount,
+				OverallEligibleDeliveredCount: x.OverallEligibleDeliveredCount,
+				OverallAvgATR:                 x.OverallAvgATR,
+			},
+		)
 	}
 	return h.SuccessResponse(c, 200, "Tag action metrics retrieved", items)
 }
 
-func NewBundleHandler(flow businessflow.BundleFlow, evaluationFlow businessflow.BundleTagEvaluationFlow, actionFlow businessflow.BundleActionFlow) *BundleHandler {
+func NewBundleHandler(
+	flow businessflow.BundleFlow,
+	evaluationFlow businessflow.BundleTagEvaluationFlow,
+	actionFlow businessflow.BundleActionFlow,
+) *BundleHandler {
 	return &BundleHandler{
 		flow:           flow,
 		evaluationFlow: evaluationFlow,
@@ -476,7 +536,13 @@ func (h *BundleHandler) RequestTagEvaluation(c fiber.Ctx) error {
 			if retryAfter > 0 {
 				c.Set("Retry-After", strconv.FormatInt(int64((retryAfter+time.Second-1)/time.Second), 10))
 			}
-			return h.ErrorResponse(c, fiber.StatusTooManyRequests, "Daily bundle tag evaluation limit reached", "CUSTOMER_DAILY_EVALUATION_LIMIT_REACHED", dailyLimitErr)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusTooManyRequests,
+				"Daily bundle tag evaluation limit reached",
+				"CUSTOMER_DAILY_EVALUATION_LIMIT_REACHED",
+				dailyLimitErr,
+			)
 		}
 		var conflictErr *businessflow.BundleTagEvaluationConflictError
 		if errors.As(err, &conflictErr) {
@@ -489,7 +555,13 @@ func (h *BundleHandler) RequestTagEvaluation(c fiber.Ctx) error {
 				},
 			})
 		}
-		return h.handleBundleFlowError(c, err, fiber.StatusInternalServerError, "Failed to request bundle tag evaluation", "REQUEST_BUNDLE_TAG_EVALUATION_FAILED")
+		return h.handleBundleFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to request bundle tag evaluation",
+			"REQUEST_BUNDLE_TAG_EVALUATION_FAILED",
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusAccepted, "Bundle tag evaluation requested successfully", res)
@@ -527,7 +599,13 @@ func (h *BundleHandler) GetTagEvaluationStatus(c fiber.Ctx) error {
 		BundleID:   id,
 	}, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
 	if err != nil {
-		return h.handleBundleFlowError(c, err, fiber.StatusInternalServerError, "Failed to get bundle tag evaluation status", "GET_BUNDLE_TAG_EVALUATION_STATUS_FAILED")
+		return h.handleBundleFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to get bundle tag evaluation status",
+			"GET_BUNDLE_TAG_EVALUATION_STATUS_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Bundle tag evaluation status retrieved successfully", res)
 }
@@ -585,7 +663,13 @@ func (h *BundleHandler) ListTagScores(c fiber.Ctx) error {
 		Limit:      limit,
 	}, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
 	if err != nil {
-		return h.handleBundleFlowError(c, err, fiber.StatusInternalServerError, "Failed to list bundle tag scores", "LIST_BUNDLE_TAG_SCORES_FAILED")
+		return h.handleBundleFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to list bundle tag scores",
+			"LIST_BUNDLE_TAG_SCORES_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Bundle tag scores retrieved successfully", res)
 }
@@ -601,7 +685,13 @@ func (h *BundleHandler) handleBundleFlowError(c fiber.Ctx, err error, defaultSta
 			return h.ErrorResponse(c, fiber.StatusForbidden, "Bundle access denied", be.Code, nil)
 		case "SMART_TAG_EVALUATION_DISABLED":
 			return h.ErrorResponse(c, fiber.StatusConflict, "Smart tag evaluation is disabled", be.Code, nil)
-		case "GET_BUNDLE_FAILED", "LIST_BUNDLES_FAILED", "CREATE_BUNDLE_FAILED", "UPDATE_BUNDLE_FAILED", "GET_BUNDLE_TAG_EVALUATION_STATUS_FAILED", "LIST_BUNDLE_TAG_SCORES_FAILED", "REQUEST_BUNDLE_TAG_EVALUATION_FAILED":
+		case "GET_BUNDLE_FAILED",
+			"LIST_BUNDLES_FAILED",
+			"CREATE_BUNDLE_FAILED",
+			"UPDATE_BUNDLE_FAILED",
+			"GET_BUNDLE_TAG_EVALUATION_STATUS_FAILED",
+			"LIST_BUNDLE_TAG_SCORES_FAILED",
+			"REQUEST_BUNDLE_TAG_EVALUATION_FAILED":
 			return h.ErrorResponse(c, defaultStatus, defaultMessage, be.Code, nil)
 		case "MISSING_CUSTOMER_ID":
 			return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found", be.Code, nil)
@@ -613,7 +703,11 @@ func (h *BundleHandler) handleBundleFlowError(c fiber.Ctx, err error, defaultSta
 	return h.ErrorResponse(c, defaultStatus, defaultMessage, defaultCode, nil)
 }
 
-func (h *BundleHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *BundleHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

@@ -4,15 +4,15 @@ import "time"
 
 type CreateBundleRequest struct {
 	CustomerID            uint    `json:"-"`
-	Title                 string  `json:"title" validate:"required,max=255"`
-	Objective             string  `json:"objective" validate:"required,max=1023"`
-	TargetAudiencePersona string  `json:"target_audience_persona" validate:"required,max=1023"`
-	AdLink                *string `json:"adlink,omitempty" validate:"omitempty,max=2047"`
-	ShortLinkDomain       *string `json:"short_link_domain,omitempty" validate:"omitempty,max=255"`
-	Description           *string `json:"description,omitempty" validate:"omitempty,max=2047"`
+	Title                 string  `json:"title"                          validate:"required,max=255"`
+	Objective             string  `json:"objective"                      validate:"required,max=1023"`
+	TargetAudiencePersona string  `json:"target_audience_persona"        validate:"required,max=1023"`
+	AdLink                *string `json:"adlink,omitempty"               validate:"omitempty,max=2047"`
+	ShortLinkDomain       *string `json:"short_link_domain,omitempty"    validate:"omitempty,max=255"`
+	Description           *string `json:"description,omitempty"          validate:"omitempty,max=2047"`
 	TargetCustomerName    *string `json:"target_customer_name,omitempty" validate:"omitempty,max=255"`
-	Category              *string `json:"job_category,omitempty" validate:"omitempty,max=255"`
-	Job                   *string `json:"job,omitempty" validate:"omitempty,max=255"`
+	Category              *string `json:"job_category,omitempty"         validate:"omitempty,max=255"`
+	Job                   *string `json:"job,omitempty"                  validate:"omitempty,max=255"`
 }
 
 type CreateBundleResponse struct {
@@ -24,15 +24,15 @@ type CreateBundleResponse struct {
 type UpdateBundleRequest struct {
 	CustomerID            uint    `json:"-"`
 	ID                    uint    `json:"-"`
-	Title                 string  `json:"title" validate:"required,max=255"`
-	Objective             string  `json:"objective" validate:"required,max=1023"`
-	TargetAudiencePersona string  `json:"target_audience_persona" validate:"required,max=1023"`
-	AdLink                *string `json:"adlink,omitempty" validate:"omitempty,max=2047"`
-	ShortLinkDomain       *string `json:"short_link_domain,omitempty" validate:"omitempty,max=255"`
-	Description           *string `json:"description,omitempty" validate:"omitempty,max=2047"`
+	Title                 string  `json:"title"                          validate:"required,max=255"`
+	Objective             string  `json:"objective"                      validate:"required,max=1023"`
+	TargetAudiencePersona string  `json:"target_audience_persona"        validate:"required,max=1023"`
+	AdLink                *string `json:"adlink,omitempty"               validate:"omitempty,max=2047"`
+	ShortLinkDomain       *string `json:"short_link_domain,omitempty"    validate:"omitempty,max=255"`
+	Description           *string `json:"description,omitempty"          validate:"omitempty,max=2047"`
 	TargetCustomerName    *string `json:"target_customer_name,omitempty" validate:"omitempty,max=255"`
-	Category              *string `json:"job_category,omitempty" validate:"omitempty,max=255"`
-	Job                   *string `json:"job,omitempty" validate:"omitempty,max=255"`
+	Category              *string `json:"job_category,omitempty"         validate:"omitempty,max=255"`
+	Job                   *string `json:"job,omitempty"                  validate:"omitempty,max=255"`
 }
 
 type UpdateBundleResponse struct {
@@ -52,14 +52,14 @@ type GetBundleResponse struct {
 }
 
 type ListBundlesFilter struct {
-	Title              *string `json:"title,omitempty" validate:"omitempty,max=255"`
+	Title              *string `json:"title,omitempty"                validate:"omitempty,max=255"`
 	TargetCustomerName *string `json:"target_customer_name,omitempty" validate:"omitempty,max=255"`
 }
 
 type ListBundlesRequest struct {
 	CustomerID uint               `json:"-"`
-	Page       int                `json:"page" validate:"omitempty,min=1,max=100"`
-	Limit      int                `json:"limit" validate:"omitempty,min=1,max=100"`
+	Page       int                `json:"page"             validate:"omitempty,min=1,max=100"`
+	Limit      int                `json:"limit"            validate:"omitempty,min=1,max=100"`
 	Filter     *ListBundlesFilter `json:"filter,omitempty" validate:"omitempty"`
 }
 
@@ -125,7 +125,7 @@ type GetBundleTagEvaluationStatusResponse struct {
 type ListBundleTagScoresRequest struct {
 	CustomerID uint `json:"-"`
 	BundleID   uint `json:"-"`
-	Page       int  `json:"page" validate:"omitempty,min=1,max=100"`
+	Page       int  `json:"page"  validate:"omitempty,min=1,max=100"`
 	Limit      int  `json:"limit" validate:"omitempty,min=1,max=100"`
 }
 

@@ -22,7 +22,8 @@ type AuthBotHandler struct {
 }
 
 func (h *AuthBotHandler) ErrorResponse(c fiber.Ctx, statusCode int, message, errorCode string, details any) error {
-	return c.Status(statusCode).JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: errorCode, Details: details}})
+	return c.Status(statusCode).
+		JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: errorCode, Details: details}})
 }
 
 func (h *AuthBotHandler) SuccessResponse(c fiber.Ctx, statusCode int, message string, data any) error {
@@ -62,7 +63,11 @@ func (h *AuthBotHandler) Login(c fiber.Ctx) error {
 	return h.SuccessResponse(c, fiber.StatusOK, "Login successful", res)
 }
 
-func (h *AuthBotHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *AuthBotHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

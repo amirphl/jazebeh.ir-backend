@@ -88,7 +88,11 @@ func (af *AdminAuthFlowImpl) InitCaptcha(ctx context.Context) (*dto.AdminCaptcha
 	}, nil
 }
 
-func (af *AdminAuthFlowImpl) Verify(ctx context.Context, req *dto.AdminCaptchaVerifyRequest, metadata *ClientMetadata) (*dto.AdminLoginInitResponse, error) {
+func (af *AdminAuthFlowImpl) Verify(
+	ctx context.Context,
+	req *dto.AdminCaptchaVerifyRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminLoginInitResponse, error) {
 	// Validate request
 	if req == nil {
 		return nil, NewBusinessError("ADMIN_LOGIN_VALIDATION_FAILED", "Admin login validation failed", ErrAuthenticationFailed)
@@ -156,7 +160,11 @@ func (af *AdminAuthFlowImpl) Verify(ctx context.Context, req *dto.AdminCaptchaVe
 	return resp, nil
 }
 
-func (af *AdminAuthFlowImpl) VerifyOTP(ctx context.Context, req *dto.AdminLoginVerifyOTPRequest, metadata *ClientMetadata) (*dto.AdminLoginResponse, error) {
+func (af *AdminAuthFlowImpl) VerifyOTP(
+	ctx context.Context,
+	req *dto.AdminLoginVerifyOTPRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminLoginResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("ADMIN_LOGIN_OTP_VALIDATION_FAILED", "Admin OTP validation failed", ErrInvalidOTPCode)
 	}

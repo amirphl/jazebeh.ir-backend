@@ -175,7 +175,11 @@ func (lf *LoginFlowImpl) Login(ctx context.Context, req *dto.LoginRequest, metad
 }
 
 // RequestLoginOTP generates an OTP for login and sends it via SMS.
-func (lf *LoginFlowImpl) RequestLoginOTP(ctx context.Context, req *dto.LoginOTPRequest, metadata *ClientMetadata) (*dto.LoginOTPResponse, error) {
+func (lf *LoginFlowImpl) RequestLoginOTP(
+	ctx context.Context,
+	req *dto.LoginOTPRequest,
+	metadata *ClientMetadata,
+) (*dto.LoginOTPResponse, error) {
 	if err := lf.validateLoginOTPRequest(req); err != nil {
 		return nil, NewBusinessError("LOGIN_OTP_VALIDATION_FAILED", "Login OTP validation failed", err)
 	}
@@ -257,7 +261,11 @@ func (lf *LoginFlowImpl) RequestLoginOTP(ctx context.Context, req *dto.LoginOTPR
 }
 
 // ForgotPassword initiates the password reset process
-func (lf *LoginFlowImpl) ForgotPassword(ctx context.Context, req *dto.ForgotPasswordRequest, metadata *ClientMetadata) (*dto.ForgetPasswordResponse, error) {
+func (lf *LoginFlowImpl) ForgotPassword(
+	ctx context.Context,
+	req *dto.ForgotPasswordRequest,
+	metadata *ClientMetadata,
+) (*dto.ForgetPasswordResponse, error) {
 	// Validate business rules
 	if err := lf.validateForgotPasswordRequest(req); err != nil {
 		return nil, NewBusinessError("FORGOT_PASSWORD_VALIDATION_FAILED", "Forgot password validation failed", err)
@@ -334,7 +342,11 @@ func (lf *LoginFlowImpl) ForgotPassword(ctx context.Context, req *dto.ForgotPass
 }
 
 // ResetPassword completes the password reset process with OTP verification
-func (lf *LoginFlowImpl) ResetPassword(ctx context.Context, req *dto.ResetPasswordRequest, metadata *ClientMetadata) (*dto.ResetPasswordResponse, error) {
+func (lf *LoginFlowImpl) ResetPassword(
+	ctx context.Context,
+	req *dto.ResetPasswordRequest,
+	metadata *ClientMetadata,
+) (*dto.ResetPasswordResponse, error) {
 	// Validate business rules
 	if err := lf.validateResetPasswordRequest(req); err != nil {
 		return nil, NewBusinessError("RESET_PASSWORD_VALIDATION_FAILED", "Reset password validation failed", err)
@@ -552,7 +564,15 @@ func (lf *LoginFlowImpl) invalidateAllSessions(ctx context.Context, customerID u
 	return nil
 }
 
-func (lf *LoginFlowImpl) createAuditLog(ctx context.Context, customer *models.Customer, action string, description string, success bool, errMsg *string, metadata *ClientMetadata) error {
+func (lf *LoginFlowImpl) createAuditLog(
+	ctx context.Context,
+	customer *models.Customer,
+	action string,
+	description string,
+	success bool,
+	errMsg *string,
+	metadata *ClientMetadata,
+) error {
 	var customerID *uint
 	if customer != nil {
 		customerID = &customer.ID

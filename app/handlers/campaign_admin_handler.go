@@ -208,29 +208,77 @@ func (h *CampaignAdminHandler) ApproveCampaign(c fiber.Ctx) error {
 	res, err := h.campaignFlow.ApproveCampaign(ctx, &req)
 	if err != nil {
 		if errors.Is(err, businessflow.ErrSmartTargetingTestPreviewRequired) {
-			return h.ErrorResponse(c, fiber.StatusConflict, businessflow.ErrSmartTargetingTestPreviewRequired.Error(), "SMART_TARGETING_TEST_PREVIEW_REQUIRED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				businessflow.ErrSmartTargetingTestPreviewRequired.Error(),
+				"SMART_TARGETING_TEST_PREVIEW_REQUIRED",
+				nil,
+			)
 		}
 		if errors.Is(err, businessflow.ErrSmartTargetingTestNoSatisfiedTags) {
-			return h.ErrorResponse(c, fiber.StatusConflict, businessflow.ErrSmartTargetingTestNoSatisfiedTags.Error(), "SMART_TARGETING_TEST_NO_SATISFIED_TAGS", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				businessflow.ErrSmartTargetingTestNoSatisfiedTags.Error(),
+				"SMART_TARGETING_TEST_NO_SATISFIED_TAGS",
+				nil,
+			)
 		}
 		if errors.Is(err, businessflow.ErrSmartTargetingSampleSizeRequired) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, businessflow.ErrSmartTargetingSampleSizeRequired.Error(), "SMART_TARGETING_SAMPLE_SIZE_REQUIRED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				businessflow.ErrSmartTargetingSampleSizeRequired.Error(),
+				"SMART_TARGETING_SAMPLE_SIZE_REQUIRED",
+				nil,
+			)
 		}
 		if errors.Is(err, businessflow.ErrSmartTargetingSampleSizeInvalid) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, businessflow.ErrSmartTargetingSampleSizeInvalid.Error(), "SMART_TARGETING_SAMPLE_SIZE_INVALID", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				businessflow.ErrSmartTargetingSampleSizeInvalid.Error(),
+				"SMART_TARGETING_SAMPLE_SIZE_INVALID",
+				nil,
+			)
 		}
 		if errors.Is(err, businessflow.ErrSmartTargetingTestAudienceCountOverflow) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, businessflow.ErrSmartTargetingTestAudienceCountOverflow.Error(), "SMART_TARGETING_TEST_AUDIENCE_COUNT_OVERFLOW", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				businessflow.ErrSmartTargetingTestAudienceCountOverflow.Error(),
+				"SMART_TARGETING_TEST_AUDIENCE_COUNT_OVERFLOW",
+				nil,
+			)
 		}
 		if errors.Is(err, businessflow.ErrSmartTargetingCapacityPending) {
 			var pending *businessflow.SmartTargetingCapacityPendingError
 			if errors.As(err, &pending) && pending != nil {
-				return h.ErrorResponse(c, fiber.StatusConflict, "Exact Smart Targeting capacity calculation is pending; please wait and retry approval", "SMART_TARGETING_CAPACITY_PENDING", pending.Response)
+				return h.ErrorResponse(
+					c,
+					fiber.StatusConflict,
+					"Exact Smart Targeting capacity calculation is pending; please wait and retry approval",
+					"SMART_TARGETING_CAPACITY_PENDING",
+					pending.Response,
+				)
 			}
-			return h.ErrorResponse(c, fiber.StatusConflict, "Exact Smart Targeting capacity calculation is pending; please wait and retry approval", "SMART_TARGETING_CAPACITY_PENDING", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"Exact Smart Targeting capacity calculation is pending; please wait and retry approval",
+				"SMART_TARGETING_CAPACITY_PENDING",
+				nil,
+			)
 		}
 		if errors.Is(err, businessflow.ErrSmartTargetingExactCapacityRequired) {
-			return h.ErrorResponse(c, fiber.StatusConflict, "A current exact Smart Targeting capacity calculation is required before approval", "SMART_TARGETING_EXACT_CAPACITY_REQUIRED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"A current exact Smart Targeting capacity calculation is required before approval",
+				"SMART_TARGETING_EXACT_CAPACITY_REQUIRED",
+				nil,
+			)
 		}
 		if businessflow.IsCampaignNotFound(err) {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Campaign not found", "CAMPAIGN_NOT_FOUND", nil)
@@ -335,7 +383,8 @@ func (h *CampaignAdminHandler) RejectCampaign(c fiber.Ctx) error {
 
 // RescheduleCampaign updates the scheduled time for a campaign (admin-only).
 // @Summary Reschedule Campaign
-// @Description Admin reschedules an eligible campaign; schedule_at must be UTC and its Tehran-local time must be between 08:00 and 21:00. A waiting-for-approval campaign whose deadline was missed may still be rescheduled.
+// @Description Admin reschedules an eligible campaign; schedule_at must be UTC and its Tehran-local time must be between 08:00 and 21:00. A
+// waiting-for-approval campaign whose deadline was missed may still be rescheduled.
 // @Tags Admin Campaigns
 // @Accept json
 // @Produce json
@@ -369,16 +418,40 @@ func (h *CampaignAdminHandler) RescheduleCampaign(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Schedule time is required", "SCHEDULE_TIME_REQUIRED", nil)
 		}
 		if businessflow.IsScheduleTimeTooCloseToCurrent(err) {
-			return h.ErrorResponse(c, fiber.StatusConflict, "Current schedule is too close; reschedule must happen at least 5 minutes before scheduled time", "SCHEDULE_TIME_TOO_CLOSE_TO_CURRENT", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"Current schedule is too close; reschedule must happen at least 5 minutes before scheduled time",
+				"SCHEDULE_TIME_TOO_CLOSE_TO_CURRENT",
+				nil,
+			)
 		}
 		if businessflow.IsScheduleTimeTooSoon(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Schedule time must be at least 5 minutes in the future", "SCHEDULE_TIME_TOO_SOON", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Schedule time must be at least 5 minutes in the future",
+				"SCHEDULE_TIME_TOO_SOON",
+				nil,
+			)
 		}
 		if businessflow.IsScheduleTimeMustBeUTC(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Schedule time must be in UTC (offset +00:00)", "SCHEDULE_TIME_MUST_BE_UTC", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Schedule time must be in UTC (offset +00:00)",
+				"SCHEDULE_TIME_MUST_BE_UTC",
+				nil,
+			)
 		}
 		if businessflow.IsScheduleTimeOutsideWindow(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Converted Tehran schedule time must be between 08:00 and 21:00", "SCHEDULE_TIME_OUTSIDE_WINDOW", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Converted Tehran schedule time must be between 08:00 and 21:00",
+				"SCHEDULE_TIME_OUTSIDE_WINDOW",
+				nil,
+			)
 		}
 		var be *businessflow.BusinessError
 		if errors.As(err, &be) && be.Code != "" {
@@ -393,7 +466,8 @@ func (h *CampaignAdminHandler) RescheduleCampaign(c fiber.Ctx) error {
 
 // CancelCampaign cancels an approved campaign or a waiting-for-approval campaign that missed its deadline.
 // @Summary Cancel Campaign
-// @Description Cancel an approved campaign by admin and refund consumed budget to customer. Approved campaigns still require at least 2 minutes before schedule_at; a waiting-for-approval campaign that already missed schedule_at may also be cancelled.
+// @Description Cancel an approved campaign by admin and refund consumed budget to customer. Approved campaigns still require at least 2
+// minutes before schedule_at; a waiting-for-approval campaign that already missed schedule_at may also be cancelled.
 // @Tags Admin Campaigns
 // @Accept json
 // @Produce json
@@ -424,7 +498,13 @@ func (h *CampaignAdminHandler) CancelCampaign(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusConflict, "Invalid campaign state for cancel", "INVALID_STATE", nil)
 		}
 		if businessflow.IsScheduleTimeTooCloseToCancel(err) {
-			return h.ErrorResponse(c, fiber.StatusConflict, "Current schedule is too close; cancel must happen at least 2 minutes before scheduled time", "SCHEDULE_TIME_TOO_CLOSE_TO_CANCEL", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"Current schedule is too close; cancel must happen at least 2 minutes before scheduled time",
+				"SCHEDULE_TIME_TOO_CLOSE_TO_CANCEL",
+				nil,
+			)
 		}
 		if businessflow.IsCustomerNotFound(err) {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Customer not found", "CUSTOMER_NOT_FOUND", nil)
@@ -436,10 +516,22 @@ func (h *CampaignAdminHandler) CancelCampaign(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Balance snapshot not found", "BALANCE_SNAPSHOT_NOT_FOUND", nil)
 		}
 		if businessflow.IsCampaignDebitTransactionNotFound(err) {
-			return h.ErrorResponse(c, fiber.StatusConflict, "Campaign debit transaction not found", "CAMPAIGN_DEBIT_TRANSACTION_NOT_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"Campaign debit transaction not found",
+				"CAMPAIGN_DEBIT_TRANSACTION_NOT_FOUND",
+				nil,
+			)
 		}
 		if businessflow.IsMultipleCampaignDebitTransactionsFound(err) {
-			return h.ErrorResponse(c, fiber.StatusConflict, "Multiple campaign debit transactions found", "MULTIPLE_CAMPAIGN_DEBIT_TRANSACTIONS_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"Multiple campaign debit transactions found",
+				"MULTIPLE_CAMPAIGN_DEBIT_TRANSACTIONS_FOUND",
+				nil,
+			)
 		}
 		if businessflow.IsInsufficientFunds(err) {
 			return h.ErrorResponse(c, fiber.StatusConflict, "Insufficient funds", "INSUFFICIENT_FUNDS", nil)
@@ -510,7 +602,11 @@ func (h *CampaignAdminHandler) GetPagePrices(c fiber.Ctx) error {
 }
 
 // createRequestContextWithTimeout creates a context with custom timeout and request-scoped values
-func (h *CampaignAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *CampaignAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	// Create context with custom timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 

@@ -46,15 +46,18 @@ func (h *CryptoPaymentHandler) CreateRequest(c fiber.Ctx) error {
 	}
 	var req dto.CreateCryptoPaymentRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Invalid request body", Error: dto.ErrorDetail{Code: "INVALID_REQUEST"}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Invalid request body", Error: dto.ErrorDetail{Code: "INVALID_REQUEST"}})
 	}
 	customerID, ok := c.Locals("customer_id").(uint)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Unauthorized", Error: dto.ErrorDetail{Code: "MISSING_CUSTOMER_ID"}})
+		return c.Status(fiber.StatusUnauthorized).
+			JSON(dto.APIResponse{Success: false, Message: "Unauthorized", Error: dto.ErrorDetail{Code: "MISSING_CUSTOMER_ID"}})
 	}
 	req.CustomerID = customerID
 	if err := h.validator.Struct(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Validation failed", Error: dto.ErrorDetail{Code: "VALIDATION_ERROR", Details: err.Error()}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Validation failed", Error: dto.ErrorDetail{Code: "VALIDATION_ERROR", Details: err.Error()}})
 	}
 	meta := businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent"))
 	resp, err := h.flow.CreateRequest(h.requestCtx(c, "/api/v1/crypto/payments/request"), &req, meta)
@@ -83,7 +86,8 @@ func (h *CryptoPaymentHandler) GetStatus(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	customerID, ok := c.Locals("customer_id").(uint)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Unauthorized", Error: dto.ErrorDetail{Code: "MISSING_CUSTOMER_ID"}})
+		return c.Status(fiber.StatusUnauthorized).
+			JSON(dto.APIResponse{Success: false, Message: "Unauthorized", Error: dto.ErrorDetail{Code: "MISSING_CUSTOMER_ID"}})
 	}
 	req := dto.GetCryptoPaymentStatusRequest{UUID: uuid, CustomerID: customerID}
 	meta := businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent"))
@@ -113,15 +117,18 @@ func (h *CryptoPaymentHandler) ManualVerify(c fiber.Ctx) error {
 	}
 	var req dto.ManualVerifyCryptoDepositRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Invalid request body", Error: dto.ErrorDetail{Code: "INVALID_REQUEST"}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Invalid request body", Error: dto.ErrorDetail{Code: "INVALID_REQUEST"}})
 	}
 	customerID, ok := c.Locals("customer_id").(uint)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Unauthorized", Error: dto.ErrorDetail{Code: "MISSING_CUSTOMER_ID"}})
+		return c.Status(fiber.StatusUnauthorized).
+			JSON(dto.APIResponse{Success: false, Message: "Unauthorized", Error: dto.ErrorDetail{Code: "MISSING_CUSTOMER_ID"}})
 	}
 	req.CustomerID = customerID
 	if err := h.validator.Struct(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Validation failed", Error: dto.ErrorDetail{Code: "VALIDATION_ERROR", Details: err.Error()}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Validation failed", Error: dto.ErrorDetail{Code: "VALIDATION_ERROR", Details: err.Error()}})
 	}
 	meta := businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent"))
 	resp, err := h.flow.ManualVerify(h.requestCtx(c, "/api/v1/crypto/payments/verify"), &req, meta)
@@ -175,16 +182,22 @@ func (h *CryptoPaymentHandler) requestCtx(c fiber.Ctx, endpoint string) context.
 func mapCryptoErr(c fiber.Ctx, err error) error {
 	switch {
 	case businessflow.IsCustomerNotFound(err):
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Customer not found", Error: dto.ErrorDetail{Code: "CUSTOMER_NOT_FOUND"}})
+		return c.Status(fiber.StatusUnauthorized).
+			JSON(dto.APIResponse{Success: false, Message: "Customer not found", Error: dto.ErrorDetail{Code: "CUSTOMER_NOT_FOUND"}})
 	case businessflow.IsAccountInactive(err):
-		return c.Status(fiber.StatusForbidden).JSON(dto.APIResponse{Success: false, Message: "Account inactive", Error: dto.ErrorDetail{Code: "ACCOUNT_INACTIVE"}})
+		return c.Status(fiber.StatusForbidden).
+			JSON(dto.APIResponse{Success: false, Message: "Account inactive", Error: dto.ErrorDetail{Code: "ACCOUNT_INACTIVE"}})
 	case businessflow.IsAgencyDiscountNotFound(err):
-		return c.Status(fiber.StatusNotFound).JSON(dto.APIResponse{Success: false, Message: "Agency discount not found", Error: dto.ErrorDetail{Code: "AGENCY_DISCOUNT_NOT_FOUND"}})
+		return c.Status(fiber.StatusNotFound).
+			JSON(dto.APIResponse{Success: false, Message: "Agency discount not found", Error: dto.ErrorDetail{Code: "AGENCY_DISCOUNT_NOT_FOUND"}})
 	case businessflow.IsCryptoUnsupportedPlatform(err):
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Unsupported platform", Error: dto.ErrorDetail{Code: "UNSUPPORTED_PLATFORM"}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Unsupported platform", Error: dto.ErrorDetail{Code: "UNSUPPORTED_PLATFORM"}})
 	case businessflow.IsAmountTooLow(err):
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Amount too low", Error: dto.ErrorDetail{Code: "AMOUNT_TOO_LOW"}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Amount too low", Error: dto.ErrorDetail{Code: "AMOUNT_TOO_LOW"}})
 	default:
-		return c.Status(fiber.StatusInternalServerError).JSON(dto.APIResponse{Success: false, Message: "Crypto payment operation failed", Error: dto.ErrorDetail{Code: "CRYPTO_OPERATION_FAILED", Details: err.Error()}})
+		return c.Status(fiber.StatusInternalServerError).
+			JSON(dto.APIResponse{Success: false, Message: "Crypto payment operation failed", Error: dto.ErrorDetail{Code: "CRYPTO_OPERATION_FAILED", Details: err.Error()}})
 	}
 }

@@ -51,19 +51,79 @@ func TestSmartTargetingCapacityHashIsOrderIndependent(t *testing.T) {
 	payamColors := []string{"white", "pink"}
 	execution := repository.SmartTargetingSelectionPhaseExecution
 	testPhase := repository.SmartTargetingSelectionPhaseTest
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "C"}, models.CampaignPlatformSMS, payamColors, execution) {
+	if smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformSMS,
+		payamColors,
+		execution,
+	) == smartTargetingInputHash(
+		first,
+		[]string{"A", "C"},
+		models.CampaignPlatformSMS,
+		payamColors,
+		execution,
+	) {
 		t.Fatal("score classes must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) != smartTargetingInputHash(first, []string{"A", "B"}, " SMS ", payamColors, execution) {
+	if smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformSMS,
+		payamColors,
+		execution,
+	) != smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		" SMS ",
+		payamColors,
+		execution,
+	) {
 		t.Fatal("equal targeting inputs must produce equal hashes")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformBale, nil, execution) {
+	if smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformSMS,
+		payamColors,
+		execution,
+	) == smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformBale,
+		nil,
+		execution,
+	) {
 		t.Fatal("platform must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, testPhase) {
+	if smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformSMS,
+		payamColors,
+		execution,
+	) == smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformSMS,
+		payamColors,
+		testPhase,
+	) {
 		t.Fatal("selection phase must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, nil, execution) {
+	if smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformSMS,
+		payamColors,
+		execution,
+	) == smartTargetingInputHash(
+		first,
+		[]string{"A", "B"},
+		models.CampaignPlatformSMS,
+		nil,
+		execution,
+	) {
 		t.Fatal("delivery-provider color eligibility must participate in the input hash")
 	}
 }
@@ -106,7 +166,11 @@ func TestSmartTargetingCapacityAudienceQueryUsesSnapshotEligibility(t *testing.T
 		SelectedScoreClasses:          pq.StringArray{"A", "C"},
 	}
 	query := smartTargetingCapacityAudienceQuery(calculation)
-	if query.BundleID != 3 || query.Phase != repository.SmartTargetingSelectionPhaseTest || query.ExcludeActiveTestReservationCampaignID != 17 || !reflect.DeepEqual(query.TagIDs, []int64{2, 9}) || !reflect.DeepEqual(query.ScoreClasses, []string{"A", "C"}) || !reflect.DeepEqual(query.AllowedColors, []string{"white", "pink"}) {
+	if query.BundleID != 3 || query.Phase != repository.SmartTargetingSelectionPhaseTest ||
+		query.ExcludeActiveTestReservationCampaignID != 17 ||
+		!reflect.DeepEqual(query.TagIDs, []int64{2, 9}) ||
+		!reflect.DeepEqual(query.ScoreClasses, []string{"A", "C"}) ||
+		!reflect.DeepEqual(query.AllowedColors, []string{"white", "pink"}) {
 		t.Fatalf("capacity audience query = %#v", query)
 	}
 }
@@ -191,7 +255,8 @@ func TestCapacityDTODoesNotExposeStaleCounts(t *testing.T) {
 		t.Fatalf("stale response leaked a valid result: %#v", stale)
 	}
 	current := capacityDTO(row, true, false)
-	if current.UsableUniqueCount == nil || *current.UsableUniqueCount != 0 || current.ApprovedDeduction == nil || *current.ApprovedDeduction != 90 {
+	if current.UsableUniqueCount == nil || *current.UsableUniqueCount != 0 || current.ApprovedDeduction == nil ||
+		*current.ApprovedDeduction != 90 {
 		t.Fatalf("current zero result must remain distinguishable from unavailable: %#v", current)
 	}
 }
@@ -288,9 +353,13 @@ func TestSmartTargetingBundleAllocationFingerprintTracksActiveTestReservationsWi
 		t.Fatalf("allocation state without Test reservation = (%d, %q, %v), want deduction 600", deduction, withoutReservation, err)
 	}
 
-	deduction, withReservation, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, []repository.BundleActiveTestReservation{
-		{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
-	})
+	deduction, withReservation, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(
+		3,
+		allocations,
+		[]repository.BundleActiveTestReservation{
+			{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
+		},
+	)
 	if err != nil || deduction != 600 {
 		t.Fatalf("allocation state with Test reservation = (%d, %q, %v), want unchanged deduction 600", deduction, withReservation, err)
 	}
@@ -299,20 +368,33 @@ func TestSmartTargetingBundleAllocationFingerprintTracksActiveTestReservationsWi
 	}
 	_, afterRelease, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, nil)
 	if err != nil || afterRelease != withoutReservation {
-		t.Fatalf("released Test reservation must restore the unreserved capacity fingerprint: got %q, want %q, err=%v", afterRelease, withoutReservation, err)
+		t.Fatalf(
+			"released Test reservation must restore the unreserved capacity fingerprint: got %q, want %q, err=%v",
+			afterRelease,
+			withoutReservation,
+			err,
+		)
 	}
 
-	_, reordered, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, []repository.BundleActiveTestReservation{
-		{CampaignID: 29, SelectionID: 45, AudienceCount: 200},
-		{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
-	})
+	_, reordered, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(
+		3,
+		allocations,
+		[]repository.BundleActiveTestReservation{
+			{CampaignID: 29, SelectionID: 45, AudienceCount: 200},
+			{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
+		},
+	)
 	if err != nil {
 		t.Fatalf("build reservation fingerprint: %v", err)
 	}
-	_, reorderedAgain, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, []repository.BundleActiveTestReservation{
-		{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
-		{CampaignID: 29, SelectionID: 45, AudienceCount: 200},
-	})
+	_, reorderedAgain, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(
+		3,
+		allocations,
+		[]repository.BundleActiveTestReservation{
+			{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
+			{CampaignID: 29, SelectionID: 45, AudienceCount: 200},
+		},
+	)
 	if err != nil || reordered != reorderedAgain {
 		t.Fatalf("active Test reservation fingerprint must be deterministic: %q, %q, %v", reordered, reorderedAgain, err)
 	}
@@ -327,9 +409,13 @@ func TestSmartTargetingBundleAllocationDoesNotCountDeductConcreteReservationOwne
 	allocations := []repository.BundleCampaignAllocation{
 		{CampaignID: 23, NumAudience: &audience, Status: models.CampaignStatusApproved, Materialized: false},
 	}
-	deduction, _, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, []repository.BundleActiveTestReservation{
-		{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
-	})
+	deduction, _, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(
+		3,
+		allocations,
+		[]repository.BundleActiveTestReservation{
+			{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
+		},
+	)
 	if err != nil {
 		t.Fatalf("allocation state returned error: %v", err)
 	}

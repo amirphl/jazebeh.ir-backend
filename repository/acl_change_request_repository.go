@@ -34,7 +34,12 @@ func (r *ACLChangeRequestRepositoryImpl) ByUUID(ctx context.Context, id uuid.UUI
 }
 
 // ByFilter returns change requests that match the provided filter.
-func (r *ACLChangeRequestRepositoryImpl) ByFilter(ctx context.Context, f models.ACLChangeRequestFilter, orderBy string, limit, offset int) ([]*models.ACLChangeRequest, error) {
+func (r *ACLChangeRequestRepositoryImpl) ByFilter(
+	ctx context.Context,
+	f models.ACLChangeRequestFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.ACLChangeRequest, error) {
 	db := r.applyFilter(r.getDB(ctx).Model(&models.ACLChangeRequest{}), f)
 	if orderBy == "" {
 		orderBy = "id DESC"

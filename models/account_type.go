@@ -6,10 +6,10 @@ import (
 )
 
 type AccountType struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	TypeName    string    `gorm:"type:account_type_enum;not null;uniqueIndex" json:"type_name"`
-	DisplayName string    `gorm:"size:50;not null" json:"display_name"`
-	Description *string   `gorm:"type:text" json:"description,omitempty"`
+	ID          uint      `gorm:"primaryKey"                                     json:"id"`
+	TypeName    string    `gorm:"type:account_type_enum;not null;uniqueIndex"    json:"type_name"`
+	DisplayName string    `gorm:"size:50;not null"                               json:"display_name"`
+	Description *string   `gorm:"type:text"                                      json:"description,omitempty"`
 	CreatedAt   time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"updated_at"`
 }

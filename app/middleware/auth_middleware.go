@@ -154,7 +154,8 @@ func (m *AuthMiddleware) AdminAuthenticate() fiber.Handler {
 				code = "TOKEN_VALIDATION_FAILED"
 				msg = "Token validation failed"
 			}
-			return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: msg, Error: dto.ErrorDetail{Code: code}})
+			return c.Status(fiber.StatusUnauthorized).
+				JSON(dto.APIResponse{Success: false, Message: msg, Error: dto.ErrorDetail{Code: code}})
 		}
 
 		// For admin tokens, use admin-specific claims
@@ -175,14 +176,17 @@ func (m *AuthMiddleware) BotAuthenticate() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Authorization header is required", Error: dto.ErrorDetail{Code: "MISSING_AUTHORIZATION_HEADER"}})
+			return c.Status(fiber.StatusUnauthorized).
+				JSON(dto.APIResponse{Success: false, Message: "Authorization header is required", Error: dto.ErrorDetail{Code: "MISSING_AUTHORIZATION_HEADER"}})
 		}
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Invalid authorization header format. Expected 'Bearer <token>'", Error: dto.ErrorDetail{Code: "INVALID_AUTHORIZATION_FORMAT"}})
+			return c.Status(fiber.StatusUnauthorized).
+				JSON(dto.APIResponse{Success: false, Message: "Invalid authorization header format. Expected 'Bearer <token>'", Error: dto.ErrorDetail{Code: "INVALID_AUTHORIZATION_FORMAT"}})
 		}
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Access token is required", Error: dto.ErrorDetail{Code: "MISSING_ACCESS_TOKEN"}})
+			return c.Status(fiber.StatusUnauthorized).
+				JSON(dto.APIResponse{Success: false, Message: "Access token is required", Error: dto.ErrorDetail{Code: "MISSING_ACCESS_TOKEN"}})
 		}
 
 		botClaims, err := m.tokenService.ValidateBotToken(token)
@@ -201,7 +205,8 @@ func (m *AuthMiddleware) BotAuthenticate() fiber.Handler {
 				code = "TOKEN_VALIDATION_FAILED"
 				msg = "Token validation failed"
 			}
-			return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: msg, Error: dto.ErrorDetail{Code: code}})
+			return c.Status(fiber.StatusUnauthorized).
+				JSON(dto.APIResponse{Success: false, Message: msg, Error: dto.ErrorDetail{Code: code}})
 		}
 
 		c.Locals("bot_id", botClaims.BotID)

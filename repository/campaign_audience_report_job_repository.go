@@ -30,7 +30,11 @@ func NewCampaignAudienceReportJobRepository(db *gorm.DB) CampaignAudienceReportJ
 // CreateWithinCustomerLimit serializes submissions for a customer before
 // counting retained jobs. A count followed by an insert outside this
 // transaction would let concurrent requests all pass the limit.
-func (r *campaignAudienceReportJobRepository) CreateWithinCustomerLimit(ctx context.Context, j *models.CampaignAudienceReportJob, limit int64) (bool, error) {
+func (r *campaignAudienceReportJobRepository) CreateWithinCustomerLimit(
+	ctx context.Context,
+	j *models.CampaignAudienceReportJob,
+	limit int64,
+) (bool, error) {
 	if limit <= 0 {
 		return false, errors.New("campaign audience report job limit must be positive")
 	}
@@ -56,7 +60,12 @@ func (r *campaignAudienceReportJobRepository) CreateWithinCustomerLimit(ctx cont
 	})
 	return created, err
 }
-func (r *campaignAudienceReportJobRepository) ByIDForCustomer(ctx context.Context, id string, customerID uint) (*models.CampaignAudienceReportJob, error) {
+
+func (r *campaignAudienceReportJobRepository) ByIDForCustomer(
+	ctx context.Context,
+	id string,
+	customerID uint,
+) (*models.CampaignAudienceReportJob, error) {
 	var j models.CampaignAudienceReportJob
 	if err := r.db.WithContext(ctx).Where("id=? AND customer_id=?", id, customerID).First(&j).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -66,11 +75,17 @@ func (r *campaignAudienceReportJobRepository) ByIDForCustomer(ctx context.Contex
 	}
 	return &j, nil
 }
-func (r *campaignAudienceReportJobRepository) ClaimDue(ctx context.Context, now time.Time, lease time.Duration) (*models.CampaignAudienceReportJob, bool, error) {
+
+func (r *campaignAudienceReportJobRepository) ClaimDue(
+	ctx context.Context,
+	now time.Time,
+	lease time.Duration,
+) (*models.CampaignAudienceReportJob, bool, error) {
 	var out models.CampaignAudienceReportJob
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var ids []string
-		if err := tx.Raw("SELECT id FROM campaign_audience_report_jobs WHERE status=? OR (status=? AND lease_expires_at<?) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1", models.CampaignAudienceReportJobPending, models.CampaignAudienceReportJobProcessing, now).Scan(&ids).Error; err != nil || len(ids) == 0 {
+		if err := tx.Raw("SELECT id FROM campaign_audience_report_jobs WHERE status=? OR (status=? AND lease_expires_at<?) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1", models.CampaignAudienceReportJobPending, models.CampaignAudienceReportJobProcessing, now).Scan(&ids).Error; err != nil ||
+			len(ids) == 0 {
 			return err
 		}
 		token := uuid.NewString()
@@ -91,16 +106,27 @@ func (r *campaignAudienceReportJobRepository) UpdateClaimed(ctx context.Context,
 	if j.LeaseToken == nil {
 		return false, nil
 	}
-	q := r.db.WithContext(ctx).Model(&models.CampaignAudienceReportJob{}).Where("id=? AND lease_token=?", j.ID, *j.LeaseToken).Updates(map[string]any{"status": j.Status, "row_count": j.RowCount, "sheet_count": j.SheetCount, "byte_size": j.ByteSize, "output_path": j.OutputPath, "error_code": j.ErrorCode, "error_message": j.ErrorMessage, "completed_at": j.CompletedAt, "expires_at": j.ExpiresAt, "lease_token": nil, "lease_expires_at": nil, "updated_at": time.Now().UTC()})
+	q := r.db.WithContext(ctx).
+		Model(&models.CampaignAudienceReportJob{}).
+		Where("id=? AND lease_token=?", j.ID, *j.LeaseToken).
+		Updates(map[string]any{"status": j.Status, "row_count": j.RowCount, "sheet_count": j.SheetCount, "byte_size": j.ByteSize, "output_path": j.OutputPath, "error_code": j.ErrorCode, "error_message": j.ErrorMessage, "completed_at": j.CompletedAt, "expires_at": j.ExpiresAt, "lease_token": nil, "lease_expires_at": nil, "updated_at": time.Now().UTC()})
 	return q.RowsAffected == 1, q.Error
 }
 func (r *campaignAudienceReportJobRepository) ExpiredOutputPaths(ctx context.Context, now time.Time) ([]string, error) {
 	var paths []string
-	err := r.db.WithContext(ctx).Model(&models.CampaignAudienceReportJob{}).Where("status=? AND expires_at<=? AND output_path IS NOT NULL", models.CampaignAudienceReportJobCompleted, now).Pluck("output_path", &paths).Error
+	err := r.db.WithContext(ctx).
+		Model(&models.CampaignAudienceReportJob{}).
+		Where("status=? AND expires_at<=? AND output_path IS NOT NULL", models.CampaignAudienceReportJobCompleted, now).
+		Pluck("output_path", &paths).
+		Error
 	return paths, err
 }
 func (r *campaignAudienceReportJobRepository) MarkExpiredOutput(ctx context.Context, path string, now time.Time) error {
-	return r.db.WithContext(ctx).Model(&models.CampaignAudienceReportJob{}).Where("status=? AND expires_at<=? AND output_path=?", models.CampaignAudienceReportJobCompleted, now, path).Updates(map[string]any{"status": models.CampaignAudienceReportJobExpired, "output_path": nil, "updated_at": now}).Error
+	return r.db.WithContext(ctx).
+		Model(&models.CampaignAudienceReportJob{}).
+		Where("status=? AND expires_at<=? AND output_path=?", models.CampaignAudienceReportJobCompleted, now, path).
+		Updates(map[string]any{"status": models.CampaignAudienceReportJobExpired, "output_path": nil, "updated_at": now}).
+		Error
 }
 
 // ReferencedOutputPaths is used to reap files from interrupted attempts. Only

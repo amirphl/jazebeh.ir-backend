@@ -87,7 +87,12 @@ func (r *AccountTypeRepositoryImpl) applyFilter(query *gorm.DB, filter models.Ac
 }
 
 // ByFilter retrieves account types based on filter criteria
-func (r *AccountTypeRepositoryImpl) ByFilter(ctx context.Context, filter models.AccountTypeFilter, orderBy string, limit, offset int) ([]*models.AccountType, error) {
+func (r *AccountTypeRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.AccountTypeFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.AccountType, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.AccountType{})
 

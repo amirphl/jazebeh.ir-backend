@@ -20,9 +20,21 @@ import (
 )
 
 type BundleTagEvaluationFlow interface {
-	RequestBundleTagEvaluation(ctx context.Context, req *dto.RequestBundleTagEvaluationRequest, metadata *ClientMetadata) (*dto.RequestBundleTagEvaluationResponse, error)
-	GetBundleTagEvaluationStatus(ctx context.Context, req *dto.GetBundleTagEvaluationStatusRequest, metadata *ClientMetadata) (*dto.GetBundleTagEvaluationStatusResponse, error)
-	ListBundleTagScores(ctx context.Context, req *dto.ListBundleTagScoresRequest, metadata *ClientMetadata) (*dto.ListBundleTagScoresResponse, error)
+	RequestBundleTagEvaluation(
+		ctx context.Context,
+		req *dto.RequestBundleTagEvaluationRequest,
+		metadata *ClientMetadata,
+	) (*dto.RequestBundleTagEvaluationResponse, error)
+	GetBundleTagEvaluationStatus(
+		ctx context.Context,
+		req *dto.GetBundleTagEvaluationStatusRequest,
+		metadata *ClientMetadata,
+	) (*dto.GetBundleTagEvaluationStatusResponse, error)
+	ListBundleTagScores(
+		ctx context.Context,
+		req *dto.ListBundleTagScoresRequest,
+		metadata *ClientMetadata,
+	) (*dto.ListBundleTagScoresResponse, error)
 	ExecuteBundleTagEvaluationRun(ctx context.Context, runID int64) error
 }
 
@@ -185,7 +197,10 @@ func (p *bundleTagEvaluationRequestPacer) Pause(delay time.Duration) {
 	}
 }
 
-func (c *bundleTagEvaluationPacedOpenAIClient) CallResponsesAPI(ctx context.Context, payload map[string]any) (*services.SmartTagOpenAIResult, error) {
+func (c *bundleTagEvaluationPacedOpenAIClient) CallResponsesAPI(
+	ctx context.Context,
+	payload map[string]any,
+) (*services.SmartTagOpenAIResult, error) {
 	if c == nil || c.delegate == nil {
 		return nil, fmt.Errorf("OpenAI client is not configured")
 	}
@@ -242,7 +257,11 @@ func NewBundleTagEvaluationFlow(
 	}
 }
 
-func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(ctx context.Context, req *dto.RequestBundleTagEvaluationRequest, metadata *ClientMetadata) (*dto.RequestBundleTagEvaluationResponse, error) {
+func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(
+	ctx context.Context,
+	req *dto.RequestBundleTagEvaluationRequest,
+	metadata *ClientMetadata,
+) (*dto.RequestBundleTagEvaluationResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("REQUEST_BUNDLE_TAG_EVALUATION_FAILED", "Failed to request bundle tag evaluation", ErrInvalidState)
 	}
@@ -362,9 +381,17 @@ func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(ctx context.Con
 	}, nil
 }
 
-func (f *BundleTagEvaluationFlowImpl) GetBundleTagEvaluationStatus(ctx context.Context, req *dto.GetBundleTagEvaluationStatusRequest, metadata *ClientMetadata) (*dto.GetBundleTagEvaluationStatusResponse, error) {
+func (f *BundleTagEvaluationFlowImpl) GetBundleTagEvaluationStatus(
+	ctx context.Context,
+	req *dto.GetBundleTagEvaluationStatusRequest,
+	metadata *ClientMetadata,
+) (*dto.GetBundleTagEvaluationStatusResponse, error) {
 	if req == nil {
-		return nil, NewBusinessError("GET_BUNDLE_TAG_EVALUATION_STATUS_FAILED", "Failed to get bundle tag evaluation status", ErrInvalidState)
+		return nil, NewBusinessError(
+			"GET_BUNDLE_TAG_EVALUATION_STATUS_FAILED",
+			"Failed to get bundle tag evaluation status",
+			ErrInvalidState,
+		)
 	}
 	if _, err := getCustomer(ctx, f.customerRepo, req.CustomerID); err != nil {
 		return nil, NewBusinessError("GET_BUNDLE_TAG_EVALUATION_STATUS_FAILED", "Failed to get bundle tag evaluation status", err)
@@ -410,7 +437,11 @@ func (f *BundleTagEvaluationFlowImpl) GetBundleTagEvaluationStatus(ctx context.C
 	}, nil
 }
 
-func (f *BundleTagEvaluationFlowImpl) ListBundleTagScores(ctx context.Context, req *dto.ListBundleTagScoresRequest, metadata *ClientMetadata) (*dto.ListBundleTagScoresResponse, error) {
+func (f *BundleTagEvaluationFlowImpl) ListBundleTagScores(
+	ctx context.Context,
+	req *dto.ListBundleTagScoresRequest,
+	metadata *ClientMetadata,
+) (*dto.ListBundleTagScoresResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("LIST_BUNDLE_TAG_SCORES_FAILED", "Failed to list bundle tag scores", ErrInvalidState)
 	}
@@ -557,7 +588,11 @@ func (f *BundleTagEvaluationFlowImpl) ExecuteBundleTagEvaluationRun(ctx context.
 	maxMissingTotal := executionCfg.Validation.MaxMissingTagCount * len(batches)
 	missingTotal := int64(totalExpected) - totalActual
 	if missingTotal < 0 || missingTotal > int64(maxMissingTotal) {
-		return f.failRunUnlessCanceled(ctx, run.ID, fmt.Errorf("score count mismatch: expected %d got %d (maximum missing %d)", totalExpected, totalActual, maxMissingTotal))
+		return f.failRunUnlessCanceled(
+			ctx,
+			run.ID,
+			fmt.Errorf("score count mismatch: expected %d got %d (maximum missing %d)", totalExpected, totalActual, maxMissingTotal),
+		)
 	}
 
 	completedExists, err := f.eventRepo.ExistsByRunIDAndType(ctx, run.ID, models.BundleTagEvaluationEventCompleted)
@@ -590,9 +625,14 @@ func (f *BundleTagEvaluationFlowImpl) processBatchesConcurrently(
 	executionCfg config.SmartTagEvaluationConfig,
 	client services.SmartTagOpenAIClient,
 ) error {
-	return runBundleTagEvaluationBatchesConcurrently(ctx, batches, executionCfg.Batching.MaxParallelBatches, func(workerCtx context.Context, batch *models.BundleTagEvaluationBatch) error {
-		return f.processBatch(workerCtx, run, batch, personaAnalysisText, executionCfg, client)
-	})
+	return runBundleTagEvaluationBatchesConcurrently(
+		ctx,
+		batches,
+		executionCfg.Batching.MaxParallelBatches,
+		func(workerCtx context.Context, batch *models.BundleTagEvaluationBatch) error {
+			return f.processBatch(workerCtx, run, batch, personaAnalysisText, executionCfg, client)
+		},
+	)
 }
 
 func runBundleTagEvaluationBatchesConcurrently(
@@ -669,7 +709,12 @@ func isBundleTagEvaluationContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-func (f *BundleTagEvaluationFlowImpl) ensurePersonaAnalysis(ctx context.Context, run *models.BundleTagEvaluationRun, executionCfg config.SmartTagEvaluationConfig, client services.SmartTagOpenAIClient) (string, error) {
+func (f *BundleTagEvaluationFlowImpl) ensurePersonaAnalysis(
+	ctx context.Context,
+	run *models.BundleTagEvaluationRun,
+	executionCfg config.SmartTagEvaluationConfig,
+	client services.SmartTagOpenAIClient,
+) (string, error) {
 	latest, err := f.personaAttemptRepo.LatestByRunID(ctx, run.ID)
 	if err != nil {
 		return "", err
@@ -804,7 +849,10 @@ func (f *BundleTagEvaluationFlowImpl) ensurePersonaAnalysis(ctx context.Context,
 	return "", fmt.Errorf("persona analysis failed after retries")
 }
 
-func (f *BundleTagEvaluationFlowImpl) ensureBatches(ctx context.Context, run *models.BundleTagEvaluationRun) ([]*models.BundleTagEvaluationBatch, error) {
+func (f *BundleTagEvaluationFlowImpl) ensureBatches(
+	ctx context.Context,
+	run *models.BundleTagEvaluationRun,
+) ([]*models.BundleTagEvaluationBatch, error) {
 	existing, err := f.batchRepo.ListByRunID(ctx, run.ID)
 	if err != nil {
 		return nil, err
@@ -897,7 +945,14 @@ func (f *BundleTagEvaluationFlowImpl) ensureBatches(ctx context.Context, run *mo
 	return f.batchRepo.ListByRunID(ctx, run.ID)
 }
 
-func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *models.BundleTagEvaluationRun, batch *models.BundleTagEvaluationBatch, personaAnalysisText string, executionCfg config.SmartTagEvaluationConfig, client services.SmartTagOpenAIClient) error {
+func (f *BundleTagEvaluationFlowImpl) processBatch(
+	ctx context.Context,
+	run *models.BundleTagEvaluationRun,
+	batch *models.BundleTagEvaluationBatch,
+	personaAnalysisText string,
+	executionCfg config.SmartTagEvaluationConfig,
+	client services.SmartTagOpenAIClient,
+) error {
 	completed, err := f.eventRepo.ExistsByBatchIDAndType(ctx, batch.ID, models.BundleTagEvaluationEventBatchCompleted)
 	if err != nil {
 		return err
@@ -915,8 +970,10 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 			EvaluationRunID: run.ID,
 			BatchID:         &batch.ID,
 			EventType:       models.BundleTagEvaluationEventBatchCompleted,
-			Payload:         f.mustMarshalJSON(map[string]any{"message": "batch completed from existing scores", "batch_number": batch.BatchNumber}),
-			CreatedAt:       time.Now().UTC(),
+			Payload: f.mustMarshalJSON(
+				map[string]any{"message": "batch completed from existing scores", "batch_number": batch.BatchNumber},
+			),
+			CreatedAt: time.Now().UTC(),
 		})
 	}
 
@@ -945,8 +1002,13 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 	if err != nil {
 		return err
 	}
-	if latestAttempt != nil && isSuccessfulAttemptStatus(latestAttempt.HTTPStatusCode) && strings.TrimSpace(derefString(latestAttempt.RawResponse)) != "" {
-		results, rawResults, parseErr := f.parseAndValidateBatchResponse(derefString(latestAttempt.RawResponse), tagSnapshots, executionCfg.Validation)
+	if latestAttempt != nil && isSuccessfulAttemptStatus(latestAttempt.HTTPStatusCode) &&
+		strings.TrimSpace(derefString(latestAttempt.RawResponse)) != "" {
+		results, rawResults, parseErr := f.parseAndValidateBatchResponse(
+			derefString(latestAttempt.RawResponse),
+			tagSnapshots,
+			executionCfg.Validation,
+		)
 		if parseErr == nil {
 			if err := f.insertBatchScores(ctx, run, batch, latestAttempt.ID, tagSnapshots, results, rawResults); err != nil {
 				return err
@@ -955,8 +1017,10 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 				EvaluationRunID: run.ID,
 				BatchID:         &batch.ID,
 				EventType:       models.BundleTagEvaluationEventBatchCompleted,
-				Payload:         f.mustMarshalJSON(map[string]any{"batch_number": batch.BatchNumber, "attempt_number": latestAttempt.AttemptNumber}),
-				CreatedAt:       time.Now().UTC(),
+				Payload: f.mustMarshalJSON(
+					map[string]any{"batch_number": batch.BatchNumber, "attempt_number": latestAttempt.AttemptNumber},
+				),
+				CreatedAt: time.Now().UTC(),
 			})
 		}
 	}
@@ -1018,8 +1082,10 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 				EvaluationRunID: run.ID,
 				BatchID:         &batch.ID,
 				EventType:       models.BundleTagEvaluationEventBatchFailed,
-				Payload:         f.mustMarshalJSON(map[string]any{"batch_number": batch.BatchNumber, "attempt_number": attemptNumber, "message": callErr.Error()}),
-				CreatedAt:       time.Now().UTC(),
+				Payload: f.mustMarshalJSON(
+					map[string]any{"batch_number": batch.BatchNumber, "attempt_number": attemptNumber, "message": callErr.Error()},
+				),
+				CreatedAt: time.Now().UTC(),
 			})
 			if !shouldRetryOpenAIError(callErr) {
 				return callErr
@@ -1045,8 +1111,10 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 				EvaluationRunID: run.ID,
 				BatchID:         &batch.ID,
 				EventType:       models.BundleTagEvaluationEventBatchFailed,
-				Payload:         f.mustMarshalJSON(map[string]any{"batch_number": batch.BatchNumber, "attempt_number": attemptNumber, "message": parseErr.Error()}),
-				CreatedAt:       time.Now().UTC(),
+				Payload: f.mustMarshalJSON(
+					map[string]any{"batch_number": batch.BatchNumber, "attempt_number": attemptNumber, "message": parseErr.Error()},
+				),
+				CreatedAt: time.Now().UTC(),
 			})
 			if err := waitBeforeBundleTagEvaluationOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
 				return err
@@ -1068,7 +1136,10 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 	return fmt.Errorf("batch %d failed after retries", batch.BatchNumber)
 }
 
-func (f *BundleTagEvaluationFlowImpl) ensureBatchTagsRemainActive(ctx context.Context, snapshots []models.BundleTagEvaluationTagSnapshot) error {
+func (f *BundleTagEvaluationFlowImpl) ensureBatchTagsRemainActive(
+	ctx context.Context,
+	snapshots []models.BundleTagEvaluationTagSnapshot,
+) error {
 	if len(snapshots) == 0 {
 		return fmt.Errorf("batch contains no tags")
 	}
@@ -1107,7 +1178,11 @@ func (f *BundleTagEvaluationFlowImpl) ensureBatchTagsRemainActive(ctx context.Co
 	return fmt.Errorf("tag catalog changed during evaluation; inactive or missing tags would be sent to OpenAI: %v", inactiveIDs)
 }
 
-func waitBeforeBundleTagEvaluationOpenAIRetry(ctx context.Context, result *services.SmartTagOpenAIResult, attemptNumber, maxAttempts int) error {
+func waitBeforeBundleTagEvaluationOpenAIRetry(
+	ctx context.Context,
+	result *services.SmartTagOpenAIResult,
+	attemptNumber, maxAttempts int,
+) error {
 	if attemptNumber >= maxAttempts {
 		return nil
 	}
@@ -1133,7 +1208,15 @@ func waitBeforeBundleTagEvaluationOpenAIRetry(ctx context.Context, result *servi
 	}
 }
 
-func (f *BundleTagEvaluationFlowImpl) insertBatchScores(ctx context.Context, run *models.BundleTagEvaluationRun, batch *models.BundleTagEvaluationBatch, batchAttemptID int64, tags []models.BundleTagEvaluationTagSnapshot, results map[uint]bundleTagScoreResult, rawResults map[uint]json.RawMessage) error {
+func (f *BundleTagEvaluationFlowImpl) insertBatchScores(
+	ctx context.Context,
+	run *models.BundleTagEvaluationRun,
+	batch *models.BundleTagEvaluationBatch,
+	batchAttemptID int64,
+	tags []models.BundleTagEvaluationTagSnapshot,
+	results map[uint]bundleTagScoreResult,
+	rawResults map[uint]json.RawMessage,
+) error {
 	scoreRows, err := buildBundleTagScoreRows(run, batch, batchAttemptID, tags, results, rawResults)
 	if err != nil {
 		return err
@@ -1144,7 +1227,14 @@ func (f *BundleTagEvaluationFlowImpl) insertBatchScores(ctx context.Context, run
 	})
 }
 
-func buildBundleTagScoreRows(run *models.BundleTagEvaluationRun, batch *models.BundleTagEvaluationBatch, batchAttemptID int64, tags []models.BundleTagEvaluationTagSnapshot, results map[uint]bundleTagScoreResult, rawResults map[uint]json.RawMessage) ([]*models.BundleTagScore, error) {
+func buildBundleTagScoreRows(
+	run *models.BundleTagEvaluationRun,
+	batch *models.BundleTagEvaluationBatch,
+	batchAttemptID int64,
+	tags []models.BundleTagEvaluationTagSnapshot,
+	results map[uint]bundleTagScoreResult,
+	rawResults map[uint]json.RawMessage,
+) ([]*models.BundleTagScore, error) {
 	scoreRows := make([]*models.BundleTagScore, 0, len(tags))
 	for _, tag := range tags {
 		result, ok := results[tag.TagID]
@@ -1181,7 +1271,11 @@ func buildBundleTagScoreRows(run *models.BundleTagEvaluationRun, batch *models.B
 	return scoreRows, nil
 }
 
-func (f *BundleTagEvaluationFlowImpl) parseAndValidateBatchResponse(raw string, tags []models.BundleTagEvaluationTagSnapshot, validation config.SmartTagValidationConfig) (map[uint]bundleTagScoreResult, map[uint]json.RawMessage, error) {
+func (f *BundleTagEvaluationFlowImpl) parseAndValidateBatchResponse(
+	raw string,
+	tags []models.BundleTagEvaluationTagSnapshot,
+	validation config.SmartTagValidationConfig,
+) (map[uint]bundleTagScoreResult, map[uint]json.RawMessage, error) {
 	if validation.MaxMissingTagCount < 0 {
 		return nil, nil, fmt.Errorf("maximum missing tag count must not be negative")
 	}
@@ -1202,7 +1296,12 @@ func (f *BundleTagEvaluationFlowImpl) parseAndValidateBatchResponse(raw string, 
 	if validation.RequireExactTagCount {
 		missingItemCount := len(tags) - len(items)
 		if missingItemCount < 0 || missingItemCount > validation.MaxMissingTagCount {
-			return nil, nil, fmt.Errorf("unexpected result count: expected %d got %d (maximum missing %d)", len(tags), len(items), validation.MaxMissingTagCount)
+			return nil, nil, fmt.Errorf(
+				"unexpected result count: expected %d got %d (maximum missing %d)",
+				len(tags),
+				len(items),
+				validation.MaxMissingTagCount,
+			)
 		}
 	}
 
@@ -1261,7 +1360,12 @@ func (f *BundleTagEvaluationFlowImpl) parseAndValidateBatchResponse(raw string, 
 		}
 	}
 	if len(missingTagIDs) > validation.MaxMissingTagCount {
-		return nil, nil, fmt.Errorf("missing results for %d tags %v (maximum missing %d)", len(missingTagIDs), missingTagIDs, validation.MaxMissingTagCount)
+		return nil, nil, fmt.Errorf(
+			"missing results for %d tags %v (maximum missing %d)",
+			len(missingTagIDs),
+			missingTagIDs,
+			validation.MaxMissingTagCount,
+		)
 	}
 
 	return results, rawResults, nil
@@ -1296,7 +1400,10 @@ func decodeBundleTagScoreItems(jsonBody string) ([]json.RawMessage, error) {
 	return nil, fmt.Errorf("batch response must be a JSON array or an object containing scores")
 }
 
-func (f *BundleTagEvaluationFlowImpl) buildPersonaAnalysisPayload(executionCfg config.SmartTagEvaluationConfig, targetPersona string) map[string]any {
+func (f *BundleTagEvaluationFlowImpl) buildPersonaAnalysisPayload(
+	executionCfg config.SmartTagEvaluationConfig,
+	targetPersona string,
+) map[string]any {
 	payload := map[string]any{
 		"model": executionCfg.OpenAI.Model,
 		"input": []map[string]any{
@@ -1314,7 +1421,11 @@ func (f *BundleTagEvaluationFlowImpl) buildPersonaAnalysisPayload(executionCfg c
 	return payload
 }
 
-func (f *BundleTagEvaluationFlowImpl) buildTagScoringPayload(executionCfg config.SmartTagEvaluationConfig, personaAnalysisText string, tags []models.BundleTagEvaluationTagSnapshot) map[string]any {
+func (f *BundleTagEvaluationFlowImpl) buildTagScoringPayload(
+	executionCfg config.SmartTagEvaluationConfig,
+	personaAnalysisText string,
+	tags []models.BundleTagEvaluationTagSnapshot,
+) map[string]any {
 	tagJSON, _ := json.Marshal(tags)
 	userPrompt := fmt.Sprintf("Bundle persona analysis:\n%s\n\nTags:\n%s", personaAnalysisText, string(tagJSON))
 	payload := map[string]any{
@@ -1475,7 +1586,13 @@ func (f *BundleTagEvaluationFlowImpl) executionConfiguration(run *models.BundleT
 	return executionCfg, nil
 }
 
-func (f *BundleTagEvaluationFlowImpl) normalizeOpenAIResult(result *services.SmartTagOpenAIResult, callErr error, payload map[string]any, model string, now time.Time) (*services.SmartTagOpenAIResult, error) {
+func (f *BundleTagEvaluationFlowImpl) normalizeOpenAIResult(
+	result *services.SmartTagOpenAIResult,
+	callErr error,
+	payload map[string]any,
+	model string,
+	now time.Time,
+) (*services.SmartTagOpenAIResult, error) {
 	if result == nil {
 		result = &services.SmartTagOpenAIResult{}
 		if callErr == nil {

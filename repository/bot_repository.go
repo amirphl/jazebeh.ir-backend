@@ -102,7 +102,12 @@ func (r *BotRepositoryImpl) applyFilter(query *gorm.DB, filter models.BotFilter)
 }
 
 // ByFilter retrieves bots based on filter criteria
-func (r *BotRepositoryImpl) ByFilter(ctx context.Context, filter models.BotFilter, orderBy string, limit, offset int) ([]*models.Bot, error) {
+func (r *BotRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.BotFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Bot, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.Bot{})
 

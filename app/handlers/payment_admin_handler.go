@@ -134,7 +134,13 @@ func (h *PaymentAdminHandler) ChargeWallet(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Amount is too low", "AMOUNT_TOO_LOW", nil)
 		}
 		if businessflow.IsAmountNotMultiple(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Amount must be a multiple of the required increment", "AMOUNT_NOT_MULTIPLE", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Amount must be a multiple of the required increment",
+				"AMOUNT_NOT_MULTIPLE",
+				nil,
+			)
 		}
 		if businessflow.IsTaxWalletNotFound(err) {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Tax wallet not found", "TAX_WALLET_NOT_FOUND", nil)
@@ -146,14 +152,32 @@ func (h *PaymentAdminHandler) ChargeWallet(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Balance snapshot not found", "BALANCE_SNAPSHOT_NOT_FOUND", nil)
 		}
 		if businessflow.IsTaxWalletBalanceSnapshotNotFound(err) {
-			return h.ErrorResponse(c, fiber.StatusNotFound, "Tax wallet balance snapshot not found", "TAX_WALLET_BALANCE_SNAPSHOT_NOT_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusNotFound,
+				"Tax wallet balance snapshot not found",
+				"TAX_WALLET_BALANCE_SNAPSHOT_NOT_FOUND",
+				nil,
+			)
 		}
 		if businessflow.IsSystemWalletBalanceSnapshotNotFound(err) {
-			return h.ErrorResponse(c, fiber.StatusNotFound, "System wallet balance snapshot not found", "SYSTEM_WALLET_BALANCE_SNAPSHOT_NOT_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusNotFound,
+				"System wallet balance snapshot not found",
+				"SYSTEM_WALLET_BALANCE_SNAPSHOT_NOT_FOUND",
+				nil,
+			)
 		}
 
 		log.Println("Admin wallet charging failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Wallet charging by admin failed", "WALLET_CHARGING_BY_ADMIN_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Wallet charging by admin failed",
+			"WALLET_CHARGING_BY_ADMIN_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Wallet charged successfully by admin", result)
@@ -213,7 +237,13 @@ func (h *PaymentAdminHandler) PreviewWalletChargeImpact(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Amount is too low", "AMOUNT_TOO_LOW", nil)
 		}
 		if businessflow.IsAmountNotMultiple(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Amount must be a multiple of the required increment", "AMOUNT_NOT_MULTIPLE", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Amount must be a multiple of the required increment",
+				"AMOUNT_NOT_MULTIPLE",
+				nil,
+			)
 		}
 		if businessflow.IsAgencyNotFound(err) {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Agency not found", "AGENCY_NOT_FOUND", nil)
@@ -235,7 +265,13 @@ func (h *PaymentAdminHandler) PreviewWalletChargeImpact(c fiber.Ctx) error {
 		}
 
 		log.Println("Admin wallet charge impact preview failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Wallet charge impact preview failed", "WALLET_CHARGE_IMPACT_PREVIEW_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Wallet charge impact preview failed",
+			"WALLET_CHARGE_IMPACT_PREVIEW_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Wallet charge impact calculated successfully", result)
@@ -298,14 +334,21 @@ func (h *PaymentAdminHandler) ListDepositReceipts(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid language", "INVALID_LANGUAGE", nil)
 		}
 		log.Println("Admin list deposit receipts failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to list deposit receipts", "ADMIN_LIST_DEPOSIT_RECEIPTS_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to list deposit receipts",
+			"ADMIN_LIST_DEPOSIT_RECEIPTS_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Deposit receipts retrieved", resp)
 }
 
 // ListTransactions returns admin transaction list for customer credit increase operations.
 // @Summary Admin list transactions
-// @Description Lists filtered transactions where source=payment_callback_increase_customer_free_plus_credit and operation=increase_customer_free_plus_credit, including full customer details per transaction.
+// @Description Lists filtered transactions where source=payment_callback_increase_customer_free_plus_credit and
+// operation=increase_customer_free_plus_credit, including full customer details per transaction.
 // @Tags Payments Admin
 // @Produce json
 // @Param page query int false "Page number (default 1)" minimum(1)
@@ -498,16 +541,34 @@ func (h *PaymentAdminHandler) UpdateDepositReceiptStatus(c fiber.Ctx) error {
 		case businessflow.IsDepositReceiptInvalidStatus(err):
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "action must be either approve or reject", "INVALID_RECEIPT_ACTION", nil)
 		case businessflow.IsDepositReceiptInvoiceRequired(err):
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "customer_invoice_uuid is required when approving a receipt", "INVOICE_UUID_REQUIRED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"customer_invoice_uuid is required when approving a receipt",
+				"INVOICE_UUID_REQUIRED",
+				nil,
+			)
 		case businessflow.IsDepositReceiptInvoiceInvalid(err):
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "customer_invoice_uuid is invalid", "INVOICE_UUID_INVALID", nil)
 		case businessflow.IsDepositReceiptInvoiceDuplicate(err):
-			return h.ErrorResponse(c, fiber.StatusConflict, "customer_invoice_uuid is already linked to another payment", "INVOICE_UUID_ALREADY_USED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"customer_invoice_uuid is already linked to another payment",
+				"INVOICE_UUID_ALREADY_USED",
+				nil,
+			)
 		case businessflow.IsInvalidLanguage(err):
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid language", "INVALID_LANGUAGE", nil)
 		default:
 			log.Println("Admin update receipt status failed", err)
-			return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update receipt status", "ADMIN_UPDATE_RECEIPT_FAILED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusInternalServerError,
+				"Failed to update receipt status",
+				"ADMIN_UPDATE_RECEIPT_FAILED",
+				nil,
+			)
 		}
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Receipt status updated", res)
@@ -567,16 +628,32 @@ func (h *PaymentAdminHandler) AddInvoiceToTransaction(c fiber.Ctx) error {
 		case businessflow.IsInvoiceUUIDInvalid(err):
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "customer_invoice_uuid is invalid", "INVOICE_UUID_INVALID", nil)
 		case businessflow.IsInvoiceUUIDMismatch(err):
-			return h.ErrorResponse(c, fiber.StatusConflict, "customer_invoice_uuid conflicts with existing transaction metadata", "INVOICE_UUID_MISMATCH", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"customer_invoice_uuid conflicts with existing transaction metadata",
+				"INVOICE_UUID_MISMATCH",
+				nil,
+			)
 		default:
 			log.Println("Admin add invoice to transaction failed", err)
-			return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to add invoice to transaction", "ADMIN_ADD_INVOICE_FAILED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusInternalServerError,
+				"Failed to add invoice to transaction",
+				"ADMIN_ADD_INVOICE_FAILED",
+				nil,
+			)
 		}
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Invoice linked to transaction", res)
 }
 
-func (h *PaymentAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *PaymentAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

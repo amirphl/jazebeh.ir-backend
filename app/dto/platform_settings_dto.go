@@ -2,13 +2,13 @@ package dto
 
 // CreatePlatformSettingsRequest represents payload for creating platform settings.
 type CreatePlatformSettingsRequest struct {
-	Name                *string `json:"name,omitempty" validate:"omitempty,max=255"`
+	Name                *string `json:"name,omitempty"                  validate:"omitempty,max=255"`
 	Description         *string `json:"description,omitempty"`
 	Website             *string `json:"website,omitempty"`
 	MultimediaUUID      *string `json:"multimedia_uuid,omitempty"`
 	BusinessLicenseUUID *string `json:"business_license_uuid,omitempty"`
-	Platform            string  `json:"platform" validate:"required,oneof=sms rubika bale splus"`
-	Status              *string `json:"status,omitempty" validate:"omitempty,oneof=initialized in-progress active inactive"`
+	Platform            string  `json:"platform"                        validate:"required,oneof=sms rubika bale splus"`
+	Status              *string `json:"status,omitempty"                validate:"omitempty,oneof=initialized in-progress active inactive"`
 }
 
 // CreatePlatformSettingsResponse represents a successful creation response.
@@ -47,7 +47,7 @@ type ListPlatformSettingsResponse struct {
 
 // AdminChangePlatformSettingsStatusRequest represents admin payload for status updates.
 type AdminChangePlatformSettingsStatusRequest struct {
-	ID     uint   `json:"id" validate:"required"`
+	ID     uint   `json:"id"     validate:"required"`
 	Status string `json:"status" validate:"required,oneof=in-progress active inactive"`
 }
 
@@ -79,8 +79,8 @@ type AdminListPlatformSettingsResponse struct {
 }
 
 type AdminAddPlatformSettingsMetadataRequest struct {
-	ID    uint   `json:"id" validate:"required"`
-	Key   string `json:"key" validate:"required,min=1,max=100"`
+	ID    uint   `json:"id"    validate:"required"`
+	Key   string `json:"key"   validate:"required,min=1,max=100"`
 	Value string `json:"value" validate:"required"`
 }
 

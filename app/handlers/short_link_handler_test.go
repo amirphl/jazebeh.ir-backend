@@ -118,7 +118,9 @@ func TestShortLinkBotErrorsArePreserved(t *testing.T) {
 
 func TestShortLinkFollowingClientDoesNotReachDestinationForBots(t *testing.T) {
 	var destinationHits atomic.Int64
-	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { destinationHits.Add(1); w.WriteHeader(200) }))
+	destination := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { destinationHits.Add(1); w.WriteHeader(200) }),
+	)
 	defer destination.Close()
 	flow := &trackedShortLinkFlow{destination: destination.URL}
 	app := fiber.New()

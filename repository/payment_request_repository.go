@@ -105,7 +105,11 @@ func (r *PaymentRequestRepositoryImpl) ByPaymentReference(ctx context.Context, p
 }
 
 // ByCustomerID finds payment requests by customer ID
-func (r *PaymentRequestRepositoryImpl) ByCustomerID(ctx context.Context, customerID uint, limit, offset int) ([]*models.PaymentRequest, error) {
+func (r *PaymentRequestRepositoryImpl) ByCustomerID(
+	ctx context.Context,
+	customerID uint,
+	limit, offset int,
+) ([]*models.PaymentRequest, error) {
 	db := r.getDB(ctx)
 	var requests []*models.PaymentRequest
 
@@ -145,7 +149,11 @@ func (r *PaymentRequestRepositoryImpl) ByWalletID(ctx context.Context, walletID 
 }
 
 // ByStatus finds payment requests by status
-func (r *PaymentRequestRepositoryImpl) ByStatus(ctx context.Context, status models.PaymentRequestStatus, limit, offset int) ([]*models.PaymentRequest, error) {
+func (r *PaymentRequestRepositoryImpl) ByStatus(
+	ctx context.Context,
+	status models.PaymentRequestStatus,
+	limit, offset int,
+) ([]*models.PaymentRequest, error) {
 	db := r.getDB(ctx)
 	var requests []*models.PaymentRequest
 
@@ -195,7 +203,12 @@ func (r *PaymentRequestRepositoryImpl) GetCompletedRequests(ctx context.Context,
 }
 
 // ByFilter retrieves payment requests based on filter criteria
-func (r *PaymentRequestRepositoryImpl) ByFilter(ctx context.Context, filter models.PaymentRequestFilter, orderBy string, limit, offset int) ([]*models.PaymentRequest, error) {
+func (r *PaymentRequestRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.PaymentRequestFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.PaymentRequest, error) {
 	db := r.getDB(ctx)
 	var requests []*models.PaymentRequest
 
@@ -296,7 +309,10 @@ func (r *PaymentRequestRepositoryImpl) IsCustomerDepositInvoiceUUIDAlreadyLinked
 }
 
 // FindAdminChargeByIdempotencyKey returns the latest admin direct-charge payment request by idempotency key.
-func (r *PaymentRequestRepositoryImpl) FindAdminChargeByIdempotencyKey(ctx context.Context, idempotencyKey string) (*models.PaymentRequest, error) {
+func (r *PaymentRequestRepositoryImpl) FindAdminChargeByIdempotencyKey(
+	ctx context.Context,
+	idempotencyKey string,
+) (*models.PaymentRequest, error) {
 	db := r.getDB(ctx)
 	var req models.PaymentRequest
 	err := db.

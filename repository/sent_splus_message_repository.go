@@ -53,7 +53,12 @@ func (r *SentSplusMessageRepositoryImpl) applyFilter(db *gorm.DB, f models.SentS
 	return db
 }
 
-func (r *SentSplusMessageRepositoryImpl) ByFilter(ctx context.Context, filter models.SentSplusMessageFilter, orderBy string, limit, offset int) ([]*models.SentSplusMessage, error) {
+func (r *SentSplusMessageRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.SentSplusMessageFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SentSplusMessage, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.SentSplusMessage{}), filter)
 	if orderBy != "" {
@@ -90,12 +95,20 @@ func (r *SentSplusMessageRepositoryImpl) Exists(ctx context.Context, filter mode
 	return c > 0, nil
 }
 
-func (r *SentSplusMessageRepositoryImpl) ListByProcessedCampaign(ctx context.Context, processedCampaignID uint, limit, offset int) ([]*models.SentSplusMessage, error) {
+func (r *SentSplusMessageRepositoryImpl) ListByProcessedCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+	limit, offset int,
+) ([]*models.SentSplusMessage, error) {
 	filter := models.SentSplusMessageFilter{ProcessedCampaignID: &processedCampaignID}
 	return r.ByFilter(ctx, filter, "id ASC", limit, offset)
 }
 
-func (r *SentSplusMessageRepositoryImpl) ListByTrackingIDs(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentSplusMessage, error) {
+func (r *SentSplusMessageRepositoryImpl) ListByTrackingIDs(
+	ctx context.Context,
+	processedCampaignID uint,
+	trackingIDs []string,
+) ([]*models.SentSplusMessage, error) {
 	if len(trackingIDs) == 0 {
 		return nil, nil
 	}
@@ -126,7 +139,10 @@ func (r *SentSplusMessageRepositoryImpl) ListByTrackingIDs(ctx context.Context, 
 	return rows, nil
 }
 
-func (r *SentSplusMessageRepositoryImpl) TrackingResultsFromSentRows(ctx context.Context, processedCampaignID uint) ([]SplusTrackingResult, error) {
+func (r *SentSplusMessageRepositoryImpl) TrackingResultsFromSentRows(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]SplusTrackingResult, error) {
 	type fallbackRow struct {
 		AudienceProfileUID *string `gorm:"column:audience_profile_uid"`
 		PhoneNumber        string  `gorm:"column:phone_number"`

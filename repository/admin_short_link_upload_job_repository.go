@@ -46,11 +46,21 @@ func (r *adminShortLinkUploadJobRepository) Due(ctx context.Context, now time.Ti
 		limit = 20
 	}
 	var jobs []*models.AdminShortLinkUploadJob
-	err := r.db.WithContext(ctx).Where("(status IN ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND lease_expires_at <= ?)", []string{"pending", "retrying"}, now, "processing", now).Order("created_at ASC").Limit(limit).Find(&jobs).Error
+	err := r.db.WithContext(ctx).
+		Where("(status IN ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND lease_expires_at <= ?)", []string{"pending", "retrying"}, now, "processing", now).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&jobs).
+		Error
 	return jobs, err
 }
 
-func (r *adminShortLinkUploadJobRepository) Claim(ctx context.Context, id string, now time.Time, lease time.Duration) (*models.AdminShortLinkUploadJob, bool, error) {
+func (r *adminShortLinkUploadJobRepository) Claim(
+	ctx context.Context,
+	id string,
+	now time.Time,
+	lease time.Duration,
+) (*models.AdminShortLinkUploadJob, bool, error) {
 	token := uuid.NewString()
 	expires := now.Add(lease)
 	result := r.db.WithContext(ctx).Model(&models.AdminShortLinkUploadJob{}).
@@ -85,7 +95,11 @@ func (r *adminShortLinkUploadJobRepository) UpdateClaimed(ctx context.Context, j
 // When the caller has already opened a transaction (as the UID allocator
 // does), it joins that transaction so the reservation, rows, and job progress
 // either all commit or all roll back.
-func (r *adminShortLinkUploadJobRepository) PersistAllocation(ctx context.Context, j *models.AdminShortLinkUploadJob, links []*models.ShortLink) error {
+func (r *adminShortLinkUploadJobRepository) PersistAllocation(
+	ctx context.Context,
+	j *models.AdminShortLinkUploadJob,
+	links []*models.ShortLink,
+) error {
 	persist := func(tx *gorm.DB) error {
 		if len(links) > 0 {
 			if err := tx.CreateInBatches(links, 500).Error; err != nil {

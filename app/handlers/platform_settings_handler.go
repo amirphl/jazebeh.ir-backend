@@ -98,7 +98,13 @@ func (h *PlatformSettingsHandler) Create(c fiber.Ctx) error {
 				return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found", be.Code, be.Error())
 			}
 		}
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to create platform settings", "PLATFORM_SETTINGS_CREATE_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to create platform settings",
+			"PLATFORM_SETTINGS_CREATE_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusCreated, "Platform settings created successfully", res)
@@ -133,7 +139,11 @@ func (h *PlatformSettingsHandler) List(c fiber.Ctx) error {
 	return h.SuccessResponse(c, fiber.StatusOK, "Platform settings retrieved", res)
 }
 
-func (h *PlatformSettingsHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *PlatformSettingsHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

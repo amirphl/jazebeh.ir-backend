@@ -49,7 +49,12 @@ func (c *BundleAudienceCache) ByCampaignID(ctx context.Context, campaignID uint)
 
 // SaveForCampaign appends a campaign allocation or returns the original row
 // when the same campaign is retried.
-func (c *BundleAudienceCache) SaveForCampaign(ctx context.Context, customerID, bundleID, campaignID uint, correlationID string, ids []int64) (*BundleAudienceSelection, error) {
+func (c *BundleAudienceCache) SaveForCampaign(
+	ctx context.Context,
+	customerID, bundleID, campaignID uint,
+	correlationID string,
+	ids []int64,
+) (*BundleAudienceSelection, error) {
 	if c == nil || c.repo == nil {
 		return nil, errors.New("bundle audience cache repository not configured")
 	}
@@ -60,7 +65,11 @@ func (c *BundleAudienceCache) SaveForCampaign(ctx context.Context, customerID, b
 	if row == nil {
 		return nil, errors.New("bundle audience selection repository returned no saved row")
 	}
-	sel := &BundleAudienceSelection{ID: row.ID, CorrelationID: row.CorrelationID, IDs: make(map[int64]struct{}, len(row.SelectedAudienceIDs))}
+	sel := &BundleAudienceSelection{
+		ID:            row.ID,
+		CorrelationID: row.CorrelationID,
+		IDs:           make(map[int64]struct{}, len(row.SelectedAudienceIDs)),
+	}
 	for _, id := range row.SelectedAudienceIDs {
 		sel.IDs[id] = struct{}{}
 	}

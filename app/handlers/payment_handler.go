@@ -136,7 +136,13 @@ func (h *PaymentHandler) ChargeWallet(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Amount is too low", "AMOUNT_TOO_LOW", nil)
 		}
 		if businessflow.IsAmountNotMultiple(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Amount must be a multiple of the required increment", "AMOUNT_NOT_MULTIPLE", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Amount must be a multiple of the required increment",
+				"AMOUNT_NOT_MULTIPLE",
+				nil,
+			)
 		}
 		if businessflow.IsInvalidLanguage(err) {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid language (allowed: FA, EN)", "INVALID_LANGUAGE", nil)
@@ -285,10 +291,22 @@ func (h *PaymentHandler) PaymentCallback(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Balance snapshot not found", "BALANCE_SNAPSHOT_NOT_FOUND", nil)
 		}
 		if businessflow.IsTaxWalletBalanceSnapshotNotFound(err) {
-			return h.ErrorResponse(c, fiber.StatusNotFound, "Tax wallet balance snapshot not found", "TAX_WALLET_BALANCE_SNAPSHOT_NOT_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusNotFound,
+				"Tax wallet balance snapshot not found",
+				"TAX_WALLET_BALANCE_SNAPSHOT_NOT_FOUND",
+				nil,
+			)
 		}
 		if businessflow.IsSystemWalletBalanceSnapshotNotFound(err) {
-			return h.ErrorResponse(c, fiber.StatusNotFound, "System wallet balance snapshot not found", "SYSTEM_WALLET_BALANCE_SNAPSHOT_NOT_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusNotFound,
+				"System wallet balance snapshot not found",
+				"SYSTEM_WALLET_BALANCE_SNAPSHOT_NOT_FOUND",
+				nil,
+			)
 		}
 
 		if businessflow.IsAgencyDiscountNotFound(err) {
@@ -311,13 +329,31 @@ func (h *PaymentHandler) PaymentCallback(c fiber.Ctx) error {
 		if businessErr, ok := err.(*businessflow.BusinessError); ok {
 			switch businessErr.Code {
 			case "PAYMENT_CALLBACK_VALIDATION_FAILED":
-				return h.ErrorResponse(c, fiber.StatusBadRequest, "Payment callback validation failed", "PAYMENT_CALLBACK_VALIDATION_FAILED", businessErr.Error())
+				return h.ErrorResponse(
+					c,
+					fiber.StatusBadRequest,
+					"Payment callback validation failed",
+					"PAYMENT_CALLBACK_VALIDATION_FAILED",
+					businessErr.Error(),
+				)
 			case "PAYMENT_CALLBACK_HTML_GENERATION_FAILED":
 				log.Printf("HTML generation failed for payment request: %s, error: %v", callbackReq.ReservationNumber, err)
-				return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to generate payment result page", "HTML_GENERATION_FAILED", nil)
+				return h.ErrorResponse(
+					c,
+					fiber.StatusInternalServerError,
+					"Failed to generate payment result page",
+					"HTML_GENERATION_FAILED",
+					nil,
+				)
 			case "PAYMENT_CALLBACK_FAILED":
 				log.Printf("Payment callback processing failed for invoice: %s, error: %v", callbackReq.ReservationNumber, err)
-				return h.ErrorResponse(c, fiber.StatusInternalServerError, "Payment callback processing failed", "PAYMENT_CALLBACK_FAILED", nil)
+				return h.ErrorResponse(
+					c,
+					fiber.StatusInternalServerError,
+					"Payment callback processing failed",
+					"PAYMENT_CALLBACK_FAILED",
+					nil,
+				)
 			}
 		}
 
@@ -432,7 +468,13 @@ func (h *PaymentHandler) GetTransactionHistory(c fiber.Ctx) error {
 		}
 
 		log.Println("Transaction history retrieval failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to retrieve transaction history", "TRANSACTION_HISTORY_RETRIEVAL_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to retrieve transaction history",
+			"TRANSACTION_HISTORY_RETRIEVAL_FAILED",
+			nil,
+		)
 	}
 
 	// Return successful response
@@ -482,14 +524,24 @@ func (h *PaymentHandler) GetWalletBalance(c fiber.Ctx) error {
 		}
 
 		log.Println("Wallet balance retrieval failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Wallet balance retrieval failed", "WALLET_BALANCE_RETRIEVAL_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Wallet balance retrieval failed",
+			"WALLET_BALANCE_RETRIEVAL_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Wallet balance retrieved successfully", result)
 }
 
 // createRequestContextWithTimeout creates a context with custom timeout and request-scoped values
-func (h *PaymentHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *PaymentHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	// Create context with custom timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
@@ -554,7 +606,13 @@ func (h *PaymentHandler) SubmitDepositReceipt(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Unsupported file type", "INVALID_FILE_TYPE", nil)
 		default:
 			log.Println("Submit deposit receipt failed", err)
-			return h.ErrorResponse(c, fiber.StatusInternalServerError, "Submit deposit receipt failed", "SUBMIT_DEPOSIT_RECEIPT_FAILED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusInternalServerError,
+				"Submit deposit receipt failed",
+				"SUBMIT_DEPOSIT_RECEIPT_FAILED",
+				nil,
+			)
 		}
 	}
 	return h.SuccessResponse(c, fiber.StatusCreated, "Deposit receipt submitted", res)
@@ -856,12 +914,30 @@ func (h *PaymentHandler) NotifyInvoiceIssueRequest(c fiber.Ctx) error {
 		case errors.Is(err, businessflow.ErrForbidden):
 			return h.ErrorResponse(c, fiber.StatusForbidden, "Forbidden", "FORBIDDEN", nil)
 		case businessflow.IsInvoiceIssueRequestRateLimited(err):
-			return h.ErrorResponse(c, fiber.StatusConflict, "You have already submitted an invoice issue request in the last 24 hours. Please try again later.", "INVOICE_ISSUE_REQUEST_RATE_LIMITED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"You have already submitted an invoice issue request in the last 24 hours. Please try again later.",
+				"INVOICE_ISSUE_REQUEST_RATE_LIMITED",
+				nil,
+			)
 		case businessflow.IsInvoiceIssueAlreadyAssigned(err):
-			return h.ErrorResponse(c, fiber.StatusConflict, "Invoice is already linked to this transaction", "INVOICE_ALREADY_ASSIGNED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"Invoice is already linked to this transaction",
+				"INVOICE_ALREADY_ASSIGNED",
+				nil,
+			)
 		default:
 			log.Println("Notify invoice issue request failed", err)
-			return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to submit invoice issue request", "INVOICE_ISSUE_REQUEST_FAILED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusInternalServerError,
+				"Failed to submit invoice issue request",
+				"INVOICE_ISSUE_REQUEST_FAILED",
+				nil,
+			)
 		}
 	}
 

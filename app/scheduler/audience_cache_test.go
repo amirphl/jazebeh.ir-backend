@@ -25,7 +25,12 @@ func (r *idempotentBundleSelectionRepository) ByCampaignID(_ context.Context, ca
 	return &clone, nil
 }
 
-func (r *idempotentBundleSelectionRepository) InsertForCampaign(_ context.Context, customerID, bundleID, campaignID uint, correlationID string, ids []int64) (*models.BundleAudienceSelection, error) {
+func (r *idempotentBundleSelectionRepository) InsertForCampaign(
+	_ context.Context,
+	customerID, bundleID, campaignID uint,
+	correlationID string,
+	ids []int64,
+) (*models.BundleAudienceSelection, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.row == nil {
@@ -91,7 +96,14 @@ func (nilBundleAudienceSelectionRepository) ByCampaignID(context.Context, uint) 
 	return nil, nil
 }
 
-func (nilBundleAudienceSelectionRepository) InsertForCampaign(context.Context, uint, uint, uint, string, []int64) (*models.BundleAudienceSelection, error) {
+func (nilBundleAudienceSelectionRepository) InsertForCampaign(
+	context.Context,
+	uint,
+	uint,
+	uint,
+	string,
+	[]int64,
+) (*models.BundleAudienceSelection, error) {
 	return nil, nil
 }
 
@@ -100,7 +112,8 @@ func TestBundleAudienceCacheRejectsNilSavedRow(t *testing.T) {
 	ctx := context.Background()
 
 	bundleCache := NewBundleAudienceCache(nilBundleAudienceSelectionRepository{})
-	if _, err := bundleCache.SaveForCampaign(ctx, 1, 2, 3, "correlation", []int64{1}); err == nil || !strings.Contains(err.Error(), "no saved row") {
+	if _, err := bundleCache.SaveForCampaign(ctx, 1, 2, 3, "correlation", []int64{1}); err == nil ||
+		!strings.Contains(err.Error(), "no saved row") {
 		t.Fatalf("bundle SaveForCampaign must reject a nil repository row, got %v", err)
 	}
 }

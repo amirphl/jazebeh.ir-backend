@@ -33,7 +33,12 @@ func (r *tagTestPerformanceSchedulerRepo) DiscoverPending(context.Context, time.
 	return r.discoverErr
 }
 
-func (r *tagTestPerformanceSchedulerRepo) ClaimPending(context.Context, int, time.Time, time.Time) ([]*models.CampaignTagTestReport, error) {
+func (r *tagTestPerformanceSchedulerRepo) ClaimPending(
+	context.Context,
+	int,
+	time.Time,
+	time.Time,
+) ([]*models.CampaignTagTestReport, error) {
 	r.claimed++
 	return r.reports, r.claimErr
 }
@@ -44,7 +49,14 @@ func (r *tagTestPerformanceSchedulerRepo) RecomputeCampaign(ctx context.Context,
 	return r.recomputeErr
 }
 
-func (r *tagTestPerformanceSchedulerRepo) Fail(_ context.Context, campaignID uint, _ time.Time, code, message string, retryAt *time.Time, _ time.Time) error {
+func (r *tagTestPerformanceSchedulerRepo) Fail(
+	_ context.Context,
+	campaignID uint,
+	_ time.Time,
+	code, message string,
+	retryAt *time.Time,
+	_ time.Time,
+) error {
 	r.failed = append(r.failed, campaignID)
 	r.failureCode = code
 	r.failureText = message

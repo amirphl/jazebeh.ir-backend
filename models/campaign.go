@@ -267,16 +267,16 @@ func (s *CampaignSpec) Scan(value any) error {
 
 // Campaign represents an campaign in the database
 type Campaign struct {
-	ID         uint            `gorm:"primaryKey" json:"id"`
-	UUID       uuid.UUID       `gorm:"type:uuid;not null;uniqueIndex:uk_campaigns_uuid;index:idx_campaigns_uuid" json:"uuid"`
-	CustomerID uint            `gorm:"not null;index:idx_campaigns_customer_id" json:"customer_id"`
-	Hidden     bool            `gorm:"not null;default:false" json:"hidden"`
+	ID         uint            `gorm:"primaryKey"                                                                       json:"id"`
+	UUID       uuid.UUID       `gorm:"type:uuid;not null;uniqueIndex:uk_campaigns_uuid;index:idx_campaigns_uuid"        json:"uuid"`
+	CustomerID uint            `gorm:"not null;index:idx_campaigns_customer_id"                                         json:"customer_id"`
+	Hidden     bool            `gorm:"not null;default:false"                                                           json:"hidden"`
 	Status     CampaignStatus  `gorm:"type:sms_campaign_status;not null;default:'initiated';index:idx_campaigns_status" json:"status"`
-	CreatedAt  time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC');index:idx_campaigns_created_at" json:"created_at"`
-	UpdatedAt  *time.Time      `gorm:"index:idx_campaigns_updated_at" json:"updated_at,omitempty"`
-	Spec       CampaignSpec    `gorm:"type:jsonb;not null" json:"spec"`
-	Comment    *string         `gorm:"type:text" json:"comment,omitempty"`
-	Statistics json.RawMessage `gorm:"type:jsonb" json:"statistics,omitempty"`
+	CreatedAt  time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC');index:idx_campaigns_created_at"    json:"created_at"`
+	UpdatedAt  *time.Time      `gorm:"index:idx_campaigns_updated_at"                                                   json:"updated_at,omitempty"`
+	Spec       CampaignSpec    `gorm:"type:jsonb;not null"                                                              json:"spec"`
+	Comment    *string         `gorm:"type:text"                                                                        json:"comment,omitempty"`
+	Statistics json.RawMessage `gorm:"type:jsonb"                                                                       json:"statistics,omitempty"`
 
 	// Number of targeted audiences
 	NumAudience *uint64 `gorm:"type:bigint" json:"num_audience,omitempty"`
@@ -285,33 +285,33 @@ type Campaign struct {
 	// NumAudience is a derived compatibility snapshot for that combination;
 	// pricing and runtime selection derive their authoritative counts from the
 	// persisted satisfied-tag intent below.
-	SampleSizePerTag *uint64 `gorm:"type:bigint" json:"sample_size_per_tag,omitempty"`
+	SampleSizePerTag *uint64 `gorm:"type:bigint"                          json:"sample_size_per_tag,omitempty"`
 	// SmartTargetingTestSatisfiedTagIDs stores preview results in the user's
 	// selection order. It never stores provisionally sampled audience IDs.
 	SmartTargetingTestSatisfiedTagIDs pq.Int64Array `gorm:"type:integer[];not null;default:'{}'" json:"smart_targeting_test_satisfied_tag_ids,omitempty"`
 	// SmartTargetingTestSamplingInputHash invalidates the preview when the
 	// ordered tags, Bundle, sample size, score classes, or platform-specific
 	// audience-color eligibility changes.
-	SmartTargetingTestSamplingInputHash   *string    `gorm:"type:char(64)" json:"-"`
-	SmartTargetingTestSamplingPreviewedAt *time.Time `json:"smart_targeting_test_sampling_previewed_at,omitempty"`
+	SmartTargetingTestSamplingInputHash   *string    `gorm:"type:char(64)"                        json:"-"`
+	SmartTargetingTestSamplingPreviewedAt *time.Time `                                            json:"smart_targeting_test_sampling_previewed_at,omitempty"`
 	// The monotonically increasing request generation prevents an older worker
 	// from replacing a newer sample. The pointer identifies the sole snapshot
 	// eligible for finalization and runtime delivery.
-	SmartTargetingTestSamplingGeneration int64  `gorm:"not null;default:0" json:"-"`
-	ActiveSmartTargetingTestSelectionID  *int64 `json:"-"`
+	SmartTargetingTestSamplingGeneration int64  `gorm:"not null;default:0"                   json:"-"`
+	ActiveSmartTargetingTestSelectionID  *int64 `                                            json:"-"`
 	// SmartTargetingExecutionReservationVersion is a durable scheduler contract.
 	// Zero explicitly identifies campaigns approved before execution audience
 	// reservations existed; every newly finalized Smart Targeting execution
 	// campaign is marked with the current non-zero version and must have a
 	// matching execution reservation header before it can run.
-	SmartTargetingExecutionReservationVersion int `gorm:"not null;default:0" json:"-"`
+	SmartTargetingExecutionReservationVersion int `gorm:"not null;default:0"                   json:"-"`
 
-	BundleID *uint         `gorm:"index:idx_campaigns_bundle_id" json:"bundle_id,omitempty"`
+	BundleID *uint         `gorm:"index:idx_campaigns_bundle_id"                    json:"bundle_id,omitempty"`
 	Phase    CampaignPhase `gorm:"type:campaign_phase;not null;default:'execution'" json:"phase"`
 
 	// Relations
 	Customer *Customer `gorm:"foreignKey:CustomerID;references:ID" json:"customer,omitempty"`
-	Bundle   *Bundle   `gorm:"foreignKey:BundleID;references:ID" json:"bundle,omitempty"`
+	Bundle   *Bundle   `gorm:"foreignKey:BundleID;references:ID"   json:"bundle,omitempty"`
 }
 
 // TableName returns the table name for the model

@@ -160,7 +160,8 @@ func TestSmartTargetingSchedulerAudienceQueryUsesExplicitPhaseAndAlwaysExcludesB
 		Platform:        string(models.CampaignPlatformSMS),
 	}
 	query := smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"}, []string{"white", "pink"})
-	if query.Phase != repository.SmartTargetingSelectionPhaseTest || query.BundleID != 3 || len(query.TagIDs) != 2 || len(query.AllowedColors) != 2 {
+	if query.Phase != repository.SmartTargetingSelectionPhaseTest || query.BundleID != 3 || len(query.TagIDs) != 2 ||
+		len(query.AllowedColors) != 2 {
 		t.Fatalf("Smart Test scheduler audience query = %#v, want Bundle-scoped SMS query", query)
 	}
 
@@ -199,7 +200,11 @@ func (r *capacitySchedulerTestRepo) ActiveByCampaignID(context.Context, uint) (*
 	return nil, nil
 }
 
-func (r *capacitySchedulerTestRepo) LatestCalculatedByInput(context.Context, uint, string) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *capacitySchedulerTestRepo) LatestCalculatedByInput(
+	context.Context,
+	uint,
+	string,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	return nil, nil
 }
 
@@ -207,7 +212,18 @@ func (r *capacitySchedulerTestRepo) LatestByInput(context.Context, uint, string)
 	return nil, nil
 }
 
-func (r *capacitySchedulerTestRepo) CurrentForPhase(context.Context, uint, uint, string, repository.SmartTargetingSelectionPhase, []int64, []string, []string, int, time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *capacitySchedulerTestRepo) CurrentForPhase(
+	context.Context,
+	uint,
+	uint,
+	string,
+	repository.SmartTargetingSelectionPhase,
+	[]int64,
+	[]string,
+	[]string,
+	int,
+	time.Time,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	return nil, nil
 }
 
@@ -215,7 +231,11 @@ func (r *capacitySchedulerTestRepo) Supersede(context.Context, int64, string, st
 	return nil
 }
 
-func (r *capacitySchedulerTestRepo) ClaimPending(_ context.Context, limit int, staleBefore, _ time.Time) ([]*models.CampaignTargetingCapacityCalculation, error) {
+func (r *capacitySchedulerTestRepo) ClaimPending(
+	_ context.Context,
+	limit int,
+	staleBefore, _ time.Time,
+) ([]*models.CampaignTargetingCapacityCalculation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.claimCalls++

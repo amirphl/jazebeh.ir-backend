@@ -30,15 +30,15 @@ type SMSStatusAggregates struct {
 }
 
 type SMSTrackingResult struct {
-	AudienceProfileUID    *string `json:"audienceProfileUID" gorm:"column:audience_profile_uid"`
-	PhoneNumber           string  `json:"phoneNumber" gorm:"column:phone_number"`
-	TrackingID            string  `json:"trackingID" gorm:"column:tracking_id"`
-	ServerID              *string `json:"serverID,omitempty" gorm:"column:server_id"`
-	TotalParts            *int64  `json:"totalParts" gorm:"column:total_parts"`
-	TotalDeliveredParts   *int64  `json:"totalDeliveredParts" gorm:"column:total_delivered_parts"`
+	AudienceProfileUID    *string `json:"audienceProfileUID"    gorm:"column:audience_profile_uid"`
+	PhoneNumber           string  `json:"phoneNumber"           gorm:"column:phone_number"`
+	TrackingID            string  `json:"trackingID"            gorm:"column:tracking_id"`
+	ServerID              *string `json:"serverID,omitempty"    gorm:"column:server_id"`
+	TotalParts            *int64  `json:"totalParts"            gorm:"column:total_parts"`
+	TotalDeliveredParts   *int64  `json:"totalDeliveredParts"   gorm:"column:total_delivered_parts"`
 	TotalUndeliveredParts *int64  `json:"totalUndeliveredParts" gorm:"column:total_undelivered_parts"`
-	TotalUnknownParts     *int64  `json:"totalUnknownParts" gorm:"column:total_unknown_parts"`
-	Status                *string `json:"status" gorm:"column:status"`
+	TotalUnknownParts     *int64  `json:"totalUnknownParts"     gorm:"column:total_unknown_parts"`
+	Status                *string `json:"status"                gorm:"column:status"`
 }
 
 func NewSMSStatusResultRepository(db *gorm.DB) SMSStatusResultRepository {
@@ -107,7 +107,12 @@ func (r *SMSStatusResultRepositoryImpl) SaveBatch(ctx context.Context, rows []*m
 }
 
 // ByFilter: no filter fields, just order/limit/offset
-func (r *SMSStatusResultRepositoryImpl) ByFilter(ctx context.Context, _ any, orderBy string, limit, offset int) ([]*models.SMSStatusResult, error) {
+func (r *SMSStatusResultRepositoryImpl) ByFilter(
+	ctx context.Context,
+	_ any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SMSStatusResult, error) {
 	db := r.getDB(ctx)
 	if orderBy != "" {
 		db = db.Order(orderBy)
@@ -154,7 +159,10 @@ func (r *SMSStatusResultRepositoryImpl) AggregateByCampaign(ctx context.Context,
 	return &agg, nil
 }
 
-func (r *SMSStatusResultRepositoryImpl) TrackingResultsByCampaign(ctx context.Context, processedCampaignID uint) ([]SMSTrackingResult, error) {
+func (r *SMSStatusResultRepositoryImpl) TrackingResultsByCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]SMSTrackingResult, error) {
 	db := r.getDB(ctx)
 	trackingResults := make([]SMSTrackingResult, 0)
 	if err := db.Table("sms_status_results AS ssr").

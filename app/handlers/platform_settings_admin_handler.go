@@ -105,7 +105,10 @@ func (h *PlatformSettingsAdminHandler) ChangeStatus(c fiber.Ctx) error {
 	if err != nil {
 		if be, ok := err.(*businessflow.BusinessError); ok {
 			switch be.Code {
-			case "INVALID_REQUEST", "PLATFORM_SETTINGS_ID_REQUIRED", "INVALID_PLATFORM_SETTINGS_STATUS", "PLATFORM_SETTINGS_STATUS_CHANGE_NOT_ALLOWED":
+			case "INVALID_REQUEST",
+				"PLATFORM_SETTINGS_ID_REQUIRED",
+				"INVALID_PLATFORM_SETTINGS_STATUS",
+				"PLATFORM_SETTINGS_STATUS_CHANGE_NOT_ALLOWED":
 				return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid request", be.Code, nil)
 			case "PLATFORM_SETTINGS_NOT_FOUND":
 				return h.ErrorResponse(c, fiber.StatusNotFound, "Platform settings not found", be.Code, nil)
@@ -113,7 +116,13 @@ func (h *PlatformSettingsAdminHandler) ChangeStatus(c fiber.Ctx) error {
 				return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to change platform settings status", be.Code, nil)
 			}
 		}
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to change platform settings status", "PLATFORM_SETTINGS_STATUS_UPDATE_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to change platform settings status",
+			"PLATFORM_SETTINGS_STATUS_UPDATE_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Platform settings status changed successfully", res)
@@ -159,13 +168,23 @@ func (h *PlatformSettingsAdminHandler) AddMetadata(c fiber.Ctx) error {
 				return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update platform settings metadata", be.Code, nil)
 			}
 		}
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update platform settings metadata", "PLATFORM_SETTINGS_METADATA_UPDATE_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to update platform settings metadata",
+			"PLATFORM_SETTINGS_METADATA_UPDATE_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Platform settings metadata updated successfully", res)
 }
 
-func (h *PlatformSettingsAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *PlatformSettingsAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

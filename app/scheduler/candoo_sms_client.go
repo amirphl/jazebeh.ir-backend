@@ -193,7 +193,11 @@ func candooDefinitiveSendFailures(items map[int64]SMSProviderMessage, err error)
 	return result
 }
 
-func (c *candooSMSProvider) sendBatchWithRetry(ctx context.Context, requests []candooSendRequest, itemByCustomerID map[int64]SMSProviderMessage) (SMSProviderSendResult, error) {
+func (c *candooSMSProvider) sendBatchWithRetry(
+	ctx context.Context,
+	requests []candooSendRequest,
+	itemByCustomerID map[int64]SMSProviderMessage,
+) (SMSProviderSendResult, error) {
 	maxAttempts := c.cfg.HTTPMaxAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = 3
@@ -216,7 +220,11 @@ func (c *candooSMSProvider) sendBatchWithRetry(ctx context.Context, requests []c
 	return last, nil
 }
 
-func (c *candooSMSProvider) sendBatchOnce(ctx context.Context, requests []candooSendRequest, itemByCustomerID map[int64]SMSProviderMessage) (SMSProviderSendResult, error) {
+func (c *candooSMSProvider) sendBatchOnce(
+	ctx context.Context,
+	requests []candooSendRequest,
+	itemByCustomerID map[int64]SMSProviderMessage,
+) (SMSProviderSendResult, error) {
 	body, err := json.Marshal(requests)
 	if err != nil {
 		return SMSProviderSendResult{}, fmt.Errorf("marshal Candoo send body: %w", err)

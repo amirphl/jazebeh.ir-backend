@@ -30,7 +30,11 @@ func (r *BundleTagEvaluationRunRepositoryImpl) ByID(ctx context.Context, id int6
 	return &row, nil
 }
 
-func (r *BundleTagEvaluationRunRepositoryImpl) ListByBundleID(ctx context.Context, bundleID uint, limit int) ([]*models.BundleTagEvaluationRun, error) {
+func (r *BundleTagEvaluationRunRepositoryImpl) ListByBundleID(
+	ctx context.Context,
+	bundleID uint,
+	limit int,
+) ([]*models.BundleTagEvaluationRun, error) {
 	query := r.getDB(ctx).Model(&models.BundleTagEvaluationRun{}).
 		Where("bundle_id = ?", bundleID).
 		Order("created_at DESC, id DESC")
@@ -44,7 +48,11 @@ func (r *BundleTagEvaluationRunRepositoryImpl) ListByBundleID(ctx context.Contex
 	return rows, nil
 }
 
-func (r *BundleTagEvaluationRunRepositoryImpl) CountByCustomerIDCreatedBetween(ctx context.Context, customerID uint, start, end time.Time) (int64, error) {
+func (r *BundleTagEvaluationRunRepositoryImpl) CountByCustomerIDCreatedBetween(
+	ctx context.Context,
+	customerID uint,
+	start, end time.Time,
+) (int64, error) {
 	var count int64
 	err := r.getDB(ctx).Model(&models.BundleTagEvaluationRun{}).
 		Where("customer_id = ? AND created_at >= ? AND created_at < ?", customerID, start, end).
@@ -97,7 +105,11 @@ func (r *BundleTagEvaluationEventRepositoryImpl) ExistsByRunIDAndType(ctx contex
 	return count > 0, err
 }
 
-func (r *BundleTagEvaluationEventRepositoryImpl) ExistsByBatchIDAndType(ctx context.Context, batchID int64, eventType string) (bool, error) {
+func (r *BundleTagEvaluationEventRepositoryImpl) ExistsByBatchIDAndType(
+	ctx context.Context,
+	batchID int64,
+	eventType string,
+) (bool, error) {
 	var count int64
 	err := r.getDB(ctx).Model(&models.BundleTagEvaluationEvent{}).
 		Where("batch_id = ? AND event_type = ?", batchID, eventType).
@@ -115,7 +127,10 @@ func NewBundleTagPersonaAnalysisAttemptRepository(db *gorm.DB) BundleTagPersonaA
 	}
 }
 
-func (r *BundleTagPersonaAnalysisAttemptRepositoryImpl) LatestByRunID(ctx context.Context, runID int64) (*models.BundleTagPersonaAnalysisAttempt, error) {
+func (r *BundleTagPersonaAnalysisAttemptRepositoryImpl) LatestByRunID(
+	ctx context.Context,
+	runID int64,
+) (*models.BundleTagPersonaAnalysisAttempt, error) {
 	var row models.BundleTagPersonaAnalysisAttempt
 	err := r.getDB(ctx).Model(&models.BundleTagPersonaAnalysisAttempt{}).
 		Where("evaluation_run_id = ?", runID).
@@ -131,7 +146,10 @@ func (r *BundleTagPersonaAnalysisAttemptRepositoryImpl) LatestByRunID(ctx contex
 	return &row, nil
 }
 
-func (r *BundleTagPersonaAnalysisAttemptRepositoryImpl) ListByRunID(ctx context.Context, runID int64) ([]*models.BundleTagPersonaAnalysisAttempt, error) {
+func (r *BundleTagPersonaAnalysisAttemptRepositoryImpl) ListByRunID(
+	ctx context.Context,
+	runID int64,
+) ([]*models.BundleTagPersonaAnalysisAttempt, error) {
 	var rows []*models.BundleTagPersonaAnalysisAttempt
 	if err := r.getDB(ctx).Model(&models.BundleTagPersonaAnalysisAttempt{}).
 		Where("evaluation_run_id = ?", runID).
@@ -173,7 +191,10 @@ func NewBundleTagEvaluationBatchAttemptRepository(db *gorm.DB) BundleTagEvaluati
 	}
 }
 
-func (r *BundleTagEvaluationBatchAttemptRepositoryImpl) LatestByBatchID(ctx context.Context, batchID int64) (*models.BundleTagEvaluationBatchAttempt, error) {
+func (r *BundleTagEvaluationBatchAttemptRepositoryImpl) LatestByBatchID(
+	ctx context.Context,
+	batchID int64,
+) (*models.BundleTagEvaluationBatchAttempt, error) {
 	var row models.BundleTagEvaluationBatchAttempt
 	err := r.getDB(ctx).Model(&models.BundleTagEvaluationBatchAttempt{}).
 		Where("batch_id = ?", batchID).
@@ -189,7 +210,10 @@ func (r *BundleTagEvaluationBatchAttemptRepositoryImpl) LatestByBatchID(ctx cont
 	return &row, nil
 }
 
-func (r *BundleTagEvaluationBatchAttemptRepositoryImpl) ListByBatchID(ctx context.Context, batchID int64) ([]*models.BundleTagEvaluationBatchAttempt, error) {
+func (r *BundleTagEvaluationBatchAttemptRepositoryImpl) ListByBatchID(
+	ctx context.Context,
+	batchID int64,
+) ([]*models.BundleTagEvaluationBatchAttempt, error) {
 	var rows []*models.BundleTagEvaluationBatchAttempt
 	if err := r.getDB(ctx).Model(&models.BundleTagEvaluationBatchAttempt{}).
 		Where("batch_id = ?", batchID).
@@ -252,7 +276,10 @@ func (r *BundleTagEvaluationReadRepositoryImpl) getDB(ctx context.Context) *gorm
 	return r.db.WithContext(ctx)
 }
 
-func (r *BundleTagEvaluationReadRepositoryImpl) ByBundleID(ctx context.Context, bundleID uint) (*models.CurrentBundleTagEvaluationStatus, error) {
+func (r *BundleTagEvaluationReadRepositoryImpl) ByBundleID(
+	ctx context.Context,
+	bundleID uint,
+) (*models.CurrentBundleTagEvaluationStatus, error) {
 	var row models.CurrentBundleTagEvaluationStatus
 	err := r.getDB(ctx).Model(&models.CurrentBundleTagEvaluationStatus{}).
 		Where("bundle_id = ?", bundleID).
@@ -267,7 +294,10 @@ func (r *BundleTagEvaluationReadRepositoryImpl) ByBundleID(ctx context.Context, 
 	return &row, nil
 }
 
-func (r *BundleTagEvaluationReadRepositoryImpl) ListByBundleIDs(ctx context.Context, bundleIDs []uint) ([]*models.CurrentBundleTagEvaluationStatus, error) {
+func (r *BundleTagEvaluationReadRepositoryImpl) ListByBundleIDs(
+	ctx context.Context,
+	bundleIDs []uint,
+) ([]*models.CurrentBundleTagEvaluationStatus, error) {
 	if len(bundleIDs) == 0 {
 		return []*models.CurrentBundleTagEvaluationStatus{}, nil
 	}
@@ -293,7 +323,10 @@ func (r *BundleTagEvaluationReadRepositoryImpl) ByRunID(ctx context.Context, run
 	return &row, nil
 }
 
-func (r *BundleTagEvaluationReadRepositoryImpl) ListPendingRuns(ctx context.Context, limit int) ([]*models.BundleTagEvaluationRunStatus, error) {
+func (r *BundleTagEvaluationReadRepositoryImpl) ListPendingRuns(
+	ctx context.Context,
+	limit int,
+) ([]*models.BundleTagEvaluationRunStatus, error) {
 	query := r.getDB(ctx).Model(&models.BundleTagEvaluationRunStatus{}).
 		// The event log contains many resumable intermediate event types. Query
 		// the derived state instead of maintaining an incomplete event allowlist.
@@ -309,7 +342,11 @@ func (r *BundleTagEvaluationReadRepositoryImpl) ListPendingRuns(ctx context.Cont
 	return rows, nil
 }
 
-func (r *BundleTagEvaluationReadRepositoryImpl) ListCurrentScoresByBundleID(ctx context.Context, bundleID uint, limit, offset int) ([]*models.CurrentBundleTagScore, error) {
+func (r *BundleTagEvaluationReadRepositoryImpl) ListCurrentScoresByBundleID(
+	ctx context.Context,
+	bundleID uint,
+	limit, offset int,
+) ([]*models.CurrentBundleTagScore, error) {
 	query := r.getDB(ctx).Model(&models.CurrentBundleTagScore{}).
 		Joins("JOIN tags AS active_tags ON active_tags.id = current_bundle_tag_scores.tag_id AND active_tags.is_active = ?", true).
 		Where("bundle_id = ?", bundleID).

@@ -21,14 +21,33 @@ type CampaignTargetingCapacityRepository interface {
 	ActiveByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingCapacityCalculation, error)
 	LatestByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingCapacityCalculation, error)
 	LatestCalculatedByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingCapacityCalculation, error)
-	CurrentForPhase(ctx context.Context, campaignID, bundleID uint, platform string, phase SmartTargetingSelectionPhase, tagIDs []int64, scoreClasses, allowedColors []string, calculationVersion int, at time.Time) (*models.CampaignTargetingCapacityCalculation, error)
+	CurrentForPhase(
+		ctx context.Context,
+		campaignID, bundleID uint,
+		platform string,
+		phase SmartTargetingSelectionPhase,
+		tagIDs []int64,
+		scoreClasses, allowedColors []string,
+		calculationVersion int,
+		at time.Time,
+	) (*models.CampaignTargetingCapacityCalculation, error)
 	Supersede(ctx context.Context, id int64, code, message string, at time.Time) error
 	ClaimPending(ctx context.Context, limit int, staleBefore, at time.Time) ([]*models.CampaignTargetingCapacityCalculation, error)
-	Complete(ctx context.Context, id int64, leaseStartedAt time.Time, raw, eligible, deduction, usable int64, fingerprint string, at time.Time) error
+	Complete(
+		ctx context.Context,
+		id int64,
+		leaseStartedAt time.Time,
+		raw, eligible, deduction, usable int64,
+		fingerprint string,
+		at time.Time,
+	) error
 	Fail(ctx context.Context, id int64, leaseStartedAt time.Time, code, message string, at time.Time) error
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) ActiveByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *CampaignTargetingCapacityRepositoryImpl) ActiveByCampaignID(
+	ctx context.Context,
+	campaignID uint,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	var row models.CampaignTargetingCapacityCalculation
 	err := r.getDB(ctx).Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingCapacityCalculating).
 		Order("created_at DESC, id DESC").First(&row).Error
@@ -38,17 +57,28 @@ func (r *CampaignTargetingCapacityRepositoryImpl) ActiveByCampaignID(ctx context
 	return &row, err
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) LatestCalculatedByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *CampaignTargetingCapacityRepositoryImpl) LatestCalculatedByInput(
+	ctx context.Context,
+	campaignID uint,
+	inputHash string,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	var row models.CampaignTargetingCapacityCalculation
-	err := r.getDB(ctx).Where("campaign_id = ? AND input_hash = ? AND status = ?", campaignID, inputHash, models.CampaignTargetingCapacityCalculated).
-		Order("created_at DESC, id DESC").First(&row).Error
+	err := r.getDB(ctx).
+		Where("campaign_id = ? AND input_hash = ? AND status = ?", campaignID, inputHash, models.CampaignTargetingCapacityCalculated).
+		Order("created_at DESC, id DESC").
+		First(&row).
+		Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &row, err
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) LatestByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *CampaignTargetingCapacityRepositoryImpl) LatestByInput(
+	ctx context.Context,
+	campaignID uint,
+	inputHash string,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	var row models.CampaignTargetingCapacityCalculation
 	err := r.getDB(ctx).Where("campaign_id = ? AND input_hash = ?", campaignID, inputHash).
 		Order("created_at DESC, id DESC").First(&row).Error
@@ -74,7 +104,16 @@ func (r *CampaignTargetingCapacityRepositoryImpl) Supersede(ctx context.Context,
 // CurrentForPhase retrieves a capacity calculation only for its explicit
 // selection phase. Bundle exclusions are a hard invariant for every modern
 // phase, not a caller-controlled Test-only behavior.
-func (r *CampaignTargetingCapacityRepositoryImpl) CurrentForPhase(ctx context.Context, campaignID, bundleID uint, platform string, phase SmartTargetingSelectionPhase, tagIDs []int64, scoreClasses, allowedColors []string, calculationVersion int, at time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *CampaignTargetingCapacityRepositoryImpl) CurrentForPhase(
+	ctx context.Context,
+	campaignID, bundleID uint,
+	platform string,
+	phase SmartTargetingSelectionPhase,
+	tagIDs []int64,
+	scoreClasses, allowedColors []string,
+	calculationVersion int,
+	at time.Time,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	if phase != SmartTargetingSelectionPhaseTest && phase != SmartTargetingSelectionPhaseExecution {
 		return nil, fmt.Errorf("invalid smart-targeting selection phase %q", phase)
 	}
@@ -115,7 +154,10 @@ func (r *CampaignTargetingCapacityRepositoryImpl) Save(ctx context.Context, row 
 	return r.getDB(ctx).Create(row).Error
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) ByID(ctx context.Context, id int64) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *CampaignTargetingCapacityRepositoryImpl) ByID(
+	ctx context.Context,
+	id int64,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	var row models.CampaignTargetingCapacityCalculation
 	if err := r.getDB(ctx).First(&row, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -126,7 +168,10 @@ func (r *CampaignTargetingCapacityRepositoryImpl) ByID(ctx context.Context, id i
 	return &row, nil
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) LatestByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *CampaignTargetingCapacityRepositoryImpl) LatestByCampaignID(
+	ctx context.Context,
+	campaignID uint,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	var row models.CampaignTargetingCapacityCalculation
 	err := r.getDB(ctx).Where("campaign_id = ?", campaignID).Order("created_at DESC, id DESC").First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -140,7 +185,11 @@ func (r *CampaignTargetingCapacityRepositoryImpl) LatestByCampaignID(ctx context
 
 // ClaimPending atomically leases calculating rows across every application
 // replica. Timed-out leases can be reclaimed after staleBefore.
-func (r *CampaignTargetingCapacityRepositoryImpl) ClaimPending(ctx context.Context, limit int, staleBefore, at time.Time) ([]*models.CampaignTargetingCapacityCalculation, error) {
+func (r *CampaignTargetingCapacityRepositoryImpl) ClaimPending(
+	ctx context.Context,
+	limit int,
+	staleBefore, at time.Time,
+) ([]*models.CampaignTargetingCapacityCalculation, error) {
 	if limit <= 0 {
 		limit = 1
 	}
@@ -163,7 +212,14 @@ RETURNING calculation.*`
 	return rows, r.getDB(ctx).Raw(query, models.CampaignTargetingCapacityCalculating, staleBefore, limit, at).Scan(&rows).Error
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) Complete(ctx context.Context, id int64, leaseStartedAt time.Time, raw, eligible, deduction, usable int64, fingerprint string, at time.Time) error {
+func (r *CampaignTargetingCapacityRepositoryImpl) Complete(
+	ctx context.Context,
+	id int64,
+	leaseStartedAt time.Time,
+	raw, eligible, deduction, usable int64,
+	fingerprint string,
+	at time.Time,
+) error {
 	result := r.getDB(ctx).Model(&models.CampaignTargetingCapacityCalculation{}).
 		Where("id = ? AND status = ? AND started_at = ?", id, models.CampaignTargetingCapacityCalculating, leaseStartedAt).
 		Updates(map[string]any{
@@ -186,7 +242,13 @@ func (r *CampaignTargetingCapacityRepositoryImpl) Complete(ctx context.Context, 
 	return nil
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) Fail(ctx context.Context, id int64, leaseStartedAt time.Time, code, message string, at time.Time) error {
+func (r *CampaignTargetingCapacityRepositoryImpl) Fail(
+	ctx context.Context,
+	id int64,
+	leaseStartedAt time.Time,
+	code, message string,
+	at time.Time,
+) error {
 	result := r.getDB(ctx).Model(&models.CampaignTargetingCapacityCalculation{}).
 		Where("id = ? AND status = ? AND started_at = ?", id, models.CampaignTargetingCapacityCalculating, leaseStartedAt).
 		Updates(map[string]any{

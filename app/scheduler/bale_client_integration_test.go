@@ -253,7 +253,11 @@ func TestBaleClientIntegrationMainFlows(t *testing.T) {
 				PhoneNumber: phoneVariant,
 				MessageData: BaleSendMessageData{
 					Message: &BaleMessage{
-						Text: fmt.Sprintf("Integration test phone normalization variant %d at %s", i, time.Now().UTC().Format(time.RFC3339)),
+						Text: fmt.Sprintf(
+							"Integration test phone normalization variant %d at %s",
+							i,
+							time.Now().UTC().Format(time.RFC3339),
+						),
 					},
 				},
 			}

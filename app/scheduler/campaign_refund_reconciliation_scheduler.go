@@ -169,7 +169,11 @@ func (s *CampaignRefundReconciliationScheduler) fail(ctx context.Context, job *m
 	}
 }
 
-func (s *CampaignRefundReconciliationScheduler) manualReview(ctx context.Context, job *models.CampaignRefundReconciliationJob, message string) {
+func (s *CampaignRefundReconciliationScheduler) manualReview(
+	ctx context.Context,
+	job *models.CampaignRefundReconciliationJob,
+	message string,
+) {
 	if err := s.repo.ManualReview(ctx, job.CampaignID, *job.StartedAt, "CAMPAIGN_REFUND_RECONCILIATION_FAILED", message, time.Now().UTC()); err != nil {
 		s.logger.Printf("campaign refund scheduler: manual review campaign %d: %v", job.CampaignID, err)
 	}

@@ -63,12 +63,14 @@ type CampaignHandlerInterface interface {
 // StartSmartTargetingExecutionCalculation queues the expensive, non-reserving
 // execution audience scan. Finalization must later name this exact result.
 // @Summary Request Smart Targeting Execution audience calculation
-// @Description Queues an asynchronous, non-reserving audience selection for an editable Smart Targeting Execution campaign. Finalization must provide the returned calculation ID after its status becomes ready and current.
+// @Description Queues an asynchronous, non-reserving audience selection for an editable Smart Targeting Execution campaign. Finalization
+// must provide the returned calculation ID after its status becomes ready and current.
 // @Tags Campaigns
 // @Produce json
 // @Security BearerAuth
 // @Param uuid path string true "Owned Smart Targeting Execution campaign UUID" format(uuid)
-// @Success 202 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Execution audience calculation requested successfully"
+// @Success 202 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Execution audience calculation requested
+// successfully"
 // @Failure 401 {object} dto.APIResponse "Authentication required"
 // @Failure 403 {object} dto.APIResponse "Campaign access denied or campaign is not editable"
 // @Failure 404 {object} dto.APIResponse "Campaign not found"
@@ -80,11 +82,25 @@ func (h *CampaignHandler) StartSmartTargetingExecutionCalculation(c fiber.Ctx) e
 	if !ok {
 		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
 	}
-	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations", 30*time.Second)
+	ctx, cancel := h.createRequestContextWithTimeout(
+		c,
+		"/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations",
+		30*time.Second,
+	)
 	defer cancel()
-	result, err := h.campaignFlow.StartSmartTargetingExecutionCalculation(ctx, &dto.SmartTargetingExecutionCalculationRequest{CustomerID: customerID, CampaignUUID: c.Params("uuid")}, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
+	result, err := h.campaignFlow.StartSmartTargetingExecutionCalculation(
+		ctx,
+		&dto.SmartTargetingExecutionCalculationRequest{CustomerID: customerID, CampaignUUID: c.Params("uuid")},
+		businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")),
+	)
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to request execution audience calculation", "SMART_TARGETING_EXECUTION_CALCULATION_REQUEST_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to request execution audience calculation",
+			"SMART_TARGETING_EXECUTION_CALCULATION_REQUEST_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusAccepted, "Execution audience calculation requested successfully", result)
 }
@@ -93,12 +109,14 @@ func (h *CampaignHandler) StartSmartTargetingExecutionCalculation(c fiber.Ctx) e
 // calculation for the campaign's current input, so clients can resume polling
 // without retaining a calculation ID.
 // @Summary Get current Smart Targeting Execution audience calculation
-// @Description Retrieves the current execution-audience calculation for an owned Smart Targeting Execution campaign. A ready calculation is finalizable only when is_current is true and recalculation_required is false.
+// @Description Retrieves the current execution-audience calculation for an owned Smart Targeting Execution campaign. A ready calculation is
+// finalizable only when is_current is true and recalculation_required is false.
 // @Tags Campaigns
 // @Produce json
 // @Security BearerAuth
 // @Param uuid path string true "Owned Smart Targeting Execution campaign UUID" format(uuid)
-// @Success 200 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Current execution audience calculation retrieved successfully"
+// @Success 200 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Current execution audience calculation
+// retrieved successfully"
 // @Failure 401 {object} dto.APIResponse "Authentication required"
 // @Failure 403 {object} dto.APIResponse "Campaign access denied"
 // @Failure 404 {object} dto.APIResponse "Campaign not found"
@@ -110,11 +128,21 @@ func (h *CampaignHandler) GetCurrentSmartTargetingExecutionCalculation(c fiber.C
 	if !ok {
 		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
 	}
-	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations", 30*time.Second)
+	ctx, cancel := h.createRequestContextWithTimeout(
+		c,
+		"/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations",
+		30*time.Second,
+	)
 	defer cancel()
 	result, err := h.campaignFlow.GetCurrentSmartTargetingExecutionCalculation(ctx, customerID, c.Params("uuid"))
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load current execution audience calculation", "SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to load current execution audience calculation",
+			"SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Current execution audience calculation retrieved successfully", result)
 }
@@ -122,13 +150,15 @@ func (h *CampaignHandler) GetCurrentSmartTargetingExecutionCalculation(c fiber.C
 // GetSmartTargetingExecutionCalculation retrieves one requested execution
 // audience calculation and reports whether it remains current.
 // @Summary Get Smart Targeting Execution audience calculation
-// @Description Retrieves an owned execution-audience calculation by ID. A calculation can be finalized only when status is ready, is_current is true, and recalculation_required is false.
+// @Description Retrieves an owned execution-audience calculation by ID. A calculation can be finalized only when status is ready,
+// is_current is true, and recalculation_required is false.
 // @Tags Campaigns
 // @Produce json
 // @Security BearerAuth
 // @Param uuid path string true "Owned Smart Targeting Execution campaign UUID" format(uuid)
 // @Param calculation_id path int true "Execution audience calculation ID" minimum(1)
-// @Success 200 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Execution audience calculation retrieved successfully"
+// @Success 200 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Execution audience calculation retrieved
+// successfully"
 // @Failure 400 {object} dto.APIResponse "Invalid calculation ID"
 // @Failure 401 {object} dto.APIResponse "Authentication required"
 // @Failure 403 {object} dto.APIResponse "Campaign access denied"
@@ -144,11 +174,21 @@ func (h *CampaignHandler) GetSmartTargetingExecutionCalculation(c fiber.Ctx) err
 	if err != nil || id < 1 {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Calculation ID is invalid", "INVALID_CALCULATION_ID", nil)
 	}
-	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations/:calculation_id", 30*time.Second)
+	ctx, cancel := h.createRequestContextWithTimeout(
+		c,
+		"/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations/:calculation_id",
+		30*time.Second,
+	)
 	defer cancel()
 	result, err := h.campaignFlow.GetSmartTargetingExecutionCalculation(ctx, customerID, c.Params("uuid"), id)
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load execution audience calculation", "SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to load execution audience calculation",
+			"SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Execution audience calculation retrieved successfully", result)
 }
@@ -174,7 +214,13 @@ func (h *CampaignHandler) PreviewSmartTargetingTestSampling(c fiber.Ctx) error {
 		CustomerID: customerID, CampaignUUID: c.Params("uuid"),
 	}, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to request Smart Targeting Test sampling", "SMART_TARGETING_TEST_SAMPLING_REQUEST_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to request Smart Targeting Test sampling",
+			"SMART_TARGETING_TEST_SAMPLING_REQUEST_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusAccepted, "Smart Targeting Test sampling requested successfully", result)
 }
@@ -196,7 +242,13 @@ func (h *CampaignHandler) GetSmartTargetingTestSampling(c fiber.Ctx) error {
 	defer cancel()
 	result, err := h.campaignFlow.GetCurrentSmartTargetingTestSampling(ctx, customerID, c.Params("uuid"))
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load Smart Targeting Test sampling", "SMART_TARGETING_TEST_SAMPLING_LOOKUP_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to load Smart Targeting Test sampling",
+			"SMART_TARGETING_TEST_SAMPLING_LOOKUP_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Smart Targeting Test sampling retrieved successfully", result)
 }
@@ -219,11 +271,21 @@ func (h *CampaignHandler) GetSmartTargetingTestSamplingByID(c fiber.Ctx) error {
 	if err != nil || calculationID < 1 {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Calculation ID is invalid", "INVALID_CALCULATION_ID", nil)
 	}
-	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/test-sampling-preview/:calculation_id", 30*time.Second)
+	ctx, cancel := h.createRequestContextWithTimeout(
+		c,
+		"/api/v1/campaigns/:uuid/smart-targeting/test-sampling-preview/:calculation_id",
+		30*time.Second,
+	)
 	defer cancel()
 	result, err := h.campaignFlow.GetSmartTargetingTestSamplingByID(ctx, customerID, c.Params("uuid"), calculationID)
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load Smart Targeting Test sampling", "SMART_TARGETING_TEST_SAMPLING_LOOKUP_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to load Smart Targeting Test sampling",
+			"SMART_TARGETING_TEST_SAMPLING_LOOKUP_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Smart Targeting Test sampling retrieved successfully", result)
 }
@@ -258,7 +320,13 @@ func (h *CampaignHandler) SuccessResponse(c fiber.Ctx, statusCode int, message s
 }
 
 // NewCampaignHandler creates a new campaign handler
-func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFlow businessflow.SmartTargetingFlow, capacityFlow businessflow.SmartTargetingCapacityFlow, actionFlow businessflow.BundleActionFlow, reportJobFlow businessflow.CampaignAudienceReportJobFlow) *CampaignHandler {
+func NewCampaignHandler(
+	campaignFlow businessflow.CampaignFlow,
+	smartTargetingFlow businessflow.SmartTargetingFlow,
+	capacityFlow businessflow.SmartTargetingCapacityFlow,
+	actionFlow businessflow.BundleActionFlow,
+	reportJobFlow businessflow.CampaignAudienceReportJobFlow,
+) *CampaignHandler {
 	handler := &CampaignHandler{
 		campaignFlow:       campaignFlow,
 		smartTargetingFlow: smartTargetingFlow,
@@ -276,7 +344,8 @@ func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFl
 
 // CreateCampaignAudienceReportJob queues a disk-backed, multi-sheet report.
 // @Summary Create Campaign Audience Report Job
-// @Description Queues a large audience report. Poll the returned job and download it after completion; completed files expire after 24 hours.
+// @Description Queues a large audience report. Poll the returned job and download it after completion; completed files expire after 24
+// hours.
 // @Tags Campaigns
 // @Accept json
 // @Produce json
@@ -347,13 +416,31 @@ func (h *CampaignHandler) DownloadCampaignAudienceReportJob(c fiber.Ctx) error {
 	info, err := os.Stat(*job.OutputPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return h.ErrorResponse(c, fiber.StatusNotFound, "Campaign audience report output is unavailable", "CAMPAIGN_REPORT_JOB_OUTPUT_NOT_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusNotFound,
+				"Campaign audience report output is unavailable",
+				"CAMPAIGN_REPORT_JOB_OUTPUT_NOT_FOUND",
+				nil,
+			)
 		}
 		log.Printf("stat campaign audience report output: %v", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Campaign audience report output is unavailable", "CAMPAIGN_REPORT_JOB_OUTPUT_UNAVAILABLE", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Campaign audience report output is unavailable",
+			"CAMPAIGN_REPORT_JOB_OUTPUT_UNAVAILABLE",
+			nil,
+		)
 	}
 	if !info.Mode().IsRegular() {
-		return h.ErrorResponse(c, fiber.StatusNotFound, "Campaign audience report output is unavailable", "CAMPAIGN_REPORT_JOB_OUTPUT_NOT_FOUND", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusNotFound,
+			"Campaign audience report output is unavailable",
+			"CAMPAIGN_REPORT_JOB_OUTPUT_NOT_FOUND",
+			nil,
+		)
 	}
 	h.reportJobFlow.RecordDownload(ctx, job, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -375,7 +462,13 @@ func (h *CampaignHandler) handleCampaignReportJobError(c fiber.Ctx, err error) e
 			return h.ErrorResponse(c, fiber.StatusNotFound, be.Message, be.Code, nil)
 		}
 	}
-	return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to process campaign audience report job", "CAMPAIGN_REPORT_JOB_FAILED", nil)
+	return h.ErrorResponse(
+		c,
+		fiber.StatusInternalServerError,
+		"Failed to process campaign audience report job",
+		"CAMPAIGN_REPORT_JOB_FAILED",
+		nil,
+	)
 }
 
 // GetCampaignActionMetrics returns the bundle-scoped action metrics for a campaign.
@@ -403,7 +496,13 @@ func (h *CampaignHandler) GetCampaignActionMetrics(c fiber.Ctx) error {
 	metric, err := h.actionFlow.CampaignMetric(ctx, customerID, campaignUUID)
 	if err != nil {
 		log.Println("Get campaign action metrics failed", err)
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to get campaign action metrics", "CAMPAIGN_ACTION_METRICS_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to get campaign action metrics",
+			"CAMPAIGN_ACTION_METRICS_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Campaign action metrics retrieved", dto.CampaignActionMetricResponse{
 		CampaignID:             metric.CampaignID,
@@ -420,7 +519,8 @@ func (h *CampaignHandler) GetCampaignActionMetrics(c fiber.Ctx) error {
 // @Produce json
 // @Security BearerAuth
 // @Param uuid path string true "Owned campaign UUID" format(uuid)
-// @Param request body dto.StartSmartTargetingCapacityCalculationRequest false "Score-class selection; omitted reuses the campaign selection, with an empty campaign selection meaning A, B, and C"
+// @Param request body dto.StartSmartTargetingCapacityCalculationRequest false "Score-class selection; omitted reuses the campaign
+// selection, with an empty campaign selection meaning A, B, and C"
 // @Success 202 {object} dto.APIResponse{data=dto.SmartTargetingCapacityCalculationResponse}
 // @Router /api/v1/campaigns/{uuid}/smart-targeting/capacity-calculations [post]
 func (h *CampaignHandler) StartSmartTargetingCapacityCalculation(c fiber.Ctx) error {
@@ -438,14 +538,26 @@ func (h *CampaignHandler) StartSmartTargetingCapacityCalculation(c fiber.Ctx) er
 		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
 	}
 	if h.capacityFlow == nil {
-		return h.ErrorResponse(c, fiber.StatusServiceUnavailable, "Exact capacity calculation is unavailable", "SMART_TARGETING_CAPACITY_UNAVAILABLE", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusServiceUnavailable,
+			"Exact capacity calculation is unavailable",
+			"SMART_TARGETING_CAPACITY_UNAVAILABLE",
+			nil,
+		)
 	}
 	req.CustomerID, req.CampaignUUID = customerID, c.Params("uuid")
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/capacity-calculations", 30*time.Second)
 	defer cancel()
 	result, err := h.capacityFlow.Start(ctx, &req, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to request exact capacity calculation", "SMART_TARGETING_CAPACITY_REQUEST_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to request exact capacity calculation",
+			"SMART_TARGETING_CAPACITY_REQUEST_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusAccepted, "Exact capacity calculation requested successfully", result)
 }
@@ -465,13 +577,25 @@ func (h *CampaignHandler) GetSmartTargetingCapacityCalculation(c fiber.Ctx) erro
 		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
 	}
 	if h.capacityFlow == nil {
-		return h.ErrorResponse(c, fiber.StatusServiceUnavailable, "Exact capacity calculation is unavailable", "SMART_TARGETING_CAPACITY_UNAVAILABLE", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusServiceUnavailable,
+			"Exact capacity calculation is unavailable",
+			"SMART_TARGETING_CAPACITY_UNAVAILABLE",
+			nil,
+		)
 	}
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/capacity-calculations", 30*time.Second)
 	defer cancel()
 	result, err := h.capacityFlow.GetCurrent(ctx, customerID, c.Params("uuid"))
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load exact capacity calculation", "SMART_TARGETING_CAPACITY_LOOKUP_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to load exact capacity calculation",
+			"SMART_TARGETING_CAPACITY_LOOKUP_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Exact capacity calculation retrieved successfully", result)
 }
@@ -495,27 +619,50 @@ func (h *CampaignHandler) GetSmartTargetingCapacityCalculationByID(c fiber.Ctx) 
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Calculation ID is invalid", "INVALID_CALCULATION_ID", nil)
 	}
 	if h.capacityFlow == nil {
-		return h.ErrorResponse(c, fiber.StatusServiceUnavailable, "Exact capacity calculation is unavailable", "SMART_TARGETING_CAPACITY_UNAVAILABLE", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusServiceUnavailable,
+			"Exact capacity calculation is unavailable",
+			"SMART_TARGETING_CAPACITY_UNAVAILABLE",
+			nil,
+		)
 	}
-	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/capacity-calculations/:calculation_id", 30*time.Second)
+	ctx, cancel := h.createRequestContextWithTimeout(
+		c,
+		"/api/v1/campaigns/:uuid/smart-targeting/capacity-calculations/:calculation_id",
+		30*time.Second,
+	)
 	defer cancel()
 	result, err := h.capacityFlow.GetByID(ctx, customerID, c.Params("uuid"), calculationID)
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load exact capacity calculation", "SMART_TARGETING_CAPACITY_LOOKUP_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to load exact capacity calculation",
+			"SMART_TARGETING_CAPACITY_LOOKUP_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Exact capacity calculation retrieved successfully", result)
 }
 
 // ListSmartTargetingTags returns the campaign's searchable, sortable tag table.
 // @Summary List Smart Targeting tags
-// @Description Returns a page of tags for an owned campaign, each row's selected state, whether the tag was scheduler-used in an operational campaign of the bundle, materialized Bundle/tag Test CTR and overall CTR, nullable per-Campaign Test totals and CTR, the complete selected_tag_ids set across all pages, and the complete selection capacity summary. A tag is scheduler-used only when an audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count. Execution Campaigns default to Test CTR descending, then persona-fit score descending, then database order. When the bundle has current score rows, tag names, display titles, personas, capacities, fit scores, and score explanations come from that completed evaluation snapshot. Otherwise active live tags are returned and evaluation fields are null.
+// @Description Returns a page of tags for an owned campaign, each row's selected state, whether the tag was scheduler-used in an
+// operational campaign of the bundle, materialized Bundle/tag Test CTR and overall CTR, nullable per-Campaign Test totals and CTR, the
+// complete selected_tag_ids set across all pages, and the complete selection capacity summary. A tag is scheduler-used only when an
+// audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count. Execution
+// Campaigns default to Test CTR descending, then persona-fit score descending, then database order. When the bundle has current score rows,
+// tag names, display titles, personas, capacities, fit scores, and score explanations come from that completed evaluation snapshot.
+// Otherwise active live tags are returned and evaluation fields are null.
 // @Tags Campaigns
 // @Produce json
 // @Security BearerAuth
 // @Param uuid path string true "Owned campaign UUID" format(uuid)
 // @Param search query string false "Case-insensitive tag name or display-title search (maximum 200 characters)"
 // @Param capacity query integer false "Return tags with capacity strictly greater than this value" minimum(0)
-// @Param sort_by query string false "Sort field. bundle_persona_fit_score requires a completed bundle evaluation." Enums(tag_capacity,bundle_persona_fit_score,test_phase_avg_ctr,overall_avg_ctr)
+// @Param sort_by query string false "Sort field. bundle_persona_fit_score requires a completed bundle evaluation."
+// Enums(tag_capacity,bundle_persona_fit_score,test_phase_avg_ctr,overall_avg_ctr)
 // @Param sort_direction query string false "Sort direction" Enums(asc,desc)
 // @Param page query int false "Page number" default(1) minimum(1)
 // @Param page_size query int false "Items per page; limit is accepted as a backward-compatible alias" default(20) minimum(1) maximum(100)
@@ -555,21 +702,32 @@ func (h *CampaignHandler) ListSmartTargetingTags(c fiber.Ctx) error {
 		Capacity: capacity, SortBy: c.Query("sort_by"), SortDirection: c.Query("sort_direction"), Page: page, PageSize: pageSize,
 	})
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to list Smart Targeting tags", "SMART_TARGETING_TAG_LIST_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to list Smart Targeting tags",
+			"SMART_TARGETING_TAG_LIST_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Smart Targeting tags retrieved successfully", res)
 }
 
 // ListBundleSmartTargetingTags returns available tags before campaign creation.
 // @Summary List bundle Smart Targeting tags
-// @Description Returns a page of tags for an owned bundle before a campaign exists, including whether each tag was scheduler-used in an operational campaign of the bundle, materialized Bundle/tag Test totals and CTR, plus Bundle/tag overall CTR. A tag is scheduler-used only when an audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count. When current score rows exist, their tag and score snapshots are authoritative; otherwise the endpoint falls back to active live tags with null evaluation fields. selected_tag_ids and the selection summary are empty; submit chosen IDs with campaign creation.
+// @Description Returns a page of tags for an owned bundle before a campaign exists, including whether each tag was scheduler-used in an
+// operational campaign of the bundle, materialized Bundle/tag Test totals and CTR, plus Bundle/tag overall CTR. A tag is scheduler-used
+// only when an audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count.
+// When current score rows exist, their tag and score snapshots are authoritative; otherwise the endpoint falls back to active live tags
+// with null evaluation fields. selected_tag_ids and the selection summary are empty; submit chosen IDs with campaign creation.
 // @Tags Bundles
 // @Produce json
 // @Security BearerAuth
 // @Param id path int true "Owned bundle ID" minimum(1)
 // @Param search query string false "Case-insensitive tag name or display-title search (maximum 200 characters)"
 // @Param capacity query integer false "Return tags with capacity strictly greater than this value" minimum(0)
-// @Param sort_by query string false "Sort field. bundle_persona_fit_score requires a completed bundle evaluation." Enums(tag_capacity,bundle_persona_fit_score,test_phase_avg_ctr,overall_avg_ctr)
+// @Param sort_by query string false "Sort field. bundle_persona_fit_score requires a completed bundle evaluation."
+// Enums(tag_capacity,bundle_persona_fit_score,test_phase_avg_ctr,overall_avg_ctr)
 // @Param sort_direction query string false "Sort direction" Enums(asc,desc)
 // @Param page query int false "Page number" default(1) minimum(1)
 // @Param page_size query int false "Items per page; limit is accepted as a backward-compatible alias" default(20) minimum(1) maximum(100)
@@ -613,7 +771,13 @@ func (h *CampaignHandler) ListBundleSmartTargetingTags(c fiber.Ctx) error {
 		Capacity: capacity, SortBy: c.Query("sort_by"), SortDirection: c.Query("sort_direction"), Page: page, PageSize: pageSize,
 	})
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to list Smart Targeting tags", "SMART_TARGETING_TAG_LIST_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to list Smart Targeting tags",
+			"SMART_TARGETING_TAG_LIST_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Smart Targeting tags retrieved successfully", res)
 }
@@ -653,7 +817,8 @@ func maxPageForSmartTargetingOffset(pageSize int) int {
 
 // GetSmartTargetingSelection returns the complete persisted selection, independent of table pagination.
 // @Summary Get Smart Targeting selection
-// @Description Returns every selected tag ID and the raw-capacity summary for an owned campaign. The result is independent of tag-table pagination.
+// @Description Returns every selected tag ID and the raw-capacity summary for an owned campaign. The result is independent of tag-table
+// pagination.
 // @Tags Campaigns
 // @Produce json
 // @Security BearerAuth
@@ -674,14 +839,21 @@ func (h *CampaignHandler) GetSmartTargetingSelection(c fiber.Ctx) error {
 	defer cancel()
 	res, err := h.smartTargetingFlow.GetSelection(ctx, customerID, c.Params("uuid"))
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to retrieve Smart Targeting selection", "SMART_TARGETING_SELECTION_LOOKUP_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to retrieve Smart Targeting selection",
+			"SMART_TARGETING_SELECTION_LOOKUP_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Smart Targeting selection retrieved successfully", res)
 }
 
 // ReplaceSmartTargetingSelection atomically replaces the complete selected-tag set.
 // @Summary Replace Smart Targeting selection
-// @Description Atomically replaces the complete selected-tag set for an editable Smart Targeting campaign. All IDs must be unique and available in the bundle's current score snapshot, or in active live tags when no score rows exist; at least one ID is required.
+// @Description Atomically replaces the complete selected-tag set for an editable Smart Targeting campaign. All IDs must be unique and
+// available in the bundle's current score snapshot, or in active live tags when no score rows exist; at least one ID is required.
 // @Tags Campaigns
 // @Accept json
 // @Produce json
@@ -701,7 +873,13 @@ func (h *CampaignHandler) ReplaceSmartTargetingSelection(c fiber.Ctx) error {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", "INVALID_REQUEST", nil)
 	}
 	if err := h.validator.Struct(&req); err != nil {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "At least one tag must be selected for Smart Targeting.", "SMART_TARGETING_SELECTION_INVALID", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			"At least one tag must be selected for Smart Targeting.",
+			"SMART_TARGETING_SELECTION_INVALID",
+			nil,
+		)
 	}
 	customerID, ok := c.Locals("customer_id").(uint)
 	if !ok {
@@ -712,14 +890,21 @@ func (h *CampaignHandler) ReplaceSmartTargetingSelection(c fiber.Ctx) error {
 	defer cancel()
 	res, err := h.smartTargetingFlow.ReplaceSelection(ctx, &req)
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to save Smart Targeting selection", "SMART_TARGETING_SELECTION_SAVE_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to save Smart Targeting selection",
+			"SMART_TARGETING_SELECTION_SAVE_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Smart Targeting selection saved successfully", res)
 }
 
 // AutoSelectSmartTargetingTags replaces the selection with the first count tags from the complete filtered order.
 // @Summary Auto-select Smart Targeting tags
-// @Description Selects up to count available tags from the complete normalized snapshot-first search and sort order—not only the visible page—and atomically replaces the campaign's complete selection.
+// @Description Selects up to count available tags from the complete normalized snapshot-first search and sort order—not only the visible
+// page—and atomically replaces the campaign's complete selection.
 // @Tags Campaigns
 // @Accept json
 // @Produce json
@@ -750,7 +935,13 @@ func (h *CampaignHandler) AutoSelectSmartTargetingTags(c fiber.Ctx) error {
 	defer cancel()
 	res, err := h.smartTargetingFlow.AutoSelect(ctx, &req)
 	if err != nil {
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to automatically select Smart Targeting tags", "SMART_TARGETING_AUTO_SELECT_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to automatically select Smart Targeting tags",
+			"SMART_TARGETING_AUTO_SELECT_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Smart Targeting tags selected successfully", res)
 }
@@ -1009,7 +1200,13 @@ func (h *CampaignHandler) ExportCampaignReport(c fiber.Ctx) error {
 	data, err := h.campaignFlow.ExportCampaignReport(ctx, campaignUUID)
 	if err != nil {
 		log.Println("Export campaign report failed", err)
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to export campaign report", "CAMPAIGN_REPORT_EXPORT_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to export campaign report",
+			"CAMPAIGN_REPORT_EXPORT_FAILED",
+		)
 	}
 
 	filename := "campaign_report_" + campaignUUID + ".xlsx"
@@ -1059,7 +1256,13 @@ func (h *CampaignHandler) ExportCampaignClickReport(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Campaign not found", "CAMPAIGN_NOT_FOUND", nil)
 		}
 		log.Println("Export campaign click report failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to export campaign click report", "CAMPAIGN_CLICK_REPORT_EXPORT_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to export campaign click report",
+			"CAMPAIGN_CLICK_REPORT_EXPORT_FAILED",
+			nil,
+		)
 	}
 
 	filename := "campaign_click_report_" + campaignUUID + ".csv"
@@ -1071,7 +1274,10 @@ func (h *CampaignHandler) ExportCampaignClickReport(c fiber.Ctx) error {
 // ExportCampaignAudienceClickReport exports campaign audience UID/click/action results from multiple
 // customer-owned campaigns into one Excel worksheet.
 // @Summary Export Campaign Audience Report
-// @Description Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for selected campaigns owned by the authenticated customer. This synchronous compatibility endpoint supports at most 250,000 rows. For larger reports, create an asynchronous job at POST /api/v1/campaigns/audience-click-report/jobs, poll its status, then download the completed XLSX. Delivery status is unavailable in the stored audience mapping and is reported as unknown.
+// @Description Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for
+// selected campaigns owned by the authenticated customer. This synchronous compatibility endpoint supports at most 250,000 rows. For larger
+// reports, create an asynchronous job at POST /api/v1/campaigns/audience-click-report/jobs, poll its status, then download the completed
+// XLSX. Delivery status is unavailable in the stored audience mapping and is reported as unknown.
 // @Tags Campaigns
 // @Accept json
 // @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
@@ -1115,7 +1321,13 @@ func (h *CampaignHandler) ExportCampaignAudienceClickReport(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "One or more campaigns not found", "CAMPAIGN_NOT_FOUND", nil)
 		}
 		log.Println("Export campaign audience click report failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to export campaign audience click report", "CAMPAIGN_AUDIENCE_CLICK_REPORT_EXPORT_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to export campaign audience click report",
+			"CAMPAIGN_AUDIENCE_CLICK_REPORT_EXPORT_FAILED",
+			nil,
+		)
 	}
 
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -1164,7 +1376,13 @@ func (h *CampaignHandler) CalculateCampaignCapacity(c fiber.Ctx) error {
 	result, err := h.campaignFlow.CalculateCampaignCapacity(ctx, &req, metadata)
 	if err != nil {
 		log.Println("Campaign capacity calculation failed", err)
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Campaign capacity calculation failed", "CAPACITY_CALCULATION_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Campaign capacity calculation failed",
+			"CAPACITY_CALCULATION_FAILED",
+		)
 	}
 
 	// Successful capacity calculation
@@ -1217,7 +1435,13 @@ func (h *CampaignHandler) CalculateCampaignCost(c fiber.Ctx) error {
 	result, err := h.campaignFlow.CalculateCampaignCost(ctx, &req, metadata)
 	if err != nil {
 		log.Println("Campaign cost calculation failed", err)
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Campaign cost calculation failed", "COST_CALCULATION_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Campaign cost calculation failed",
+			"COST_CALCULATION_FAILED",
+		)
 	}
 
 	// Successful cost calculation
@@ -1268,7 +1492,13 @@ func (h *CampaignHandler) CalculateCampaignCostV2(c fiber.Ctx) error {
 	result, err := h.campaignFlow.CalculateCampaignCostV2(ctx, &req, metadata)
 	if err != nil {
 		log.Println("Campaign cost calculation v2 failed", err)
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Campaign cost calculation failed", "COST_CALCULATION_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Campaign cost calculation failed",
+			"COST_CALCULATION_FAILED",
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Campaign cost calculated successfully", fiber.Map{
@@ -1287,9 +1517,12 @@ func (h *CampaignHandler) CalculateCampaignCostV2(c fiber.Ctx) error {
 // @Produce json
 // @Param page query int true "Page number"
 // @Param limit query int true "Items per page (max 100)"
-// @Param orderby query string false "Order by (newest|oldest|phase_test_first|phase_execution_first|highest_click_rate|lowest_click_rate|schedule_at_asc|schedule_at_desc)" default(newest)
+// @Param orderby query string false "Order by
+// (newest|oldest|phase_test_first|phase_execution_first|highest_click_rate|lowest_click_rate|schedule_at_asc|schedule_at_desc)"
+// default(newest)
 // @Param title query string false "Filter by title (contains)"
-// @Param status query string false "Filter by status (initiated|in-progress|waiting-for-approval|approved|rejected|running|executed|expired|cancelled|cancelled-by-admin)"
+// @Param status query string false "Filter by status
+// (initiated|in-progress|waiting-for-approval|approved|rejected|running|executed|expired|cancelled|cancelled-by-admin)"
 // @Success 200 {object} dto.APIResponse{data=dto.ListCampaignsResponse}
 // @Failure 400 {object} dto.APIResponse "Validation error"
 // @Failure 401 {object} dto.APIResponse "Unauthorized"
@@ -1332,7 +1565,10 @@ func (h *CampaignHandler) ListCampaigns(c fiber.Ctx) error {
 
 	// Build request DTO
 	var filter *dto.ListCampaignsFilter
-	if campaignTitle != "" || bundleTitle != "" || customerName != "" || status != "" || bundleIDStr != "" || platform != "" || startDateStr != "" || endDateStr != "" || phase != "" {
+	if campaignTitle != "" || bundleTitle != "" || customerName != "" || status != "" || bundleIDStr != "" || platform != "" ||
+		startDateStr != "" ||
+		endDateStr != "" ||
+		phase != "" {
 		filter = &dto.ListCampaignsFilter{}
 		if campaignTitle != "" {
 			filter.CampaignTitle = &campaignTitle
@@ -1425,7 +1661,13 @@ func (h *CampaignHandler) GetLastInitiatedCampaign(c fiber.Ctx) error {
 	result, err := h.campaignFlow.GetLastInitiatedCampaign(ctx, customerID, metadata)
 	if err != nil {
 		log.Println("Get last initiated campaign failed", err)
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to get last initiated campaign", "GET_LAST_INITIATED_CAMPAIGN_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to get last initiated campaign",
+			"GET_LAST_INITIATED_CAMPAIGN_FAILED",
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, result.Message, result)
@@ -1498,7 +1740,13 @@ func (h *CampaignHandler) GetApprovedRunningSummary(c fiber.Ctx) error {
 	res, err := h.campaignFlow.GetApprovedRunningSummary(ctx, customerID)
 	if err != nil {
 		log.Println("Get campaigns summary failed", err)
-		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to get campaigns summary", "GET_CAMPAIGNS_SUMMARY_FAILED")
+		return h.handleCampaignFlowError(
+			c,
+			err,
+			fiber.StatusInternalServerError,
+			"Failed to get campaigns summary",
+			"GET_CAMPAIGNS_SUMMARY_FAILED",
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, res.Message, fiber.Map{
@@ -1667,7 +1915,11 @@ func (h *CampaignHandler) UnhideCampaigns(c fiber.Ctx) error {
 }
 
 // createRequestContextWithTimeout creates a context with custom timeout and request-scoped values
-func (h *CampaignHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *CampaignHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	// Create context with custom timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
@@ -1715,19 +1967,49 @@ func (h *CampaignHandler) handleCampaignFlowError(c fiber.Ctx, err error, defaul
 		return h.ErrorResponse(c, fiber.StatusForbidden, "Bundle access denied", "BUNDLE_ACCESS_DENIED", nil)
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingSampleSizeRequired) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, businessflow.ErrSmartTargetingSampleSizeRequired.Error(), "SMART_TARGETING_SAMPLE_SIZE_REQUIRED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			businessflow.ErrSmartTargetingSampleSizeRequired.Error(),
+			"SMART_TARGETING_SAMPLE_SIZE_REQUIRED",
+			nil,
+		)
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingSampleSizeInvalid) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, businessflow.ErrSmartTargetingSampleSizeInvalid.Error(), "SMART_TARGETING_SAMPLE_SIZE_INVALID", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			businessflow.ErrSmartTargetingSampleSizeInvalid.Error(),
+			"SMART_TARGETING_SAMPLE_SIZE_INVALID",
+			nil,
+		)
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingTestPreviewRequired) {
-		return h.ErrorResponse(c, fiber.StatusConflict, businessflow.ErrSmartTargetingTestPreviewRequired.Error(), "SMART_TARGETING_TEST_PREVIEW_REQUIRED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusConflict,
+			businessflow.ErrSmartTargetingTestPreviewRequired.Error(),
+			"SMART_TARGETING_TEST_PREVIEW_REQUIRED",
+			nil,
+		)
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingTestNoSatisfiedTags) {
-		return h.ErrorResponse(c, fiber.StatusConflict, businessflow.ErrSmartTargetingTestNoSatisfiedTags.Error(), "SMART_TARGETING_TEST_NO_SATISFIED_TAGS", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusConflict,
+			businessflow.ErrSmartTargetingTestNoSatisfiedTags.Error(),
+			"SMART_TARGETING_TEST_NO_SATISFIED_TAGS",
+			nil,
+		)
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingTestAudienceCountOverflow) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, businessflow.ErrSmartTargetingTestAudienceCountOverflow.Error(), "SMART_TARGETING_TEST_AUDIENCE_COUNT_OVERFLOW", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			businessflow.ErrSmartTargetingTestAudienceCountOverflow.Error(),
+			"SMART_TARGETING_TEST_AUDIENCE_COUNT_OVERFLOW",
+			nil,
+		)
 	}
 	if errors.Is(err, businessflow.ErrCampaignCostOverflow) {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, businessflow.ErrCampaignCostOverflow.Error(), "CAMPAIGN_COST_OVERFLOW", nil)
@@ -1761,12 +2043,30 @@ func (h *CampaignHandler) handleCampaignFlowError(c fiber.Ctx, err error, defaul
 	if errors.Is(err, businessflow.ErrSmartTargetingCapacityPending) {
 		var pending *businessflow.SmartTargetingCapacityPendingError
 		if errors.As(err, &pending) && pending != nil {
-			return h.ErrorResponse(c, fiber.StatusConflict, "Exact Smart Targeting capacity calculation is pending; please wait and retry", "SMART_TARGETING_CAPACITY_PENDING", pending.Response)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusConflict,
+				"Exact Smart Targeting capacity calculation is pending; please wait and retry",
+				"SMART_TARGETING_CAPACITY_PENDING",
+				pending.Response,
+			)
 		}
-		return h.ErrorResponse(c, fiber.StatusConflict, "Exact Smart Targeting capacity calculation is pending; please wait and retry", "SMART_TARGETING_CAPACITY_PENDING", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusConflict,
+			"Exact Smart Targeting capacity calculation is pending; please wait and retry",
+			"SMART_TARGETING_CAPACITY_PENDING",
+			nil,
+		)
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingExactCapacityRequired) {
-		return h.ErrorResponse(c, fiber.StatusConflict, "A current exact Smart Targeting capacity calculation is required", "SMART_TARGETING_EXACT_CAPACITY_REQUIRED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusConflict,
+			"A current exact Smart Targeting capacity calculation is required",
+			"SMART_TARGETING_EXACT_CAPACITY_REQUIRED",
+			nil,
+		)
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingExecutionCalculationRequired) {
 		return h.ErrorResponse(c, fiber.StatusConflict, err.Error(), "SMART_TARGETING_EXECUTION_CALCULATION_REQUIRED", nil)
@@ -1784,7 +2084,13 @@ func (h *CampaignHandler) handleCampaignFlowError(c fiber.Ctx, err error, defaul
 		return h.ErrorResponse(c, fiber.StatusForbidden, "Campaign cannot be updated in current status", "CAMPAIGN_UPDATE_NOT_ALLOWED", nil)
 	}
 	if businessflow.IsCampaignNotWaitingForApproval(err) {
-		return h.ErrorResponse(c, fiber.StatusForbidden, "Campaign cannot be cancelled in current status", "CAMPAIGN_CANCEL_NOT_ALLOWED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusForbidden,
+			"Campaign cannot be cancelled in current status",
+			"CAMPAIGN_CANCEL_NOT_ALLOWED",
+			nil,
+		)
 	}
 	if businessflow.IsCampaignNotApproved(err) {
 		return h.ErrorResponse(c, fiber.StatusConflict, "Campaign is not approved", "CAMPAIGN_NOT_APPROVED", nil)
@@ -1830,17 +2136,35 @@ func (h *CampaignHandler) handleCampaignFlowError(c fiber.Ctx, err error, defaul
 		return h.ErrorResponse(c, fiber.StatusConflict, "Campaign debit transaction not found", "CAMPAIGN_DEBIT_TRANSACTION_NOT_FOUND", nil)
 	}
 	if businessflow.IsMultipleCampaignDebitTransactionsFound(err) {
-		return h.ErrorResponse(c, fiber.StatusConflict, "Multiple campaign debit transactions found", "MULTIPLE_CAMPAIGN_DEBIT_TRANSACTIONS_FOUND", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusConflict,
+			"Multiple campaign debit transactions found",
+			"MULTIPLE_CAMPAIGN_DEBIT_TRANSACTIONS_FOUND",
+			nil,
+		)
 	}
 
 	if businessflow.IsCampaignPlatformRequired(err) || businessflow.IsCampaignPlatformInvalid(err) {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid platform", "INVALID_PLATFORM", nil)
 	}
 	if businessflow.IsCampaignPlatformSettingRequired(err) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "Platform settings is required for non-sms campaigns", "PLATFORM_SETTINGS_REQUIRED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			"Platform settings is required for non-sms campaigns",
+			"PLATFORM_SETTINGS_REQUIRED",
+			nil,
+		)
 	}
 	if businessflow.IsCampaignPlatformSettingNotApplicable(err) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "Platform settings is only applicable for non-sms campaigns", "PLATFORM_SETTINGS_NOT_APPLICABLE", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			"Platform settings is only applicable for non-sms campaigns",
+			"PLATFORM_SETTINGS_NOT_APPLICABLE",
+			nil,
+		)
 	}
 	if businessflow.IsCampaignPlatformSettingNotFound(err) {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Platform settings not found", "PLATFORM_SETTINGS_NOT_FOUND", nil)
@@ -1855,13 +2179,31 @@ func (h *CampaignHandler) handleCampaignFlowError(c fiber.Ctx, err error, defaul
 		return h.ErrorResponse(c, fiber.StatusConflict, "Campaign state does not allow test send", "TEST_SEND_STATE_NOT_ALLOWED", nil)
 	}
 	if businessflow.IsCampaignTestRateLimited(err) {
-		return h.ErrorResponse(c, fiber.StatusTooManyRequests, "Please wait before sending another test message", "TEST_SEND_RATE_LIMITED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusTooManyRequests,
+			"Please wait before sending another test message",
+			"TEST_SEND_RATE_LIMITED",
+			nil,
+		)
 	}
 	if businessflow.IsCampaignTestCooldownUnavailable(err) {
-		return h.ErrorResponse(c, fiber.StatusServiceUnavailable, "Test send cooldown is temporarily unavailable", "TEST_SEND_COOLDOWN_UNAVAILABLE", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusServiceUnavailable,
+			"Test send cooldown is temporarily unavailable",
+			"TEST_SEND_COOLDOWN_UNAVAILABLE",
+			nil,
+		)
 	}
 	if businessflow.IsCampaignLineNumberNotApplicable(err) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "Line number is only applicable for sms campaigns", "LINE_NUMBER_NOT_APPLICABLE", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			"Line number is only applicable for sms campaigns",
+			"LINE_NUMBER_NOT_APPLICABLE",
+			nil,
+		)
 	}
 	if businessflow.IsCampaignLineNumberRequired(err) {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Line number is required for sms campaigns", "LINE_NUMBER_REQUIRED", nil)
@@ -1910,13 +2252,31 @@ func (h *CampaignHandler) handleCampaignFlowError(c fiber.Ctx, err error, defaul
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Schedule time is required", "SCHEDULE_TIME_REQUIRED", nil)
 	}
 	if businessflow.IsScheduleTimeTooSoon(err) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "Schedule time must be at least 10 minutes in the future", "SCHEDULE_TIME_TOO_SOON", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			"Schedule time must be at least 10 minutes in the future",
+			"SCHEDULE_TIME_TOO_SOON",
+			nil,
+		)
 	}
 	if businessflow.IsScheduleTimeOutsideWindow(err) {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "Schedule time must be between 08:00 and 21:00 Asia/Tehran", "SCHEDULE_TIME_OUTSIDE_WINDOW", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusBadRequest,
+			"Schedule time must be between 08:00 and 21:00 Asia/Tehran",
+			"SCHEDULE_TIME_OUTSIDE_WINDOW",
+			nil,
+		)
 	}
 	if businessflow.IsCampaignRescheduleNotAllowed(err) {
-		return h.ErrorResponse(c, fiber.StatusConflict, "Campaign cannot be rescheduled in current status", "CAMPAIGN_RESCHEDULE_NOT_ALLOWED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusConflict,
+			"Campaign cannot be rescheduled in current status",
+			"CAMPAIGN_RESCHEDULE_NOT_ALLOWED",
+			nil,
+		)
 	}
 	if businessflow.IsPlatformBasePriceNotFound(err) {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Platform base price not found", "PLATFORM_BASE_PRICE_NOT_FOUND", nil)

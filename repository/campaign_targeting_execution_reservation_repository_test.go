@@ -35,7 +35,10 @@ func TestExecutionReservationHeaderRequiresTheCurrentSchemaVersion(t *testing.T)
 		ReservationVersion:     models.SmartTargetingExecutionReservationSchemaVersion,
 		RequestedAudienceCount: 1, CandidateGeneration: models.SmartTargetingCapacityAlgorithmVersion,
 		SelectionInputVersion: models.SmartTargetingExecutionReservationSelectionInputVersion,
-		SelectionInputHash:    strings.Repeat("a", 64), AllocationFingerprint: strings.Repeat("b", 64), RequestSnapshot: []byte(`{"tag_ids":[9],"score_classes":["A"]}`),
+		SelectionInputHash: strings.Repeat(
+			"a",
+			64,
+		), AllocationFingerprint: strings.Repeat("b", 64), RequestSnapshot: []byte(`{"tag_ids":[9],"score_classes":["A"]}`),
 		AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion,
 	}
 	if !validExecutionReservationHeader(header, campaign, 1) {

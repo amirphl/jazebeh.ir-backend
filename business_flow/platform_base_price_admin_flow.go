@@ -15,7 +15,10 @@ import (
 // PlatformBasePriceAdminFlow defines admin operations for platform base prices.
 type PlatformBasePriceAdminFlow interface {
 	AdminListPlatformBasePrices(ctx context.Context) (*dto.AdminListPlatformBasePricesResponse, error)
-	AdminUpdatePlatformBasePrice(ctx context.Context, req *dto.AdminUpdatePlatformBasePriceRequest) (*dto.AdminUpdatePlatformBasePriceResponse, error)
+	AdminUpdatePlatformBasePrice(
+		ctx context.Context,
+		req *dto.AdminUpdatePlatformBasePriceRequest,
+	) (*dto.AdminUpdatePlatformBasePriceResponse, error)
 }
 
 type PlatformBasePriceAdminFlowImpl struct {
@@ -33,7 +36,9 @@ func NewPlatformBasePriceAdminFlow(
 	}
 }
 
-func (f *PlatformBasePriceAdminFlowImpl) AdminListPlatformBasePrices(ctx context.Context) (*dto.AdminListPlatformBasePricesResponse, error) {
+func (f *PlatformBasePriceAdminFlowImpl) AdminListPlatformBasePrices(
+	ctx context.Context,
+) (*dto.AdminListPlatformBasePricesResponse, error) {
 	rows, err := f.platformBasePriceRepo.List(ctx)
 	if err != nil {
 		return nil, NewBusinessError("PLATFORM_BASE_PRICE_LIST_FAILED", "failed to list platform base prices", err)
@@ -55,14 +60,26 @@ func (f *PlatformBasePriceAdminFlowImpl) AdminListPlatformBasePrices(ctx context
 		Items:   items,
 	}
 
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminPlatformBasePriceList, "Admin listed platform base prices", true, nil, map[string]any{
-		"items": len(items),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminPlatformBasePriceList,
+		"Admin listed platform base prices",
+		true,
+		nil,
+		map[string]any{
+			"items": len(items),
+		},
+		nil,
+	)
 
 	return resp, nil
 }
 
-func (f *PlatformBasePriceAdminFlowImpl) AdminUpdatePlatformBasePrice(ctx context.Context, req *dto.AdminUpdatePlatformBasePriceRequest) (*dto.AdminUpdatePlatformBasePriceResponse, error) {
+func (f *PlatformBasePriceAdminFlowImpl) AdminUpdatePlatformBasePrice(
+	ctx context.Context,
+	req *dto.AdminUpdatePlatformBasePriceRequest,
+) (*dto.AdminUpdatePlatformBasePriceResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("INVALID_REQUEST", "request is required", nil)
 	}
@@ -91,10 +108,19 @@ func (f *PlatformBasePriceAdminFlowImpl) AdminUpdatePlatformBasePrice(ctx contex
 		Price:    req.Price,
 	}
 
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminPlatformBasePriceUpdate, "Admin updated platform base price", true, nil, map[string]any{
-		"platform": platform,
-		"price":    req.Price,
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminPlatformBasePriceUpdate,
+		"Admin updated platform base price",
+		true,
+		nil,
+		map[string]any{
+			"platform": platform,
+			"price":    req.Price,
+		},
+		nil,
+	)
 
 	return resp, nil
 }

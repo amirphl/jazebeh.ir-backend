@@ -45,7 +45,10 @@ func (r *CryptoPaymentRequestRepositoryImpl) ByUUID(ctx context.Context, u strin
 	return &req, nil
 }
 
-func (r *CryptoPaymentRequestRepositoryImpl) ByCorrelationID(ctx context.Context, correlationID uuid.UUID) ([]*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) ByCorrelationID(
+	ctx context.Context,
+	correlationID uuid.UUID,
+) ([]*models.CryptoPaymentRequest, error) {
 	db := r.getDB(ctx)
 	var reqs []*models.CryptoPaymentRequest
 	if err := db.Where("correlation_id = ?", correlationID).Order("created_at DESC").Find(&reqs).Error; err != nil {
@@ -54,7 +57,10 @@ func (r *CryptoPaymentRequestRepositoryImpl) ByCorrelationID(ctx context.Context
 	return reqs, nil
 }
 
-func (r *CryptoPaymentRequestRepositoryImpl) ByDepositAddress(ctx context.Context, address, memo string) ([]*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) ByDepositAddress(
+	ctx context.Context,
+	address, memo string,
+) ([]*models.CryptoPaymentRequest, error) {
 	db := r.getDB(ctx)
 	var reqs []*models.CryptoPaymentRequest
 	q := db.Where("deposit_address = ?", address)
@@ -67,7 +73,10 @@ func (r *CryptoPaymentRequestRepositoryImpl) ByDepositAddress(ctx context.Contex
 	return reqs, nil
 }
 
-func (r *CryptoPaymentRequestRepositoryImpl) ByProviderRequestID(ctx context.Context, providerRequestID string) (*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) ByProviderRequestID(
+	ctx context.Context,
+	providerRequestID string,
+) (*models.CryptoPaymentRequest, error) {
 	db := r.getDB(ctx)
 	var req models.CryptoPaymentRequest
 	if err := db.Where("provider_request_id = ?", providerRequestID).Last(&req).Error; err != nil {
@@ -79,7 +88,11 @@ func (r *CryptoPaymentRequestRepositoryImpl) ByProviderRequestID(ctx context.Con
 	return &req, nil
 }
 
-func (r *CryptoPaymentRequestRepositoryImpl) ByCustomerID(ctx context.Context, customerID uint, limit, offset int) ([]*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) ByCustomerID(
+	ctx context.Context,
+	customerID uint,
+	limit, offset int,
+) ([]*models.CryptoPaymentRequest, error) {
 	db := r.getDB(ctx)
 	var reqs []*models.CryptoPaymentRequest
 	q := db.Where("customer_id = ?", customerID).Order("created_at DESC")
@@ -95,7 +108,11 @@ func (r *CryptoPaymentRequestRepositoryImpl) ByCustomerID(ctx context.Context, c
 	return reqs, nil
 }
 
-func (r *CryptoPaymentRequestRepositoryImpl) ByWalletID(ctx context.Context, walletID uint, limit, offset int) ([]*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) ByWalletID(
+	ctx context.Context,
+	walletID uint,
+	limit, offset int,
+) ([]*models.CryptoPaymentRequest, error) {
 	db := r.getDB(ctx)
 	var reqs []*models.CryptoPaymentRequest
 	q := db.Where("wallet_id = ?", walletID).Order("created_at DESC")
@@ -111,7 +128,11 @@ func (r *CryptoPaymentRequestRepositoryImpl) ByWalletID(ctx context.Context, wal
 	return reqs, nil
 }
 
-func (r *CryptoPaymentRequestRepositoryImpl) ByStatus(ctx context.Context, status models.CryptoPaymentStatus, limit, offset int) ([]*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) ByStatus(
+	ctx context.Context,
+	status models.CryptoPaymentStatus,
+	limit, offset int,
+) ([]*models.CryptoPaymentRequest, error) {
 	db := r.getDB(ctx)
 	var reqs []*models.CryptoPaymentRequest
 	q := db.Where("status = ?", status).Order("created_at DESC")
@@ -127,7 +148,10 @@ func (r *CryptoPaymentRequestRepositoryImpl) ByStatus(ctx context.Context, statu
 	return reqs, nil
 }
 
-func (r *CryptoPaymentRequestRepositoryImpl) GetPendingRequests(ctx context.Context, limit, offset int) ([]*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) GetPendingRequests(
+	ctx context.Context,
+	limit, offset int,
+) ([]*models.CryptoPaymentRequest, error) {
 	return r.ByStatus(ctx, models.CryptoPaymentStatusPending, limit, offset)
 }
 
@@ -153,7 +177,12 @@ func (r *CryptoPaymentRequestRepositoryImpl) Update(ctx context.Context, request
 }
 
 // ByFilter with ordering and pagination
-func (r *CryptoPaymentRequestRepositoryImpl) ByFilter(ctx context.Context, filter models.CryptoPaymentRequestFilter, orderBy string, limit, offset int) ([]*models.CryptoPaymentRequest, error) {
+func (r *CryptoPaymentRequestRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.CryptoPaymentRequestFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.CryptoPaymentRequest, error) {
 	db := r.getDB(ctx)
 	var reqs []*models.CryptoPaymentRequest
 	q := db.Model(&models.CryptoPaymentRequest{})

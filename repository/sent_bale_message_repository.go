@@ -31,7 +31,11 @@ func (r *SentBaleMessageRepositoryImpl) ByID(ctx context.Context, id uint) (*mod
 	return &row, nil
 }
 
-func (r *SentBaleMessageRepositoryImpl) ListByProcessedCampaign(ctx context.Context, processedCampaignID uint, limit, offset int) ([]*models.SentBaleMessage, error) {
+func (r *SentBaleMessageRepositoryImpl) ListByProcessedCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+	limit, offset int,
+) ([]*models.SentBaleMessage, error) {
 	db := r.getDB(ctx)
 	query := db.Where("processed_campaign_id = ? AND is_current", processedCampaignID).Order("id ASC")
 	if limit > 0 {
@@ -47,7 +51,11 @@ func (r *SentBaleMessageRepositoryImpl) ListByProcessedCampaign(ctx context.Cont
 	return rows, nil
 }
 
-func (r *SentBaleMessageRepositoryImpl) ListByTrackingIDs(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentBaleMessage, error) {
+func (r *SentBaleMessageRepositoryImpl) ListByTrackingIDs(
+	ctx context.Context,
+	processedCampaignID uint,
+	trackingIDs []string,
+) ([]*models.SentBaleMessage, error) {
 	if len(trackingIDs) == 0 {
 		return nil, nil
 	}
@@ -78,7 +86,10 @@ func (r *SentBaleMessageRepositoryImpl) ListByTrackingIDs(ctx context.Context, p
 	return rows, nil
 }
 
-func (r *SentBaleMessageRepositoryImpl) TrackingResultsFromSentRows(ctx context.Context, processedCampaignID uint) ([]BaleTrackingResult, error) {
+func (r *SentBaleMessageRepositoryImpl) TrackingResultsFromSentRows(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]BaleTrackingResult, error) {
 	type fallbackRow struct {
 		AudienceProfileUID *string `gorm:"column:audience_profile_uid"`
 		PhoneNumber        string  `gorm:"column:phone_number"`
@@ -180,7 +191,12 @@ func (r *SentBaleMessageRepositoryImpl) applyFilter(db *gorm.DB, f models.SentBa
 	return db
 }
 
-func (r *SentBaleMessageRepositoryImpl) ByFilter(ctx context.Context, filter models.SentBaleMessageFilter, orderBy string, limit, offset int) ([]*models.SentBaleMessage, error) {
+func (r *SentBaleMessageRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.SentBaleMessageFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SentBaleMessage, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.SentBaleMessage{}), filter)
 	if orderBy != "" {

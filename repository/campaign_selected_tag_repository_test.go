@@ -23,7 +23,11 @@ func TestSmartTagOrderAllowlist(t *testing.T) {
 		{"bundle_persona_fit_score", "asc", "available_tags.bundle_persona_fit_score ASC NULLS LAST, available_tags.tag_id ASC"},
 		{"test_phase_avg_ctr", "desc", "tag_test_summary.test_phase_avg_ctr DESC NULLS LAST, available_tags.tag_id ASC"},
 		{"overall_avg_ctr", "desc", "tag_overall_summary.overall_avg_ctr DESC NULLS LAST, available_tags.tag_id ASC"},
-		{"execution_default", "desc", "tag_test_summary.test_phase_avg_ctr DESC NULLS LAST,\navailable_tags.bundle_persona_fit_score DESC NULLS LAST,\navailable_tags.tag_id ASC"},
+		{
+			"execution_default",
+			"desc",
+			"tag_test_summary.test_phase_avg_ctr DESC NULLS LAST,\navailable_tags.bundle_persona_fit_score DESC NULLS LAST,\navailable_tags.tag_id ASC",
+		},
 	}
 	for _, tt := range tests {
 		got, err := smartTagOrder(tt.sortBy, tt.direction)

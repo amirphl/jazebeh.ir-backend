@@ -209,8 +209,22 @@ func TestBuildCampaignAudienceClickReportRowsKeepsCampaignScope(t *testing.T) {
 	)
 
 	want := []campaignAudienceClickReportRow{
-		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-a", Status: "unknown", Clicked: "false", Action: "True"},
-		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-b", Status: "unknown", Clicked: "true", Action: "False"},
+		{
+			CampaignID:         42,
+			CampaignUUID:       campaignUUID.String(),
+			AudienceProfileUID: "audience-a",
+			Status:             "unknown",
+			Clicked:            "false",
+			Action:             "True",
+		},
+		{
+			CampaignID:         42,
+			CampaignUUID:       campaignUUID.String(),
+			AudienceProfileUID: "audience-b",
+			Status:             "unknown",
+			Clicked:            "true",
+			Action:             "False",
+		},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("row count = %d, want %d", len(rows), len(want))
@@ -267,7 +281,11 @@ func TestCampaignAudienceClickReportLimitIsWithinExcelAndSynchronousMemoryBudget
 		t.Fatalf("report row limit = %d, want 250000", maxCampaignAudienceClickReportRows)
 	}
 	if maxCampaignAudienceClickReportRows > maxExcelWorksheetDataRows {
-		t.Fatalf("report row limit = %d, exceeds Excel worksheet capacity %d", maxCampaignAudienceClickReportRows, maxExcelWorksheetDataRows)
+		t.Fatalf(
+			"report row limit = %d, exceeds Excel worksheet capacity %d",
+			maxCampaignAudienceClickReportRows,
+			maxExcelWorksheetDataRows,
+		)
 	}
 }
 

@@ -157,7 +157,12 @@ func (c *httpSplusClient) SendMessage(ctx context.Context, botID string, reqBody
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if out.ResultCode != 0 || strings.TrimSpace(out.ResultMessage) != "" {
-			return &out, fmt.Errorf("splus send http status: %d result_code=%d result_message=%s", resp.StatusCode, out.ResultCode, strings.TrimSpace(out.ResultMessage))
+			return &out, fmt.Errorf(
+				"splus send http status: %d result_code=%d result_message=%s",
+				resp.StatusCode,
+				out.ResultCode,
+				strings.TrimSpace(out.ResultMessage),
+			)
 		}
 		return nil, fmt.Errorf("splus send http status: %d body: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
@@ -268,7 +273,12 @@ func (c *httpSplusClient) uploadFileOnce(ctx context.Context, botID string, path
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if out.ResultCode != 0 || strings.TrimSpace(out.ResultMessage) != "" {
-			return &out, fmt.Errorf("splus upload http status: %d result_code=%d result_message=%s", resp.StatusCode, out.ResultCode, strings.TrimSpace(out.ResultMessage))
+			return &out, fmt.Errorf(
+				"splus upload http status: %d result_code=%d result_message=%s",
+				resp.StatusCode,
+				out.ResultCode,
+				strings.TrimSpace(out.ResultMessage),
+			)
 		}
 		return nil, fmt.Errorf("splus upload http status: %d body: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}

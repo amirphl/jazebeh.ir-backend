@@ -111,7 +111,12 @@ func (r *TagRepositoryImpl) applyFilter(query *gorm.DB, filter models.TagFilter)
 }
 
 // ByFilter retrieves tags based on filter criteria
-func (r *TagRepositoryImpl) ByFilter(ctx context.Context, filter models.TagFilter, orderBy string, limit, offset int) ([]*models.Tag, error) {
+func (r *TagRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.TagFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Tag, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.Tag{})
 

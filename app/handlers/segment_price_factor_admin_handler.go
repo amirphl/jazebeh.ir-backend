@@ -81,7 +81,13 @@ func (h *SegmentPriceFactorAdminHandler) CreateSegmentPriceFactor(c fiber.Ctx) e
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Price factor must be greater than zero", "PRICE_FACTOR_INVALID", nil)
 		}
 		log.Println("Create segment price factor failed:", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Create segment price factor failed", "SEGMENT_PRICE_FACTOR_CREATE_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Create segment price factor failed",
+			"SEGMENT_PRICE_FACTOR_CREATE_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Segment price factor saved", res)
@@ -111,7 +117,13 @@ func (h *SegmentPriceFactorAdminHandler) ListSegmentPriceFactors(c fiber.Ctx) er
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid platform", "INVALID_PLATFORM", nil)
 		}
 		log.Println("List segment price factors failed:", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "List segment price factors failed", "SEGMENT_PRICE_FACTOR_LIST_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"List segment price factors failed",
+			"SEGMENT_PRICE_FACTOR_LIST_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Segment price factors retrieved", res)
 }
@@ -130,12 +142,22 @@ func (h *SegmentPriceFactorAdminHandler) ListLevel3Options(c fiber.Ctx) error {
 	res, err := h.flow.AdminListLevel3Options(ctx)
 	if err != nil {
 		log.Println("List level3 options failed:", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "List level3 options failed", "SEGMENT_PRICE_FACTOR_LEVEL3_LIST_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"List level3 options failed",
+			"SEGMENT_PRICE_FACTOR_LEVEL3_LIST_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Level3 options retrieved", res)
 }
 
-func (h *SegmentPriceFactorAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *SegmentPriceFactorAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

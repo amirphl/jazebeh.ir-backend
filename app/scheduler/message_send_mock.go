@@ -147,7 +147,11 @@ type mockRubikaClient struct {
 	RubikaClient
 }
 
-func (c *mockRubikaClient) SendBulkMessages(_ context.Context, _ string, messages []RubikaMessagePayload) (*RubikaSendBulkMessagesResponse, error) {
+func (c *mockRubikaClient) SendBulkMessages(
+	_ context.Context,
+	_ string,
+	messages []RubikaMessagePayload,
+) (*RubikaSendBulkMessagesResponse, error) {
 	response := &RubikaSendBulkMessagesResponse{
 		Status:     "OK",
 		StatusDet:  mockSendDescription,

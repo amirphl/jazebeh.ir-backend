@@ -29,22 +29,47 @@ func (r *executionCalculationSchedulerRepo) Save(context.Context, *models.Campai
 func (r *executionCalculationSchedulerRepo) ByID(context.Context, int64) (*models.CampaignTargetingExecutionCalculation, error) {
 	return nil, nil
 }
-func (r *executionCalculationSchedulerRepo) LatestByCampaignID(context.Context, uint) (*models.CampaignTargetingExecutionCalculation, error) {
+
+func (r *executionCalculationSchedulerRepo) LatestByCampaignID(
+	context.Context,
+	uint,
+) (*models.CampaignTargetingExecutionCalculation, error) {
 	return nil, nil
 }
-func (r *executionCalculationSchedulerRepo) LatestByInput(context.Context, uint, string, int64) (*models.CampaignTargetingExecutionCalculation, error) {
+
+func (r *executionCalculationSchedulerRepo) LatestByInput(
+	context.Context,
+	uint,
+	string,
+	int64,
+) (*models.CampaignTargetingExecutionCalculation, error) {
 	return nil, nil
 }
-func (r *executionCalculationSchedulerRepo) ActiveByCampaignID(context.Context, uint) (*models.CampaignTargetingExecutionCalculation, error) {
+
+func (r *executionCalculationSchedulerRepo) ActiveByCampaignID(
+	context.Context,
+	uint,
+) (*models.CampaignTargetingExecutionCalculation, error) {
 	return nil, nil
 }
-func (r *executionCalculationSchedulerRepo) ReadyByInput(context.Context, uint, string, int64) (*models.CampaignTargetingExecutionCalculation, error) {
+
+func (r *executionCalculationSchedulerRepo) ReadyByInput(
+	context.Context,
+	uint,
+	string,
+	int64,
+) (*models.CampaignTargetingExecutionCalculation, error) {
 	return nil, nil
 }
 func (r *executionCalculationSchedulerRepo) Members(context.Context, int64) ([]models.CampaignTargetingExecutionCalculationMember, error) {
 	return nil, nil
 }
-func (r *executionCalculationSchedulerRepo) ClaimPending(_ context.Context, limit int, staleBefore, _ time.Time) ([]*models.CampaignTargetingExecutionCalculation, error) {
+
+func (r *executionCalculationSchedulerRepo) ClaimPending(
+	_ context.Context,
+	limit int,
+	staleBefore, _ time.Time,
+) ([]*models.CampaignTargetingExecutionCalculation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.claimCalls++
@@ -54,10 +79,26 @@ func (r *executionCalculationSchedulerRepo) ClaimPending(_ context.Context, limi
 	r.claimed = nil
 	return rows, nil
 }
-func (r *executionCalculationSchedulerRepo) Complete(context.Context, int64, time.Time, string, []models.CampaignTargetingExecutionCalculationMember, time.Time) error {
+
+func (r *executionCalculationSchedulerRepo) Complete(
+	context.Context,
+	int64,
+	time.Time,
+	string,
+	[]models.CampaignTargetingExecutionCalculationMember,
+	time.Time,
+) error {
 	return nil
 }
-func (r *executionCalculationSchedulerRepo) Finish(_ context.Context, id int64, _ time.Time, status models.CampaignTargetingExecutionCalculationStatus, code, _ string, _ time.Time) error {
+
+func (r *executionCalculationSchedulerRepo) Finish(
+	_ context.Context,
+	id int64,
+	_ time.Time,
+	status models.CampaignTargetingExecutionCalculationStatus,
+	code, _ string,
+	_ time.Time,
+) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.finishCalls++
@@ -125,7 +166,9 @@ func TestSmartTargetingExecutionCalculationSchedulerClaimsAndExecutes(t *testing
 
 func TestSmartTargetingExecutionCalculationSchedulerExecutesDuplicateClaimOnce(t *testing.T) {
 	startedAt := time.Now().UTC()
-	repo := &executionCalculationSchedulerRepo{claimed: []*models.CampaignTargetingExecutionCalculation{{ID: 73, StartedAt: &startedAt}, {ID: 73, StartedAt: &startedAt}}}
+	repo := &executionCalculationSchedulerRepo{
+		claimed: []*models.CampaignTargetingExecutionCalculation{{ID: 73, StartedAt: &startedAt}, {ID: 73, StartedAt: &startedAt}},
+	}
 	release := make(chan struct{})
 	executor := &executionCalculationSchedulerExecutor{block: release}
 	s := NewSmartTargetingExecutionCalculationScheduler(executor, repo, log.New(io.Discard, "", 0), time.Hour, 2)
@@ -145,7 +188,13 @@ func TestSmartTargetingExecutionCalculationSchedulerExecutesDuplicateClaimOnce(t
 func TestSmartTargetingExecutionCalculationSchedulerFailsPanics(t *testing.T) {
 	startedAt := time.Now().UTC()
 	repo := &executionCalculationSchedulerRepo{claimed: []*models.CampaignTargetingExecutionCalculation{{ID: 99, StartedAt: &startedAt}}}
-	s := NewSmartTargetingExecutionCalculationScheduler(&executionCalculationSchedulerExecutor{panic: true}, repo, log.New(io.Discard, "", 0), time.Hour, 1)
+	s := NewSmartTargetingExecutionCalculationScheduler(
+		&executionCalculationSchedulerExecutor{panic: true},
+		repo,
+		log.New(io.Discard, "", 0),
+		time.Hour,
+		1,
+	)
 
 	var workers sync.WaitGroup
 	s.runOnce(t.Context(), &workers)
@@ -153,7 +202,14 @@ func TestSmartTargetingExecutionCalculationSchedulerFailsPanics(t *testing.T) {
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
-	if repo.finishCalls != 1 || repo.finishedID != 99 || repo.finishedStatus != models.CampaignTargetingExecutionCalculationFailed || repo.finishedCode != "EXECUTION_AUDIENCE_CALCULATION_PANICKED" {
-		t.Fatalf("panic finish = calls:%d id:%d status:%q code:%q", repo.finishCalls, repo.finishedID, repo.finishedStatus, repo.finishedCode)
+	if repo.finishCalls != 1 || repo.finishedID != 99 || repo.finishedStatus != models.CampaignTargetingExecutionCalculationFailed ||
+		repo.finishedCode != "EXECUTION_AUDIENCE_CALCULATION_PANICKED" {
+		t.Fatalf(
+			"panic finish = calls:%d id:%d status:%q code:%q",
+			repo.finishCalls,
+			repo.finishedID,
+			repo.finishedStatus,
+			repo.finishedCode,
+		)
 	}
 }

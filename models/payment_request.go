@@ -25,55 +25,55 @@ const (
 
 // PaymentRequest represents a payment request to Atipay for wallet recharge
 type PaymentRequest struct {
-	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID            uint      `gorm:"primaryKey;autoIncrement"                                 json:"id"`
 	UUID          uuid.UUID `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()" json:"uuid"`
-	CorrelationID uuid.UUID `gorm:"type:uuid;index;not null" json:"correlation_id"` // Links related records
+	CorrelationID uuid.UUID `gorm:"type:uuid;index;not null"                                 json:"correlation_id"` // Links related records
 
 	// Customer and wallet information
 	CustomerID uint `gorm:"not null;index" json:"customer_id"`
 	WalletID   uint `gorm:"not null;index" json:"wallet_id"`
 
 	// Payment details
-	Amount      uint64 `gorm:"not null" json:"amount"` // Amount in Tomans
+	Amount      uint64 `gorm:"not null"                               json:"amount"` // Amount in Tomans
 	Currency    string `gorm:"type:varchar(3);not null;default:'TMN'" json:"currency"`
-	Description string `gorm:"type:text" json:"description"`
-	Lang        string `gorm:"type:varchar(2);not null;default:'EN'" json:"lang"`
+	Description string `gorm:"type:text"                              json:"description"`
+	Lang        string `gorm:"type:varchar(2);not null;default:'EN'"  json:"lang"`
 
 	// Atipay request parameters
 	InvoiceNumber string `gorm:"type:varchar(255);uniqueIndex;not null" json:"invoice_number"` // Merchant-side unique ID
-	CellNumber    string `gorm:"type:varchar(20)" json:"cell_number"`                          // Buyer's mobile number
-	RedirectURL   string `gorm:"type:text;not null" json:"redirect_url"`                       // Return URL after payment
+	CellNumber    string `gorm:"type:varchar(20)"                       json:"cell_number"`    // Buyer's mobile number
+	RedirectURL   string `gorm:"type:text;not null"                     json:"redirect_url"`   // Return URL after payment
 
 	// Atipay response data
-	AtipayToken  string `gorm:"type:varchar(255);index" json:"atipay_token"` // Token from Atipay get-token
-	AtipayStatus string `gorm:"type:varchar(50)" json:"atipay_status"`       // Status from Atipay
+	AtipayToken  string `gorm:"type:varchar(255);index" json:"atipay_token"`  // Token from Atipay get-token
+	AtipayStatus string `gorm:"type:varchar(50)"        json:"atipay_status"` // Status from Atipay
 
 	// Payment result data (from redirect-to-gateway callback)
-	PaymentState       string `gorm:"type:varchar(50)" json:"payment_state"`            // Atipay state parameter
-	PaymentStatus      string `gorm:"type:varchar(50)" json:"payment_status"`           // Atipay status parameter
-	PaymentReference   string `gorm:"type:varchar(255);index" json:"payment_reference"` // Atipay referenceNumber
-	PaymentReservation string `gorm:"type:varchar(255)" json:"payment_reservation"`     // Atipay reservationNumber
-	PaymentTerminal    string `gorm:"type:varchar(255)" json:"payment_terminal"`        // Atipay terminalId
-	PaymentTrace       string `gorm:"type:varchar(255)" json:"payment_trace"`           // Atipay traceNumber
-	PaymentMaskedPAN   string `gorm:"type:varchar(255)" json:"payment_masked_pan"`      // Atipay maskedPan
-	PaymentRRN         string `gorm:"type:varchar(255)" json:"payment_rrn"`             // Atipay RRN
+	PaymentState       string `gorm:"type:varchar(50)"        json:"payment_state"`       // Atipay state parameter
+	PaymentStatus      string `gorm:"type:varchar(50)"        json:"payment_status"`      // Atipay status parameter
+	PaymentReference   string `gorm:"type:varchar(255);index" json:"payment_reference"`   // Atipay referenceNumber
+	PaymentReservation string `gorm:"type:varchar(255)"       json:"payment_reservation"` // Atipay reservationNumber
+	PaymentTerminal    string `gorm:"type:varchar(255)"       json:"payment_terminal"`    // Atipay terminalId
+	PaymentTrace       string `gorm:"type:varchar(255)"       json:"payment_trace"`       // Atipay traceNumber
+	PaymentMaskedPAN   string `gorm:"type:varchar(255)"       json:"payment_masked_pan"`  // Atipay maskedPan
+	PaymentRRN         string `gorm:"type:varchar(255)"       json:"payment_rrn"`         // Atipay RRN
 
 	// Status tracking
 	Status       PaymentRequestStatus `gorm:"type:varchar(20);not null;default:'created';index" json:"status"`
-	StatusReason string               `gorm:"type:text" json:"status_reason"` // Reason for status change
+	StatusReason string               `gorm:"type:text"                                         json:"status_reason"` // Reason for status change
 
 	// Metadata and audit
-	Metadata  json.RawMessage `gorm:"type:jsonb;default:'{}'" json:"metadata"`
+	Metadata  json.RawMessage `gorm:"type:jsonb;default:'{}'"            json:"metadata"`
 	CreatedAt time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
-	DeletedAt gorm.DeletedAt  `gorm:"index" json:"deleted_at,omitempty"`
+	DeletedAt gorm.DeletedAt  `gorm:"index"                              json:"deleted_at,omitempty"`
 
 	// Expiration tracking
 	ExpiresAt *time.Time `gorm:"index" json:"expires_at"` // When payment request expires
 
 	// Relationships
 	Customer Customer `gorm:"foreignKey:CustomerID;constraint:OnDelete:CASCADE" json:"customer,omitempty"`
-	Wallet   Wallet   `gorm:"foreignKey:WalletID;constraint:OnDelete:CASCADE" json:"wallet,omitempty"`
+	Wallet   Wallet   `gorm:"foreignKey:WalletID;constraint:OnDelete:CASCADE"   json:"wallet,omitempty"`
 }
 
 // BeforeCreate ensures UUID and CorrelationID are set

@@ -25,18 +25,18 @@ type BaleStatusAggregates struct {
 }
 
 type BaleTrackingResult struct {
-	AudienceProfileUID    *string         `json:"audienceProfileUID" gorm:"column:audience_profile_uid"`
-	PhoneNumber           string          `json:"phoneNumber" gorm:"column:phone_number"`
-	TrackingID            string          `json:"trackingID" gorm:"column:tracking_id"`
-	TotalParts            *int64          `json:"totalParts" gorm:"column:total_parts"`
-	TotalDeliveredParts   *int64          `json:"totalDeliveredParts" gorm:"column:total_delivered_parts"`
+	AudienceProfileUID    *string         `json:"audienceProfileUID"    gorm:"column:audience_profile_uid"`
+	PhoneNumber           string          `json:"phoneNumber"           gorm:"column:phone_number"`
+	TrackingID            string          `json:"trackingID"            gorm:"column:tracking_id"`
+	TotalParts            *int64          `json:"totalParts"            gorm:"column:total_parts"`
+	TotalDeliveredParts   *int64          `json:"totalDeliveredParts"   gorm:"column:total_delivered_parts"`
 	TotalUndeliveredParts *int64          `json:"totalUndeliveredParts" gorm:"column:total_undelivered_parts"`
-	TotalUnknownParts     *int64          `json:"totalUnknownParts" gorm:"column:total_unknown_parts"`
-	Status                *string         `json:"status" gorm:"column:status"`
-	ServerID              *string         `json:"serverID,omitempty" gorm:"column:server_id"`
-	ErrorCode             *string         `json:"errorCode,omitempty" gorm:"column:error_code"`
+	TotalUnknownParts     *int64          `json:"totalUnknownParts"     gorm:"column:total_unknown_parts"`
+	Status                *string         `json:"status"                gorm:"column:status"`
+	ServerID              *string         `json:"serverID,omitempty"    gorm:"column:server_id"`
+	ErrorCode             *string         `json:"errorCode,omitempty"   gorm:"column:error_code"`
 	Description           *string         `json:"description,omitempty" gorm:"column:description"`
-	Metadata              json.RawMessage `json:"metadata,omitempty" gorm:"column:metadata"`
+	Metadata              json.RawMessage `json:"metadata,omitempty"    gorm:"column:metadata"`
 }
 
 func NewBaleStatusResultRepository(db *gorm.DB) BaleStatusResultRepository {
@@ -100,7 +100,12 @@ func (r *BaleStatusResultRepositoryImpl) SaveBatch(ctx context.Context, rows []*
 }
 
 // ByFilter: no filter fields, just order/limit/offset.
-func (r *BaleStatusResultRepositoryImpl) ByFilter(ctx context.Context, _ any, orderBy string, limit, offset int) ([]*models.BaleStatusResult, error) {
+func (r *BaleStatusResultRepositoryImpl) ByFilter(
+	ctx context.Context,
+	_ any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.BaleStatusResult, error) {
 	db := r.getDB(ctx)
 	if orderBy != "" {
 		db = db.Order(orderBy)
@@ -147,7 +152,10 @@ func (r *BaleStatusResultRepositoryImpl) AggregateByCampaign(ctx context.Context
 	return &agg, nil
 }
 
-func (r *BaleStatusResultRepositoryImpl) TrackingResultsByCampaign(ctx context.Context, processedCampaignID uint) ([]BaleTrackingResult, error) {
+func (r *BaleStatusResultRepositoryImpl) TrackingResultsByCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]BaleTrackingResult, error) {
 	db := r.getDB(ctx)
 	trackingResults := make([]BaleTrackingResult, 0)
 	if err := db.Table("bale_status_results AS bsr").

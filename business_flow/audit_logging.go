@@ -9,7 +9,15 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 )
 
-func logAdminAction(ctx context.Context, auditRepo repository.AuditLogRepository, action, description string, success bool, customerID *uint, metadata map[string]any, err error) {
+func logAdminAction(
+	ctx context.Context,
+	auditRepo repository.AuditLogRepository,
+	action, description string,
+	success bool,
+	customerID *uint,
+	metadata map[string]any,
+	err error,
+) {
 	if auditRepo == nil {
 		return
 	}

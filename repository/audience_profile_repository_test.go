@@ -132,13 +132,23 @@ func TestAudienceProfileScoreConstraintSupportsDisjointGradeBoundaries(t *testin
 		wantSQL    string
 	}{
 		{name: "A", constraint: &models.NormalizedScoreConstraint{GT: &p66}, wantSQL: "normalized_score > $1"},
-		{name: "B", constraint: &models.NormalizedScoreConstraint{GT: &p33, LTE: &p66}, wantSQL: "normalized_score > $1 AND normalized_score <= $2"},
-		{name: "A or C", constraint: &models.NormalizedScoreConstraint{LTE: &p33, OrGT: &p66}, wantSQL: "normalized_score <= $1 OR normalized_score > $2"},
+		{
+			name:       "B",
+			constraint: &models.NormalizedScoreConstraint{GT: &p33, LTE: &p66},
+			wantSQL:    "normalized_score > $1 AND normalized_score <= $2",
+		},
+		{
+			name:       "A or C",
+			constraint: &models.NormalizedScoreConstraint{LTE: &p33, OrGT: &p66},
+			wantSQL:    "normalized_score <= $1 OR normalized_score > $2",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var rows []*models.AudienceProfile
-			statement := repo.applyFilter(db.Model(&models.AudienceProfile{}), models.AudienceProfileFilter{NormalizedScore: tt.constraint}).Find(&rows).Statement
+			statement := repo.applyFilter(db.Model(&models.AudienceProfile{}), models.AudienceProfileFilter{NormalizedScore: tt.constraint}).
+				Find(&rows).
+				Statement
 			if statement.Error != nil {
 				t.Fatalf("build score query: %v", statement.Error)
 			}

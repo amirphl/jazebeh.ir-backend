@@ -92,7 +92,13 @@ func (h *AgencyHandler) CreateAgencyDiscount(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Rate must be between 0 and 0.5", "DISCOUNT_RATE_OUT_OF_RANGE", nil)
 		}
 		if businessflow.IsAgencyCannotCreateDiscountForItself(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Agency cannot create discount for itself", "AGENCY_CANNOT_CREATE_DISCOUNT_FOR_ITSELF", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Agency cannot create discount for itself",
+				"AGENCY_CANNOT_CREATE_DISCOUNT_FOR_ITSELF",
+				nil,
+			)
 		}
 		if businessflow.IsCustomerNotUnderAgency(err) {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Customer is not under any agency", "CUSTOMER_NOT_UNDER_AGENCY", nil)
@@ -166,7 +172,13 @@ func (h *AgencyHandler) GetAgencyCustomerReport(c fiber.Ctx) error {
 		}
 
 		log.Println("Agency customer report retrieval failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to retrieve agency customer report", "AGENCY_CUSTOMER_REPORT_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to retrieve agency customer report",
+			"AGENCY_CUSTOMER_REPORT_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Agency customer report retrieved successfully", res)
 }
@@ -254,14 +266,26 @@ func (h *AgencyHandler) ListAgencyCustomerDiscounts(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Account is inactive", "ACCOUNT_INACTIVE", nil)
 		}
 		if businessflow.IsAgencyCannotListDiscountsForItself(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Agency cannot list discounts for itself", "AGENCY_CANNOT_LIST_DISCOUNTS_FOR_ITSELF", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Agency cannot list discounts for itself",
+				"AGENCY_CANNOT_LIST_DISCOUNTS_FOR_ITSELF",
+				nil,
+			)
 		}
 		if businessflow.IsCustomerNotUnderAgency(err) {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Customer is not under any agency", "CUSTOMER_NOT_UNDER_AGENCY", nil)
 		}
 
 		log.Println("List customer discounts failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to list customer discounts", "LIST_CUSTOMER_DISCOUNTS_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to list customer discounts",
+			"LIST_CUSTOMER_DISCOUNTS_FAILED",
+			nil,
+		)
 	}
 
 	return h.SuccessResponse(c, fiber.StatusOK, "Customer discounts retrieved successfully", res)
@@ -302,7 +326,11 @@ func (h *AgencyHandler) ListAgencyCustomers(c fiber.Ctx) error {
 	return h.SuccessResponse(c, fiber.StatusOK, "Agency customers retrieved successfully", res)
 }
 
-func (h *AgencyHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *AgencyHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

@@ -49,19 +49,21 @@ func TestNonSMSSelectorsPushLimitAndExclusionsIntoRepository(t *testing.T) {
 			}
 			phone := "09120000001"
 			calls := 0
-			repo := &stubSMSAudienceProfileRepo{selectCandidatesFn: func(_ context.Context, filter models.AudienceProfileFilter, excludeIDs []int64, limit int) ([]*models.AudienceProfile, error) {
-				calls++
-				if filter.Color != nil {
-					t.Fatalf("non-SMS selector unexpectedly filters color %q", *filter.Color)
-				}
-				if limit != 25_000 {
-					t.Fatalf("candidate limit = %d, want 25000", limit)
-				}
-				if len(excludeIDs) != len(excluded) {
-					t.Fatalf("exclusion count = %d, want %d", len(excludeIDs), len(excluded))
-				}
-				return []*models.AudienceProfile{{ID: 60_001, UID: "uid-1", PhoneNumber: &phone}}, nil
-			}}
+			repo := &stubSMSAudienceProfileRepo{
+				selectCandidatesFn: func(_ context.Context, filter models.AudienceProfileFilter, excludeIDs []int64, limit int) ([]*models.AudienceProfile, error) {
+					calls++
+					if filter.Color != nil {
+						t.Fatalf("non-SMS selector unexpectedly filters color %q", *filter.Color)
+					}
+					if limit != 25_000 {
+						t.Fatalf("candidate limit = %d, want 25000", limit)
+					}
+					if len(excludeIDs) != len(excluded) {
+						t.Fatalf("exclusion count = %d, want %d", len(excludeIDs), len(excluded))
+					}
+					return []*models.AudienceProfile{{ID: 60_001, UID: "uid-1", PhoneNumber: &phone}}, nil
+				},
+			}
 
 			phones, ids, uids, err := tt.build(repo)(context.Background(), 99, pq.Int32Array{10, 20}, 25_000, excluded, nil, nil)
 			if err != nil {

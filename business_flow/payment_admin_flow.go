@@ -19,13 +19,42 @@ import (
 
 // PaymentAdminFlow handles admin-only payment business logic.
 type PaymentAdminFlow interface {
-	AdminChargeWallet(ctx context.Context, req *dto.AdminChargeWalletRequest, metadata *ClientMetadata, adminID uint) (*dto.AdminChargeWalletResponse, error)
-	AdminPreviewWalletChargeImpact(ctx context.Context, req *dto.AdminPreviewWalletChargeImpactRequest, metadata *ClientMetadata, adminID uint) (*dto.AdminPreviewWalletChargeImpactResponse, error)
-	AdminListDepositReceipts(ctx context.Context, f models.DepositReceiptFilter, limit, offset int, order string) (*dto.ListDepositReceiptsResponse, error)
-	AdminListTransactions(ctx context.Context, req *dto.AdminListTransactionsRequest, metadata *ClientMetadata) (*dto.AdminListTransactionsResponse, error)
+	AdminChargeWallet(
+		ctx context.Context,
+		req *dto.AdminChargeWalletRequest,
+		metadata *ClientMetadata,
+		adminID uint,
+	) (*dto.AdminChargeWalletResponse, error)
+	AdminPreviewWalletChargeImpact(
+		ctx context.Context,
+		req *dto.AdminPreviewWalletChargeImpactRequest,
+		metadata *ClientMetadata,
+		adminID uint,
+	) (*dto.AdminPreviewWalletChargeImpactResponse, error)
+	AdminListDepositReceipts(
+		ctx context.Context,
+		f models.DepositReceiptFilter,
+		limit, offset int,
+		order string,
+	) (*dto.ListDepositReceiptsResponse, error)
+	AdminListTransactions(
+		ctx context.Context,
+		req *dto.AdminListTransactionsRequest,
+		metadata *ClientMetadata,
+	) (*dto.AdminListTransactionsResponse, error)
 	AdminGetDepositReceiptFile(ctx context.Context, receiptUUID string) ([]byte, string, string, error)
-	AdminUpdateDepositReceiptStatus(ctx context.Context, req *dto.AdminUpdateDepositReceiptStatusRequest, adminID uint, metadata *ClientMetadata) (*dto.SubmitDepositReceiptResponse, error)
-	AddInvoiceToTransaction(ctx context.Context, req *dto.AdminAddInvoiceToTransactionRequest, adminID uint, metadata *ClientMetadata) (*dto.AdminAddInvoiceToTransactionResponse, error)
+	AdminUpdateDepositReceiptStatus(
+		ctx context.Context,
+		req *dto.AdminUpdateDepositReceiptStatusRequest,
+		adminID uint,
+		metadata *ClientMetadata,
+	) (*dto.SubmitDepositReceiptResponse, error)
+	AddInvoiceToTransaction(
+		ctx context.Context,
+		req *dto.AdminAddInvoiceToTransactionRequest,
+		adminID uint,
+		metadata *ClientMetadata,
+	) (*dto.AdminAddInvoiceToTransactionResponse, error)
 }
 
 // NewPaymentAdminFlow creates a new admin payment flow instance.
@@ -73,7 +102,11 @@ func (p *PaymentFlowImpl) AdminChargeWallet(
 	}
 	req.AdminNote = strings.TrimSpace(req.AdminNote)
 	if req.CustomerID == 0 {
-		return nil, NewBusinessError("CHARGE_WALLET_BY_ADMIN_FAILED", "Charge wallet by admin failed", fmt.Errorf("customer_id is required"))
+		return nil, NewBusinessError(
+			"CHARGE_WALLET_BY_ADMIN_FAILED",
+			"Charge wallet by admin failed",
+			fmt.Errorf("customer_id is required"),
+		)
 	}
 	if err := p.validateChargeWalletRequest(&dto.ChargeWalletRequest{AmountWithTax: req.AmountWithTax}, ""); err != nil {
 		return nil, NewBusinessError("CHARGE_WALLET_BY_ADMIN_FAILED", "Charge wallet by admin failed", err)
@@ -203,20 +236,34 @@ func (p *PaymentFlowImpl) AdminChargeWallet(
 	if err != nil {
 		errMsg := fmt.Sprintf("Charge wallet by admin failed for customer %d by admin %d: %s", req.CustomerID, adminID, err.Error())
 		_ = createAuditLog(ctx, p.auditRepo, &customer, models.AuditActionWalletChargeFailed, errMsg, false, &errMsg, metadata)
-		logAdminAction(ctx, p.auditRepo, models.AuditActionWalletChargeFailed, "Admin charge wallet", false, &req.CustomerID, map[string]any{
-			"customer_id":       req.CustomerID,
-			"admin_id":          adminID,
-			"amount_with_tax":   req.AmountWithTax,
-			"admin_note":        req.AdminNote,
-			"idempotency_key":   idempotencyKey,
-			"idempotent_replay": isIdempotentReplay,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionWalletChargeFailed,
+			"Admin charge wallet",
+			false,
+			&req.CustomerID,
+			map[string]any{
+				"customer_id":       req.CustomerID,
+				"admin_id":          adminID,
+				"amount_with_tax":   req.AmountWithTax,
+				"admin_note":        req.AdminNote,
+				"idempotency_key":   idempotencyKey,
+				"idempotent_replay": isIdempotentReplay,
+			},
+			err,
+		)
 		return nil, NewBusinessError("CHARGE_WALLET_BY_ADMIN_FAILED", "Failed to charge wallet by admin", err)
 	}
 
 	msg := fmt.Sprintf("Wallet charged by admin %d for customer %d (payment request %d)", adminID, req.CustomerID, paymentRequest.ID)
 	if isIdempotentReplay {
-		msg = fmt.Sprintf("Wallet charge idempotency replay by admin %d for customer %d (payment request %d)", adminID, req.CustomerID, paymentRequest.ID)
+		msg = fmt.Sprintf(
+			"Wallet charge idempotency replay by admin %d for customer %d (payment request %d)",
+			adminID,
+			req.CustomerID,
+			paymentRequest.ID,
+		)
 	}
 	_ = createAuditLog(ctx, p.auditRepo, &customer, models.AuditActionWalletChargeCompleted, msg, true, nil, metadata)
 	_ = createAuditLog(ctx, p.auditRepo, &customer, models.AuditActionPaymentCallbackProcessed, msg, true, nil, metadata)
@@ -255,10 +302,18 @@ func (p *PaymentFlowImpl) AdminPreviewWalletChargeImpact(
 	adminID uint,
 ) (*dto.AdminPreviewWalletChargeImpactResponse, error) {
 	if req == nil {
-		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Preview wallet charge impact failed", fmt.Errorf("request is nil"))
+		return nil, NewBusinessError(
+			"PREVIEW_WALLET_CHARGE_IMPACT_FAILED",
+			"Preview wallet charge impact failed",
+			fmt.Errorf("request is nil"),
+		)
 	}
 	if req.CustomerID == 0 {
-		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Preview wallet charge impact failed", fmt.Errorf("customer_id is required"))
+		return nil, NewBusinessError(
+			"PREVIEW_WALLET_CHARGE_IMPACT_FAILED",
+			"Preview wallet charge impact failed",
+			fmt.Errorf("customer_id is required"),
+		)
 	}
 	if err := p.validateChargeWalletRequest(&dto.ChargeWalletRequest{AmountWithTax: req.AmountWithTax}, ""); err != nil {
 		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Preview wallet charge impact failed", err)
@@ -266,50 +321,95 @@ func (p *PaymentFlowImpl) AdminPreviewWalletChargeImpact(
 
 	customer, err := getCustomer(ctx, p.customerRepo, req.CustomerID)
 	if err != nil {
-		logAdminAction(ctx, p.auditRepo, models.AuditActionAdminPreviewWalletChargeImpactFailed, "Admin preview wallet charge impact", false, &req.CustomerID, map[string]any{
-			"customer_id":     req.CustomerID,
-			"admin_id":        adminID,
-			"amount_with_tax": req.AmountWithTax,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionAdminPreviewWalletChargeImpactFailed,
+			"Admin preview wallet charge impact",
+			false,
+			&req.CustomerID,
+			map[string]any{
+				"customer_id":     req.CustomerID,
+				"admin_id":        adminID,
+				"amount_with_tax": req.AmountWithTax,
+			},
+			err,
+		)
 		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Failed to preview wallet charge impact", err)
 	}
 
 	if customer.ReferrerAgencyID == nil {
 		err = ErrReferrerAgencyIDRequired
-		logAdminAction(ctx, p.auditRepo, models.AuditActionAdminPreviewWalletChargeImpactFailed, "Admin preview wallet charge impact", false, &req.CustomerID, map[string]any{
-			"customer_id":     req.CustomerID,
-			"admin_id":        adminID,
-			"amount_with_tax": req.AmountWithTax,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionAdminPreviewWalletChargeImpactFailed,
+			"Admin preview wallet charge impact",
+			false,
+			&req.CustomerID,
+			map[string]any{
+				"customer_id":     req.CustomerID,
+				"admin_id":        adminID,
+				"amount_with_tax": req.AmountWithTax,
+			},
+			err,
+		)
 		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Failed to preview wallet charge impact", err)
 	}
 
 	agencyDiscount, err := p.agencyDiscountRepo.GetActiveDiscount(ctx, *customer.ReferrerAgencyID, customer.ID)
 	if err != nil {
-		logAdminAction(ctx, p.auditRepo, models.AuditActionAdminPreviewWalletChargeImpactFailed, "Admin preview wallet charge impact", false, &req.CustomerID, map[string]any{
-			"customer_id":     req.CustomerID,
-			"admin_id":        adminID,
-			"amount_with_tax": req.AmountWithTax,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionAdminPreviewWalletChargeImpactFailed,
+			"Admin preview wallet charge impact",
+			false,
+			&req.CustomerID,
+			map[string]any{
+				"customer_id":     req.CustomerID,
+				"admin_id":        adminID,
+				"amount_with_tax": req.AmountWithTax,
+			},
+			err,
+		)
 		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Failed to preview wallet charge impact", err)
 	}
 	if agencyDiscount == nil {
 		err = ErrAgencyDiscountNotFound
-		logAdminAction(ctx, p.auditRepo, models.AuditActionAdminPreviewWalletChargeImpactFailed, "Admin preview wallet charge impact", false, &req.CustomerID, map[string]any{
-			"customer_id":     req.CustomerID,
-			"admin_id":        adminID,
-			"amount_with_tax": req.AmountWithTax,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionAdminPreviewWalletChargeImpactFailed,
+			"Admin preview wallet charge impact",
+			false,
+			&req.CustomerID,
+			map[string]any{
+				"customer_id":     req.CustomerID,
+				"admin_id":        adminID,
+				"amount_with_tax": req.AmountWithTax,
+			},
+			err,
+		)
 		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Failed to preview wallet charge impact", err)
 	}
 
 	scatteredSettlementItems, err := p.calculateScatteredSettlementItems(ctx, customer, req.AmountWithTax)
 	if err != nil {
-		logAdminAction(ctx, p.auditRepo, models.AuditActionAdminPreviewWalletChargeImpactFailed, "Admin preview wallet charge impact", false, &req.CustomerID, map[string]any{
-			"customer_id":     req.CustomerID,
-			"admin_id":        adminID,
-			"amount_with_tax": req.AmountWithTax,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionAdminPreviewWalletChargeImpactFailed,
+			"Admin preview wallet charge impact",
+			false,
+			&req.CustomerID,
+			map[string]any{
+				"customer_id":     req.CustomerID,
+				"admin_id":        adminID,
+				"amount_with_tax": req.AmountWithTax,
+			},
+			err,
+		)
 		return nil, NewBusinessError("PREVIEW_WALLET_CHARGE_IMPACT_FAILED", "Failed to preview wallet charge impact", err)
 	}
 
@@ -333,23 +433,37 @@ func (p *PaymentFlowImpl) AdminPreviewWalletChargeImpact(
 		AgencyShareWithTax: scatteredSettlementItems[1].Amount,
 	}
 
-	logAdminAction(ctx, p.auditRepo, models.AuditActionAdminPreviewWalletChargeImpactSucceeded, "Admin preview wallet charge impact", true, &req.CustomerID, map[string]any{
-		"customer_id":           req.CustomerID,
-		"admin_id":              adminID,
-		"amount_with_tax":       req.AmountWithTax,
-		"agency_discount_id":    agencyDiscount.ID,
-		"discount_rate":         agencyDiscount.DiscountRate,
-		"free_increase":         resp.FreeIncrease,
-		"credit_increase":       resp.CreditIncrease,
-		"system_share_with_tax": resp.SystemShareWithTax,
-		"agency_share_with_tax": resp.AgencyShareWithTax,
-	}, nil)
+	logAdminAction(
+		ctx,
+		p.auditRepo,
+		models.AuditActionAdminPreviewWalletChargeImpactSucceeded,
+		"Admin preview wallet charge impact",
+		true,
+		&req.CustomerID,
+		map[string]any{
+			"customer_id":           req.CustomerID,
+			"admin_id":              adminID,
+			"amount_with_tax":       req.AmountWithTax,
+			"agency_discount_id":    agencyDiscount.ID,
+			"discount_rate":         agencyDiscount.DiscountRate,
+			"free_increase":         resp.FreeIncrease,
+			"credit_increase":       resp.CreditIncrease,
+			"system_share_with_tax": resp.SystemShareWithTax,
+			"agency_share_with_tax": resp.AgencyShareWithTax,
+		},
+		nil,
+	)
 
 	return resp, nil
 }
 
 // AdminListDepositReceipts lists receipts with optional filters.
-func (p *PaymentFlowImpl) AdminListDepositReceipts(ctx context.Context, f models.DepositReceiptFilter, limit, offset int, order string) (*dto.ListDepositReceiptsResponse, error) {
+func (p *PaymentFlowImpl) AdminListDepositReceipts(
+	ctx context.Context,
+	f models.DepositReceiptFilter,
+	limit, offset int,
+	order string,
+) (*dto.ListDepositReceiptsResponse, error) {
 	items, err := p.depositReceiptRepo.List(ctx, f, limit, offset, order)
 	if err != nil {
 		return nil, NewBusinessError("ADMIN_LIST_DEPOSIT_RECEIPTS_FAILED", "Failed to list deposit receipts", err)
@@ -403,18 +517,31 @@ func (p *PaymentFlowImpl) AdminListDepositReceipts(ctx context.Context, f models
 			CreatedAt:        r.CreatedAt,
 		})
 	}
-	logAdminAction(ctx, p.auditRepo, models.AuditActionAdminDepositReceiptReviewed, "Admin listed deposit receipts", true, nil, map[string]any{
-		"limit":      limit,
-		"offset":     offset,
-		"order":      order,
-		"filter":     f,
-		"item_count": len(resp.Items),
-	}, nil)
+	logAdminAction(
+		ctx,
+		p.auditRepo,
+		models.AuditActionAdminDepositReceiptReviewed,
+		"Admin listed deposit receipts",
+		true,
+		nil,
+		map[string]any{
+			"limit":      limit,
+			"offset":     offset,
+			"order":      order,
+			"filter":     f,
+			"item_count": len(resp.Items),
+		},
+		nil,
+	)
 	return resp, nil
 }
 
 // AdminListTransactions returns admin-facing filtered transactions for customer balance increase operation.
-func (p *PaymentFlowImpl) AdminListTransactions(ctx context.Context, req *dto.AdminListTransactionsRequest, metadata *ClientMetadata) (resp *dto.AdminListTransactionsResponse, err error) {
+func (p *PaymentFlowImpl) AdminListTransactions(
+	ctx context.Context,
+	req *dto.AdminListTransactionsRequest,
+	metadata *ClientMetadata,
+) (resp *dto.AdminListTransactionsResponse, err error) {
 	defer func() {
 		if err != nil {
 			err = NewBusinessError("ADMIN_LIST_TRANSACTIONS_FAILED", "List transactions failed", err)
@@ -468,18 +595,27 @@ func (p *PaymentFlowImpl) AdminListTransactions(ctx context.Context, req *dto.Ad
 
 	msg := fmt.Sprintf("Admin listed transactions: %d items", len(items))
 	_ = createAuditLog(ctx, p.auditRepo, nil, models.AuditActionAdminListTransactions, msg, true, nil, metadata)
-	logAdminAction(ctx, p.auditRepo, models.AuditActionAdminListTransactions, "Admin listed transactions", true, req.CustomerID, map[string]any{
-		"page":          req.Page,
-		"page_size":     req.PageSize,
-		"total_count":   totalCount,
-		"item_count":    len(items),
-		"start_date":    req.StartDate,
-		"end_date":      req.EndDate,
-		"customer_id":   req.CustomerID,
-		"customer_name": req.CustomerName,
-		"operation":     "increase_customer_free_plus_credit",
-		"source":        models.TransactionSourceIncreaseCustomerFreePlusCredit,
-	}, nil)
+	logAdminAction(
+		ctx,
+		p.auditRepo,
+		models.AuditActionAdminListTransactions,
+		"Admin listed transactions",
+		true,
+		req.CustomerID,
+		map[string]any{
+			"page":          req.Page,
+			"page_size":     req.PageSize,
+			"total_count":   totalCount,
+			"item_count":    len(items),
+			"start_date":    req.StartDate,
+			"end_date":      req.EndDate,
+			"customer_id":   req.CustomerID,
+			"customer_name": req.CustomerName,
+			"operation":     "increase_customer_free_plus_credit",
+			"source":        models.TransactionSourceIncreaseCustomerFreePlusCredit,
+		},
+		nil,
+	)
 	return resp, nil
 }
 
@@ -493,19 +629,33 @@ func (p *PaymentFlowImpl) AdminGetDepositReceiptFile(ctx context.Context, receip
 		return nil, "", "", ErrDepositReceiptNotFound
 	}
 
-	logAdminAction(ctx, p.auditRepo, models.AuditActionAdminDownloadDepositReceiptFile, "Admin download deposit receipt file", true, &rec.CustomerID, map[string]any{
-		"receipt_uuid":   receiptUUID,
-		"file_name":      rec.FileName,
-		"content_type":   rec.ContentType,
-		"file_size":      rec.FileSize,
-		"receipt_status": rec.Status,
-	}, nil)
+	logAdminAction(
+		ctx,
+		p.auditRepo,
+		models.AuditActionAdminDownloadDepositReceiptFile,
+		"Admin download deposit receipt file",
+		true,
+		&rec.CustomerID,
+		map[string]any{
+			"receipt_uuid":   receiptUUID,
+			"file_name":      rec.FileName,
+			"content_type":   rec.ContentType,
+			"file_size":      rec.FileSize,
+			"receipt_status": rec.Status,
+		},
+		nil,
+	)
 
 	return rec.FileData, rec.FileName, rec.ContentType, nil
 }
 
 // AddInvoiceToTransaction links an issued invoice UUID to a transaction resolved by transaction UUID.
-func (p *PaymentFlowImpl) AddInvoiceToTransaction(ctx context.Context, req *dto.AdminAddInvoiceToTransactionRequest, adminID uint, metadata *ClientMetadata) (*dto.AdminAddInvoiceToTransactionResponse, error) {
+func (p *PaymentFlowImpl) AddInvoiceToTransaction(
+	ctx context.Context,
+	req *dto.AdminAddInvoiceToTransactionRequest,
+	adminID uint,
+	metadata *ClientMetadata,
+) (*dto.AdminAddInvoiceToTransactionResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("ADMIN_ADD_INVOICE_INVALID", "Invalid request", fmt.Errorf("nil request"))
 	}
@@ -576,12 +726,27 @@ func (p *PaymentFlowImpl) AddInvoiceToTransaction(ctx context.Context, req *dto.
 		return nil
 	})
 	if err != nil {
-		errMsg := fmt.Sprintf("Admin %d failed to attach customer invoice %s to transaction %s: %v", adminID, customerInvoiceUUID, transactionUUID, err)
+		errMsg := fmt.Sprintf(
+			"Admin %d failed to attach customer invoice %s to transaction %s: %v",
+			adminID,
+			customerInvoiceUUID,
+			transactionUUID,
+			err,
+		)
 		_ = createAuditLog(ctx, p.auditRepo, nil, models.AuditActionAdminAttachInvoiceToTransaction, errMsg, false, &errMsg, metadata)
-		logAdminAction(ctx, p.auditRepo, models.AuditActionAdminAttachInvoiceToTransaction, "Admin attached customer invoice to transaction", false, nil, map[string]any{
-			"transaction_uuid":      transactionUUID,
-			"customer_invoice_uuid": customerInvoiceUUID,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionAdminAttachInvoiceToTransaction,
+			"Admin attached customer invoice to transaction",
+			false,
+			nil,
+			map[string]any{
+				"transaction_uuid":      transactionUUID,
+				"customer_invoice_uuid": customerInvoiceUUID,
+			},
+			err,
+		)
 		return nil, NewBusinessError("ADMIN_ADD_INVOICE_FAILED", "Failed to add invoice to transaction", err)
 	}
 
@@ -591,16 +756,30 @@ func (p *PaymentFlowImpl) AddInvoiceToTransaction(ctx context.Context, req *dto.
 
 	msg := fmt.Sprintf("Admin %d attached customer invoice %s to transaction %s", adminID, customerInvoiceUUID, transactionUUID)
 	_ = createAuditLog(ctx, p.auditRepo, nil, models.AuditActionAdminAttachInvoiceToTransaction, msg, true, nil, metadata)
-	logAdminAction(ctx, p.auditRepo, models.AuditActionAdminAttachInvoiceToTransaction, "Admin attached customer invoice to transaction", true, nil, map[string]any{
-		"transaction_uuid":      transactionUUID,
-		"customer_invoice_uuid": customerInvoiceUUID,
-		"updated":               updated,
-	}, nil)
+	logAdminAction(
+		ctx,
+		p.auditRepo,
+		models.AuditActionAdminAttachInvoiceToTransaction,
+		"Admin attached customer invoice to transaction",
+		true,
+		nil,
+		map[string]any{
+			"transaction_uuid":      transactionUUID,
+			"customer_invoice_uuid": customerInvoiceUUID,
+			"updated":               updated,
+		},
+		nil,
+	)
 	return resp, nil
 }
 
 // AdminUpdateDepositReceiptStatus approves or rejects a receipt and on approval credits wallet like normal flow.
-func (p *PaymentFlowImpl) AdminUpdateDepositReceiptStatus(ctx context.Context, req *dto.AdminUpdateDepositReceiptStatusRequest, adminID uint, metadata *ClientMetadata) (*dto.SubmitDepositReceiptResponse, error) {
+func (p *PaymentFlowImpl) AdminUpdateDepositReceiptStatus(
+	ctx context.Context,
+	req *dto.AdminUpdateDepositReceiptStatusRequest,
+	adminID uint,
+	metadata *ClientMetadata,
+) (*dto.SubmitDepositReceiptResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("ADMIN_RECEIPT_UPDATE_INVALID", "Invalid request", fmt.Errorf("nil request"))
 	}
@@ -729,7 +908,8 @@ func (p *PaymentFlowImpl) AdminUpdateDepositReceiptStatus(ctx context.Context, r
 			return err
 		}
 
-		// desc := fmt.Sprintf("Deposit receipt %s approved by admin %d and credited (customer_invoice_uuid=%s)", req.ReceiptUUID, adminID, req.CustomerInvoiceUUID)
+		// desc := fmt.Sprintf("Deposit receipt %s approved by admin %d and credited (customer_invoice_uuid=%s)", req.ReceiptUUID, adminID,
+		// req.CustomerInvoiceUUID)
 		desc := fmt.Sprintf("Deposit receipt %s approved by admin %d and credited", req.ReceiptUUID, adminID)
 		_ = createAuditLog(txCtx, p.auditRepo, &customer, models.AuditActionAdminUpdateDepositReceiptStatus, desc, true, nil, metadata)
 		return nil
@@ -737,23 +917,41 @@ func (p *PaymentFlowImpl) AdminUpdateDepositReceiptStatus(ctx context.Context, r
 	if err != nil {
 		errMsg := fmt.Sprintf("Admin %d failed to update receipt %s: %v", adminID, req.ReceiptUUID, err)
 		_ = createAuditLog(ctx, p.auditRepo, nil, models.AuditActionAdminUpdateDepositReceiptStatus, errMsg, false, &errMsg, metadata)
-		logAdminAction(ctx, p.auditRepo, models.AuditActionAdminUpdateDepositReceiptStatus, "Admin updated deposit receipt status", false, nil, map[string]any{
-			"receipt_uuid": req.ReceiptUUID,
-			"action":       action,
-			// "customer_invoice_uuid": req.CustomerInvoiceUUID,
-		}, err)
+		logAdminAction(
+			ctx,
+			p.auditRepo,
+			models.AuditActionAdminUpdateDepositReceiptStatus,
+			"Admin updated deposit receipt status",
+			false,
+			nil,
+			map[string]any{
+				"receipt_uuid": req.ReceiptUUID,
+				"action":       action,
+				// "customer_invoice_uuid": req.CustomerInvoiceUUID,
+			},
+			err,
+		)
 		return nil, NewBusinessError("ADMIN_RECEIPT_UPDATE_FAILED", "Failed to update deposit receipt", err)
 	}
 
 	msg := fmt.Sprintf("Admin %d updated receipt %s to %s", adminID, req.ReceiptUUID, req.Action)
 	_ = createAuditLog(ctx, p.auditRepo, &customer, models.AuditActionAdminUpdateDepositReceiptStatus, msg, true, nil, metadata)
-	logAdminAction(ctx, p.auditRepo, models.AuditActionAdminUpdateDepositReceiptStatus, "Admin updated deposit receipt status", true, &receipt.CustomerID, map[string]any{
-		"receipt_uuid": req.ReceiptUUID,
-		"action":       action,
-		// "customer_invoice_uuid": req.CustomerInvoiceUUID,
-		"customer_id":      receipt.CustomerID,
-		"resulting_status": receipt.Status,
-	}, nil)
+	logAdminAction(
+		ctx,
+		p.auditRepo,
+		models.AuditActionAdminUpdateDepositReceiptStatus,
+		"Admin updated deposit receipt status",
+		true,
+		&receipt.CustomerID,
+		map[string]any{
+			"receipt_uuid": req.ReceiptUUID,
+			"action":       action,
+			// "customer_invoice_uuid": req.CustomerInvoiceUUID,
+			"customer_id":      receipt.CustomerID,
+			"resulting_status": receipt.Status,
+		},
+		nil,
+	)
 
 	return &dto.SubmitDepositReceiptResponse{
 		Success:     true,
@@ -811,7 +1009,9 @@ func (p *PaymentFlowImpl) validateAdminListTransactionsRequest(req *dto.AdminLis
 }
 
 // convertTransactionHistoryRecordToTransactionHistoryItem converts a history projection into a transaction history item DTO.
-func (p *PaymentFlowImpl) convertTransactionHistoryRecordToTransactionHistoryItem(transaction *models.Transaction) (dto.AdminTransactionItem, error) {
+func (p *PaymentFlowImpl) convertTransactionHistoryRecordToTransactionHistoryItem(
+	transaction *models.Transaction,
+) (dto.AdminTransactionItem, error) {
 	if transaction == nil {
 		return dto.AdminTransactionItem{}, fmt.Errorf("transaction history record is nil")
 	}

@@ -115,7 +115,11 @@ func (c *httpBotClient) Login(ctx context.Context) (string, error) {
 		return c.accessToken, nil
 	}
 	if !c.loginRetryAt.IsZero() && now.Before(c.loginRetryAt) {
-		return "", fmt.Errorf("bot login is temporarily paused until %s after rate limiting: %w", c.loginRetryAt.UTC().Format(time.RFC3339), c.loginRetryErr)
+		return "", fmt.Errorf(
+			"bot login is temporarily paused until %s after rate limiting: %w",
+			c.loginRetryAt.UTC().Format(time.RFC3339),
+			c.loginRetryErr,
+		)
 	}
 	c.loginRetryAt = time.Time{}
 	c.loginRetryErr = nil

@@ -12,7 +12,10 @@ type SegmentPriceFactorFlow interface {
 }
 
 // ListLatestSegmentPriceFactors returns the latest price factor per level3 for authenticated users.
-func (f *SegmentPriceFactorFlowImpl) ListLatestSegmentPriceFactors(ctx context.Context, platform *string) (*dto.ListLatestSegmentPriceFactorsResponse, error) {
+func (f *SegmentPriceFactorFlowImpl) ListLatestSegmentPriceFactors(
+	ctx context.Context,
+	platform *string,
+) (*dto.ListLatestSegmentPriceFactorsResponse, error) {
 	normalizedPlatform, err := normalizeAndValidateSegmentPlatform(platform)
 	if err != nil {
 		return nil, err

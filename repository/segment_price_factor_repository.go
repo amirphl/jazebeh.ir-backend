@@ -26,7 +26,10 @@ func (r *SegmentPriceFactorRepositoryImpl) ListLatestByLevel3(ctx context.Contex
 }
 
 // ListLatestByLevel3ForPlatform returns the latest price factor per level3 scoped by platform.
-func (r *SegmentPriceFactorRepositoryImpl) ListLatestByLevel3ForPlatform(ctx context.Context, platform string) ([]*models.SegmentPriceFactor, error) {
+func (r *SegmentPriceFactorRepositoryImpl) ListLatestByLevel3ForPlatform(
+	ctx context.Context,
+	platform string,
+) ([]*models.SegmentPriceFactor, error) {
 	db := r.getDB(ctx)
 
 	var rows []*models.SegmentPriceFactor
@@ -74,7 +77,11 @@ func (r *SegmentPriceFactorRepositoryImpl) LatestByLevel3s(ctx context.Context, 
 }
 
 // LatestByLevel3sForPlatform returns a map of level3 -> latest price factor for the provided level3 values scoped by platform.
-func (r *SegmentPriceFactorRepositoryImpl) LatestByLevel3sForPlatform(ctx context.Context, level3s []string, platform string) (map[string]float64, error) {
+func (r *SegmentPriceFactorRepositoryImpl) LatestByLevel3sForPlatform(
+	ctx context.Context,
+	level3s []string,
+	platform string,
+) (map[string]float64, error) {
 	out := make(map[string]float64)
 	if len(level3s) == 0 {
 		return out, nil
@@ -105,7 +112,12 @@ func (r *SegmentPriceFactorRepositoryImpl) LatestByLevel3sForPlatform(ctx contex
 }
 
 // ByFilter retrieves segment price factors based on filter criteria.
-func (r *SegmentPriceFactorRepositoryImpl) ByFilter(ctx context.Context, filter models.SegmentPriceFactorFilter, orderBy string, limit, offset int) ([]*models.SegmentPriceFactor, error) {
+func (r *SegmentPriceFactorRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.SegmentPriceFactorFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SegmentPriceFactor, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.SegmentPriceFactor{})
 

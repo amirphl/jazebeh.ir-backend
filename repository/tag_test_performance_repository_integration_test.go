@@ -86,7 +86,12 @@ WHERE campaign_id = 1900000002`, thirdLease.Add(-time.Second), thirdLease, third
 	}
 	if secondPerformance.DeliveredCount != 1 || secondPerformance.ClickCount != 0 ||
 		secondPerformance.TestCampaignCTR == nil || *secondPerformance.TestCampaignCTR != 0 {
-		t.Fatalf("second Campaign performance = delivered %d, clicks %d, CTR %v", secondPerformance.DeliveredCount, secondPerformance.ClickCount, secondPerformance.TestCampaignCTR)
+		t.Fatalf(
+			"second Campaign performance = delivered %d, clicks %d, CTR %v",
+			secondPerformance.DeliveredCount,
+			secondPerformance.ClickCount,
+			secondPerformance.TestCampaignCTR,
+		)
 	}
 
 	fourthLease := lease.Add(6 * time.Minute)

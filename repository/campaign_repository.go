@@ -110,7 +110,11 @@ func (r *CampaignRepositoryImpl) ByCustomerIDAndIDs(ctx context.Context, custome
 
 // ByCustomerIDAndBundleIDs retrieves campaigns for a customer that belong to any
 // of the provided bundle IDs. Only fields needed by bundle-level aggregation are selected.
-func (r *CampaignRepositoryImpl) ByCustomerIDAndBundleIDs(ctx context.Context, customerID uint, bundleIDs []uint) ([]*models.Campaign, error) {
+func (r *CampaignRepositoryImpl) ByCustomerIDAndBundleIDs(
+	ctx context.Context,
+	customerID uint,
+	bundleIDs []uint,
+) ([]*models.Campaign, error) {
 	if len(bundleIDs) == 0 {
 		return []*models.Campaign{}, nil
 	}
@@ -130,7 +134,11 @@ func (r *CampaignRepositoryImpl) ByCustomerIDAndBundleIDs(ctx context.Context, c
 }
 
 // ByStatus retrieves campaigns by status with pagination
-func (r *CampaignRepositoryImpl) ByStatus(ctx context.Context, status models.CampaignStatus, limit, offset int) ([]*models.Campaign, error) {
+func (r *CampaignRepositoryImpl) ByStatus(
+	ctx context.Context,
+	status models.CampaignStatus,
+	limit, offset int,
+) ([]*models.Campaign, error) {
 	filter := models.CampaignFilter{Status: &status}
 	return r.ByFilter(ctx, filter, "created_at DESC", limit, offset)
 }
@@ -475,7 +483,11 @@ func (r *CampaignRepositoryImpl) AggregateClickCountsByCampaignIDs(ctx context.C
 // per-campaign distinct clicking audience counts for the requested report
 // period. Bounding this aggregation prevents an admin report from scanning the
 // complete click history for every page.
-func (r *CampaignRepositoryImpl) AggregateClickCountsByCustomerIDs(ctx context.Context, customerIDs []uint, startDate, endDate time.Time) (map[uint]int64, error) {
+func (r *CampaignRepositoryImpl) AggregateClickCountsByCustomerIDs(
+	ctx context.Context,
+	customerIDs []uint,
+	startDate, endDate time.Time,
+) (map[uint]int64, error) {
 	out := make(map[uint]int64)
 	if len(customerIDs) == 0 {
 		return out, nil
@@ -547,7 +559,12 @@ func (r *CampaignRepositoryImpl) AggregateTotalSentByCustomerIDs(ctx context.Con
 }
 
 // ByFilter retrieves campaigns based on filter criteria
-func (r *CampaignRepositoryImpl) ByFilter(ctx context.Context, filter models.CampaignFilter, orderBy string, limit, offset int) ([]*models.Campaign, error) {
+func (r *CampaignRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.CampaignFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Campaign, error) {
 	db := r.getDB(ctx)
 
 	var campaigns []*models.Campaign

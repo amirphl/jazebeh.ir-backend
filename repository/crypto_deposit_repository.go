@@ -93,7 +93,12 @@ func (r *CryptoDepositRepositoryImpl) Update(ctx context.Context, dep *models.Cr
 	return nil
 }
 
-func (r *CryptoDepositRepositoryImpl) ByFilter(ctx context.Context, filter models.CryptoDepositFilter, orderBy string, limit, offset int) ([]*models.CryptoDeposit, error) {
+func (r *CryptoDepositRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.CryptoDepositFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.CryptoDeposit, error) {
 	db := r.getDB(ctx)
 	var deps []*models.CryptoDeposit
 	q := db.Model(&models.CryptoDeposit{})

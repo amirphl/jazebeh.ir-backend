@@ -31,16 +31,34 @@ import (
 type PaymentFlow interface {
 	ChargeWallet(ctx context.Context, req *dto.ChargeWalletRequest, metadata *ClientMetadata) (*dto.ChargeWalletResponse, error)
 	PaymentCallback(ctx context.Context, callback *dto.AtipayRequest, metadata *ClientMetadata) (string, error)
-	GetTransactionHistory(ctx context.Context, req *dto.GetTransactionHistoryRequest, metadata *ClientMetadata) (*dto.TransactionHistoryResponse, error)
+	GetTransactionHistory(
+		ctx context.Context,
+		req *dto.GetTransactionHistoryRequest,
+		metadata *ClientMetadata,
+	) (*dto.TransactionHistoryResponse, error)
 	GetWalletBalance(ctx context.Context, req *dto.GetWalletBalanceRequest, metadata *ClientMetadata) (*dto.GetWalletBalanceResponse, error)
-	SubmitDepositReceipt(ctx context.Context, req *dto.SubmitDepositReceiptRequest, metadata *ClientMetadata) (*dto.SubmitDepositReceiptResponse, error)
+	SubmitDepositReceipt(
+		ctx context.Context,
+		req *dto.SubmitDepositReceiptRequest,
+		metadata *ClientMetadata,
+	) (*dto.SubmitDepositReceiptResponse, error)
 	ListDepositReceipts(ctx context.Context, customerID uint, lang string) (*dto.ListDepositReceiptsResponse, error)
 	PreviewProformaInvoice(ctx context.Context, customerID uint, receiptUUID string, lang string) (*dto.ProformaPreviewResponse, error)
-	PreviewProformaInvoiceByAmount(ctx context.Context, customerID uint, amountWithTax uint64, lang string) (*dto.ProformaPreviewResponse, error)
+	PreviewProformaInvoiceByAmount(
+		ctx context.Context,
+		customerID uint,
+		amountWithTax uint64,
+		lang string,
+	) (*dto.ProformaPreviewResponse, error)
 	DownloadDepositReceiptFile(ctx context.Context, customerID uint, receiptUUID string) ([]byte, string, string, error)
 	UpdateDepositReceiptFile(ctx context.Context, customerID uint, receiptUUID string, req *dto.UpdateDepositReceiptFileRequest) error
 	DeleteDepositReceiptFile(ctx context.Context, customerID uint, receiptUUID string) error
-	NotifyInvoiceIssueRequest(ctx context.Context, req *dto.NotifyInvoiceIssueRequest, customerID uint, metadata *ClientMetadata) (*dto.NotifyInvoiceIssueResponse, error)
+	NotifyInvoiceIssueRequest(
+		ctx context.Context,
+		req *dto.NotifyInvoiceIssueRequest,
+		customerID uint,
+		metadata *ClientMetadata,
+	) (*dto.NotifyInvoiceIssueResponse, error)
 }
 
 // PaymentFlowImpl implements the payment business flow
@@ -114,7 +132,11 @@ func NewPaymentFlow(
 }
 
 // ChargeWallet handles the complete process of charging a wallet
-func (p *PaymentFlowImpl) ChargeWallet(ctx context.Context, req *dto.ChargeWalletRequest, metadata *ClientMetadata) (*dto.ChargeWalletResponse, error) {
+func (p *PaymentFlowImpl) ChargeWallet(
+	ctx context.Context,
+	req *dto.ChargeWalletRequest,
+	metadata *ClientMetadata,
+) (*dto.ChargeWalletResponse, error) {
 	var customer models.Customer
 	var paymentRequest *models.PaymentRequest
 	var atipayToken string
@@ -218,7 +240,12 @@ func (p *PaymentFlowImpl) validateChargeWalletRequest(req *dto.ChargeWalletReque
 }
 
 // createPaymentRequest creates a new payment request record
-func (p *PaymentFlowImpl) createPaymentRequest(ctx context.Context, customer models.Customer, amountWithTax uint64, lang string) (*models.PaymentRequest, error) {
+func (p *PaymentFlowImpl) createPaymentRequest(
+	ctx context.Context,
+	customer models.Customer,
+	amountWithTax uint64,
+	lang string,
+) (*models.PaymentRequest, error) {
 	if customer.ReferrerAgencyID == nil {
 		return nil, ErrReferrerAgencyIDRequired
 	}
@@ -286,7 +313,11 @@ type ScatteredSettlementItem struct {
 	IBAN   string `json:"iban"`
 }
 
-func (p *PaymentFlowImpl) calculateScatteredSettlementItems(ctx context.Context, customer models.Customer, amountWithTax uint64) ([]ScatteredSettlementItem, error) {
+func (p *PaymentFlowImpl) calculateScatteredSettlementItems(
+	ctx context.Context,
+	customer models.Customer,
+	amountWithTax uint64,
+) ([]ScatteredSettlementItem, error) {
 	// Default shares fallback (50/50) if no discount found
 	var systemShareWithTax uint64
 	var agencyShareWithTax uint64
@@ -354,7 +385,11 @@ func (p *PaymentFlowImpl) getAgencyDiscountAndIBAN(ctx context.Context, customer
 }
 
 // callAtipayGetToken calls Atipay's get-token API
-func (p *PaymentFlowImpl) callAtipayGetToken(ctx context.Context, customer models.Customer, paymentRequest models.PaymentRequest) (string, error) {
+func (p *PaymentFlowImpl) callAtipayGetToken(
+	ctx context.Context,
+	customer models.Customer,
+	paymentRequest models.PaymentRequest,
+) (string, error) {
 	scatteredSettlementItems, err := p.calculateScatteredSettlementItems(ctx, customer, paymentRequest.Amount)
 	if err != nil {
 		return "", err
@@ -540,7 +575,16 @@ func (p *PaymentFlowImpl) PaymentCallback(ctx context.Context, atipayRequest *dt
 
 				// Create audit log for verification failure
 				errMsg := fmt.Sprintf("Payment verification failed (step 1) for payment request %d: %s", paymentRequest.ID, err.Error())
-				_ = createAuditLog(txCtx, p.auditRepo, &customer, models.AuditActionPaymentFailed, mapping.Description, false, &errMsg, metadata)
+				_ = createAuditLog(
+					txCtx,
+					p.auditRepo,
+					&customer,
+					models.AuditActionPaymentFailed,
+					mapping.Description,
+					false,
+					&errMsg,
+					metadata,
+				)
 
 				return nil
 			}
@@ -560,8 +604,22 @@ func (p *PaymentFlowImpl) PaymentCallback(ctx context.Context, atipayRequest *dt
 				}
 
 				// Create audit log for verification failure
-				errMsg := fmt.Sprintf("Payment verification failed (step 2) for payment request %d: amount mismatch (verified: %f Rials, original: %d Rials)", paymentRequest.ID, verificationResult.AmountIRR, paymentRequest.Amount*10)
-				_ = createAuditLog(txCtx, p.auditRepo, &customer, models.AuditActionPaymentFailed, mapping.Description, false, &errMsg, metadata)
+				errMsg := fmt.Sprintf(
+					"Payment verification failed (step 2) for payment request %d: amount mismatch (verified: %f Rials, original: %d Rials)",
+					paymentRequest.ID,
+					verificationResult.AmountIRR,
+					paymentRequest.Amount*10,
+				)
+				_ = createAuditLog(
+					txCtx,
+					p.auditRepo,
+					&customer,
+					models.AuditActionPaymentFailed,
+					mapping.Description,
+					false,
+					&errMsg,
+					metadata,
+				)
 
 				return nil
 			}
@@ -580,8 +638,21 @@ func (p *PaymentFlowImpl) PaymentCallback(ctx context.Context, atipayRequest *dt
 				}
 
 				// Create audit log for increase customer balance failure
-				errMsg := fmt.Sprintf("Increase customer balance failed (step 3) for payment request %d: %s", paymentRequest.ID, err.Error())
-				_ = createAuditLog(txCtx, p.auditRepo, &customer, models.AuditActionPaymentFailed, mapping.Description, false, &errMsg, metadata)
+				errMsg := fmt.Sprintf(
+					"Increase customer balance failed (step 3) for payment request %d: %s",
+					paymentRequest.ID,
+					err.Error(),
+				)
+				_ = createAuditLog(
+					txCtx,
+					p.auditRepo,
+					&customer,
+					models.AuditActionPaymentFailed,
+					mapping.Description,
+					false,
+					&errMsg,
+					metadata,
+				)
 
 				return nil
 			}
@@ -726,7 +797,12 @@ func (p *PaymentFlowImpl) getPaymentStatusMapping(status, state string) PaymentS
 }
 
 // updatePaymentRequest updates the payment request with callback data
-func (p *PaymentFlowImpl) updatePaymentRequest(ctx context.Context, paymentRequest *models.PaymentRequest, atipayRequest *dto.AtipayRequest, mapping PaymentStatusMapping) error {
+func (p *PaymentFlowImpl) updatePaymentRequest(
+	ctx context.Context,
+	paymentRequest *models.PaymentRequest,
+	atipayRequest *dto.AtipayRequest,
+	mapping PaymentStatusMapping,
+) error {
 	paymentRequest.Status = mapping.Status
 	paymentRequest.StatusReason = mapping.Description
 	paymentRequest.UpdatedAt = utils.UTCNow()
@@ -751,7 +827,11 @@ func (p *PaymentFlowImpl) updatePaymentRequest(ctx context.Context, paymentReque
 	return nil
 }
 
-func (p *PaymentFlowImpl) updateBalances(ctx context.Context, paymentRequest *models.PaymentRequest, atipayRequest *dto.AtipayRequest) error {
+func (p *PaymentFlowImpl) updateBalances(
+	ctx context.Context,
+	paymentRequest *models.PaymentRequest,
+	atipayRequest *dto.AtipayRequest,
+) error {
 	_, err := getCustomer(ctx, p.customerRepo, paymentRequest.CustomerID)
 	if err != nil {
 		return err
@@ -1238,7 +1318,11 @@ func (p *PaymentFlowImpl) verifyPaymentWithAtipay(ctx context.Context, reference
 }
 
 // GetTransactionHistory retrieves the transaction history for a customer with pagination and filtering
-func (p *PaymentFlowImpl) GetTransactionHistory(ctx context.Context, req *dto.GetTransactionHistoryRequest, metadata *ClientMetadata) (resp *dto.TransactionHistoryResponse, err error) {
+func (p *PaymentFlowImpl) GetTransactionHistory(
+	ctx context.Context,
+	req *dto.GetTransactionHistoryRequest,
+	metadata *ClientMetadata,
+) (resp *dto.TransactionHistoryResponse, err error) {
 	defer func() {
 		if err != nil {
 			err = NewBusinessError("GET_TRANSACTION_HISTORY_FAILED", "Get transaction history failed", err)
@@ -1520,7 +1604,11 @@ func (p *PaymentFlowImpl) calculatePaginationInfo(page, pageSize, totalItems uin
 }
 
 // GetWalletBalance retrieves the current wallet balance for a customer
-func (p *PaymentFlowImpl) GetWalletBalance(ctx context.Context, req *dto.GetWalletBalanceRequest, metadata *ClientMetadata) (*dto.GetWalletBalanceResponse, error) {
+func (p *PaymentFlowImpl) GetWalletBalance(
+	ctx context.Context,
+	req *dto.GetWalletBalanceRequest,
+	metadata *ClientMetadata,
+) (*dto.GetWalletBalanceResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -1612,7 +1700,11 @@ func buildReceiptPreview(data []byte, contentType string) (string, string) {
 }
 
 // SubmitDepositReceipt lets customer upload a deposit receipt for manual review.
-func (p *PaymentFlowImpl) SubmitDepositReceipt(ctx context.Context, req *dto.SubmitDepositReceiptRequest, metadata *ClientMetadata) (*dto.SubmitDepositReceiptResponse, error) {
+func (p *PaymentFlowImpl) SubmitDepositReceipt(
+	ctx context.Context,
+	req *dto.SubmitDepositReceiptRequest,
+	metadata *ClientMetadata,
+) (*dto.SubmitDepositReceiptResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("DEPOSIT_RECEIPT_INVALID_REQUEST", "Submit deposit receipt failed", fmt.Errorf("request is nil"))
 	}
@@ -1752,7 +1844,12 @@ func (p *PaymentFlowImpl) ListDepositReceipts(ctx context.Context, customerID ui
 }
 
 // PreviewProformaInvoice builds data for a proforma invoice JSON preview.
-func (p *PaymentFlowImpl) PreviewProformaInvoice(ctx context.Context, customerID uint, receiptUUID string, lang string) (*dto.ProformaPreviewResponse, error) {
+func (p *PaymentFlowImpl) PreviewProformaInvoice(
+	ctx context.Context,
+	customerID uint,
+	receiptUUID string,
+	lang string,
+) (*dto.ProformaPreviewResponse, error) {
 	lang = strings.ToUpper(strings.TrimSpace(lang))
 	if lang == "" {
 		lang = "EN"
@@ -1825,7 +1922,12 @@ func (p *PaymentFlowImpl) PreviewProformaInvoice(ctx context.Context, customerID
 }
 
 // PreviewProformaInvoiceByAmount builds proforma data using a user-supplied amount (no receipt).
-func (p *PaymentFlowImpl) PreviewProformaInvoiceByAmount(ctx context.Context, customerID uint, amountWithTax uint64, lang string) (*dto.ProformaPreviewResponse, error) {
+func (p *PaymentFlowImpl) PreviewProformaInvoiceByAmount(
+	ctx context.Context,
+	customerID uint,
+	amountWithTax uint64,
+	lang string,
+) (*dto.ProformaPreviewResponse, error) {
 	lang = strings.ToUpper(strings.TrimSpace(lang))
 	if lang == "" {
 		lang = "EN"
@@ -1897,7 +1999,11 @@ func (p *PaymentFlowImpl) PreviewProformaInvoiceByAmount(ctx context.Context, cu
 }
 
 // DownloadDepositReceiptFile returns raw receipt file bytes with metadata.
-func (p *PaymentFlowImpl) DownloadDepositReceiptFile(ctx context.Context, customerID uint, receiptUUID string) ([]byte, string, string, error) {
+func (p *PaymentFlowImpl) DownloadDepositReceiptFile(
+	ctx context.Context,
+	customerID uint,
+	receiptUUID string,
+) ([]byte, string, string, error) {
 	rec, err := p.depositReceiptRepo.ByUUID(ctx, receiptUUID)
 	if err != nil {
 		return nil, "", "", err
@@ -1912,7 +2018,12 @@ func (p *PaymentFlowImpl) DownloadDepositReceiptFile(ctx context.Context, custom
 }
 
 // UpdateDepositReceiptFile replaces the file if receipt is still pending.
-func (p *PaymentFlowImpl) UpdateDepositReceiptFile(ctx context.Context, customerID uint, receiptUUID string, req *dto.UpdateDepositReceiptFileRequest) error {
+func (p *PaymentFlowImpl) UpdateDepositReceiptFile(
+	ctx context.Context,
+	customerID uint,
+	receiptUUID string,
+	req *dto.UpdateDepositReceiptFileRequest,
+) error {
 	if req == nil {
 		return NewBusinessError("DEPOSIT_RECEIPT_INVALID_REQUEST", "Invalid request", fmt.Errorf("nil request"))
 	}
@@ -1985,7 +2096,12 @@ func (p *PaymentFlowImpl) DeleteDepositReceiptFile(ctx context.Context, customer
 	})
 }
 
-func (p *PaymentFlowImpl) NotifyInvoiceIssueRequest(ctx context.Context, req *dto.NotifyInvoiceIssueRequest, customerID uint, metadata *ClientMetadata) (*dto.NotifyInvoiceIssueResponse, error) {
+func (p *PaymentFlowImpl) NotifyInvoiceIssueRequest(
+	ctx context.Context,
+	req *dto.NotifyInvoiceIssueRequest,
+	customerID uint,
+	metadata *ClientMetadata,
+) (*dto.NotifyInvoiceIssueResponse, error) {
 	if req == nil || strings.TrimSpace(req.TransactionUUID) == "" {
 		return nil, ErrTransactionUUIDInvalid
 	}
@@ -2015,7 +2131,8 @@ func (p *PaymentFlowImpl) NotifyInvoiceIssueRequest(ctx context.Context, req *dt
 		if err := json.Unmarshal(tx.Metadata, &txMeta); err != nil {
 			return nil, err
 		}
-		if customerInvoiceUUID := customerInvoiceUUIDFromMetadata(txMeta); customerInvoiceUUID != nil && strings.TrimSpace(*customerInvoiceUUID) != "" {
+		if customerInvoiceUUID := customerInvoiceUUIDFromMetadata(txMeta); customerInvoiceUUID != nil &&
+			strings.TrimSpace(*customerInvoiceUUID) != "" {
 			return nil, ErrInvoiceIssueAlreadyAssigned
 		}
 	}

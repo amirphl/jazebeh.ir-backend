@@ -68,7 +68,20 @@ func (r *refundRepoStub) ManualReview(context.Context, uint, time.Time, string, 
 func TestCampaignRefundReconciliationSchedulerCompletesClaimedJob(t *testing.T) {
 	repo := &refundRepoStub{jobs: []*models.CampaignRefundReconciliationJob{{CampaignID: 7}}}
 	executor := &refundExecutorStub{}
-	s := NewCampaignRefundReconciliationScheduler(executor, repo, log.New(io.Discard, "", 0), time.Hour, time.Hour, time.Second, time.Minute, 10, 1, 3, time.Second, time.Minute)
+	s := NewCampaignRefundReconciliationScheduler(
+		executor,
+		repo,
+		log.New(io.Discard, "", 0),
+		time.Hour,
+		time.Hour,
+		time.Second,
+		time.Minute,
+		10,
+		1,
+		3,
+		time.Second,
+		time.Minute,
+	)
 	var workers sync.WaitGroup
 	s.runOnce(context.Background(), &workers)
 	workers.Wait()
@@ -84,7 +97,20 @@ func TestCampaignRefundReconciliationSchedulerCompletesClaimedJob(t *testing.T) 
 
 func TestCampaignRefundReconciliationSchedulerMovesExhaustedJobToManualReview(t *testing.T) {
 	repo := &refundRepoStub{jobs: []*models.CampaignRefundReconciliationJob{{CampaignID: 9, AttemptCount: 3}}}
-	s := NewCampaignRefundReconciliationScheduler(&refundExecutorStub{err: errors.New("database unavailable")}, repo, log.New(io.Discard, "", 0), time.Hour, time.Hour, time.Second, time.Minute, 10, 1, 3, time.Second, time.Minute)
+	s := NewCampaignRefundReconciliationScheduler(
+		&refundExecutorStub{err: errors.New("database unavailable")},
+		repo,
+		log.New(io.Discard, "", 0),
+		time.Hour,
+		time.Hour,
+		time.Second,
+		time.Minute,
+		10,
+		1,
+		3,
+		time.Second,
+		time.Minute,
+	)
 	var workers sync.WaitGroup
 	s.runOnce(context.Background(), &workers)
 	workers.Wait()
@@ -97,7 +123,20 @@ func TestCampaignRefundReconciliationSchedulerMovesExhaustedJobToManualReview(t 
 
 func TestCampaignRefundReconciliationSchedulerCompletesNoopWithoutRetry(t *testing.T) {
 	repo := &refundRepoStub{jobs: []*models.CampaignRefundReconciliationJob{{CampaignID: 11}}}
-	s := NewCampaignRefundReconciliationScheduler(&refundExecutorStub{err: repository.ErrCampaignRefundReconciliationNoop}, repo, log.New(io.Discard, "", 0), time.Hour, time.Hour, time.Second, time.Minute, 10, 1, 3, time.Second, time.Minute)
+	s := NewCampaignRefundReconciliationScheduler(
+		&refundExecutorStub{err: repository.ErrCampaignRefundReconciliationNoop},
+		repo,
+		log.New(io.Discard, "", 0),
+		time.Hour,
+		time.Hour,
+		time.Second,
+		time.Minute,
+		10,
+		1,
+		3,
+		time.Second,
+		time.Minute,
+	)
 	var workers sync.WaitGroup
 	s.runOnce(context.Background(), &workers)
 	workers.Wait()
@@ -111,7 +150,20 @@ func TestCampaignRefundReconciliationSchedulerCompletesNoopWithoutRetry(t *testi
 func TestCampaignRefundReconciliationSchedulerImmediatelyEscalatesManualReview(t *testing.T) {
 	repo := &refundRepoStub{jobs: []*models.CampaignRefundReconciliationJob{{CampaignID: 12, AttemptCount: 1}}}
 	err := errors.Join(repository.ErrCampaignRefundReconciliationManualReview, errors.New("missing debit"))
-	s := NewCampaignRefundReconciliationScheduler(&refundExecutorStub{err: err}, repo, log.New(io.Discard, "", 0), time.Hour, time.Hour, time.Second, time.Minute, 10, 1, 8, time.Second, time.Minute)
+	s := NewCampaignRefundReconciliationScheduler(
+		&refundExecutorStub{err: err},
+		repo,
+		log.New(io.Discard, "", 0),
+		time.Hour,
+		time.Hour,
+		time.Second,
+		time.Minute,
+		10,
+		1,
+		8,
+		time.Second,
+		time.Minute,
+	)
 	var workers sync.WaitGroup
 	s.runOnce(context.Background(), &workers)
 	workers.Wait()

@@ -28,7 +28,11 @@ const campaignRefundReconciliationErrorMessageLimit = 1024
 // reclaimed cannot complete or fail the newer worker's job.
 type CampaignRefundReconciliationRepository interface {
 	DiscoverPending(ctx context.Context, at time.Time, batchSize int) error
-	ClaimPending(ctx context.Context, limit int, staleBefore, eligibleBefore, at, leaseExpiresAt time.Time) ([]*models.CampaignRefundReconciliationJob, error)
+	ClaimPending(
+		ctx context.Context,
+		limit int,
+		staleBefore, eligibleBefore, at, leaseExpiresAt time.Time,
+	) ([]*models.CampaignRefundReconciliationJob, error)
 	Complete(ctx context.Context, campaignID uint, startedAt, at time.Time) error
 	Retry(ctx context.Context, campaignID uint, startedAt time.Time, code, message string, nextAttemptAt, at time.Time) error
 	ManualReview(ctx context.Context, campaignID uint, startedAt time.Time, code, message string, at time.Time) error
@@ -105,7 +109,11 @@ ON CONFLICT (campaign_id) DO NOTHING`, at, at, at, state.LastCampaignID, scanEnd
 	})
 }
 
-func (r *CampaignRefundReconciliationRepositoryImpl) ClaimPending(ctx context.Context, limit int, staleBefore, eligibleBefore, at, leaseExpiresAt time.Time) ([]*models.CampaignRefundReconciliationJob, error) {
+func (r *CampaignRefundReconciliationRepositoryImpl) ClaimPending(
+	ctx context.Context,
+	limit int,
+	staleBefore, eligibleBefore, at, leaseExpiresAt time.Time,
+) ([]*models.CampaignRefundReconciliationJob, error) {
 	if limit <= 0 {
 		limit = 1
 	}
@@ -136,13 +144,25 @@ SET state='completed', completed_at=?, lease_expires_at=NULL, next_attempt_at=NU
 WHERE campaign_id=? AND state='processing' AND started_at=?`, at, at, campaignID, startedAt).Error
 }
 
-func (r *CampaignRefundReconciliationRepositoryImpl) Retry(ctx context.Context, campaignID uint, startedAt time.Time, code, message string, nextAttemptAt, at time.Time) error {
+func (r *CampaignRefundReconciliationRepositoryImpl) Retry(
+	ctx context.Context,
+	campaignID uint,
+	startedAt time.Time,
+	code, message string,
+	nextAttemptAt, at time.Time,
+) error {
 	return r.getDB(ctx).Exec(`UPDATE campaign_refund_reconciliation_jobs
 SET state='retry', lease_expires_at=NULL, next_attempt_at=?, error_code=?, error_message=?, updated_at=?
 WHERE campaign_id=? AND state='processing' AND started_at=?`, nextAttemptAt, code, truncateCampaignRefundReconciliationError(message), at, campaignID, startedAt).Error
 }
 
-func (r *CampaignRefundReconciliationRepositoryImpl) ManualReview(ctx context.Context, campaignID uint, startedAt time.Time, code, message string, at time.Time) error {
+func (r *CampaignRefundReconciliationRepositoryImpl) ManualReview(
+	ctx context.Context,
+	campaignID uint,
+	startedAt time.Time,
+	code, message string,
+	at time.Time,
+) error {
 	return r.getDB(ctx).Exec(`UPDATE campaign_refund_reconciliation_jobs
 SET state='manual_review', lease_expires_at=NULL, next_attempt_at=NULL, error_code=?, error_message=?, updated_at=?
 WHERE campaign_id=? AND state='processing' AND started_at=?`, code, truncateCampaignRefundReconciliationError(message), at, campaignID, startedAt).Error

@@ -34,9 +34,21 @@ import (
 type CampaignFlow interface {
 	CreateCampaign(ctx context.Context, req *dto.CreateCampaignRequest, metadata *ClientMetadata) (*dto.CreateCampaignResponse, error)
 	UpdateCampaign(ctx context.Context, req *dto.UpdateCampaignRequest, metadata *ClientMetadata) (*dto.UpdateCampaignResponse, error)
-	CalculateCampaignCapacity(ctx context.Context, req *dto.CalculateCampaignCapacityRequest, metadata *ClientMetadata) (*dto.CalculateCampaignCapacityResponse, error)
-	CalculateCampaignCost(ctx context.Context, req *dto.CalculateCampaignCostRequest, metadata *ClientMetadata) (*dto.CalculateCampaignCostResponse, error)
-	CalculateCampaignCostV2(ctx context.Context, req *dto.CalculateCampaignCostV2Request, metadata *ClientMetadata) (*dto.CalculateCampaignCostResponse, error)
+	CalculateCampaignCapacity(
+		ctx context.Context,
+		req *dto.CalculateCampaignCapacityRequest,
+		metadata *ClientMetadata,
+	) (*dto.CalculateCampaignCapacityResponse, error)
+	CalculateCampaignCost(
+		ctx context.Context,
+		req *dto.CalculateCampaignCostRequest,
+		metadata *ClientMetadata,
+	) (*dto.CalculateCampaignCostResponse, error)
+	CalculateCampaignCostV2(
+		ctx context.Context,
+		req *dto.CalculateCampaignCostV2Request,
+		metadata *ClientMetadata,
+	) (*dto.CalculateCampaignCostResponse, error)
 	ListCampaigns(ctx context.Context, req *dto.ListCampaignsRequest, metadata *ClientMetadata) (*dto.ListCampaignsResponse, error)
 	GetLastInitiatedCampaign(ctx context.Context, customerID uint, metadata *ClientMetadata) (*dto.GetLastInitiatedCampaignResponse, error)
 	GetPagePrices(ctx context.Context) (*dto.GetPagePricesResponse, error)
@@ -49,14 +61,44 @@ type CampaignFlow interface {
 	ExportCampaignReport(ctx context.Context, campaignID string) ([]byte, error)
 	ExportCampaignClickReport(ctx context.Context, campaignUUID string) ([]byte, error)
 	ExportCampaignAudienceClickReport(ctx context.Context, campaignIDs []uint, metadata *ClientMetadata) ([]byte, error)
-	SendCampaignTestMessage(ctx context.Context, req *dto.SendCampaignTestMessageRequest, metadata *ClientMetadata) (*dto.SendCampaignTestMessageResponse, error)
-	StartSmartTargetingTestSampling(ctx context.Context, req *dto.SmartTargetingTestSamplingPreviewRequest, metadata *ClientMetadata) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
-	GetCurrentSmartTargetingTestSampling(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
-	GetSmartTargetingTestSamplingByID(ctx context.Context, customerID uint, campaignUUID string, calculationID int64) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
+	SendCampaignTestMessage(
+		ctx context.Context,
+		req *dto.SendCampaignTestMessageRequest,
+		metadata *ClientMetadata,
+	) (*dto.SendCampaignTestMessageResponse, error)
+	StartSmartTargetingTestSampling(
+		ctx context.Context,
+		req *dto.SmartTargetingTestSamplingPreviewRequest,
+		metadata *ClientMetadata,
+	) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
+	GetCurrentSmartTargetingTestSampling(
+		ctx context.Context,
+		customerID uint,
+		campaignUUID string,
+	) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
+	GetSmartTargetingTestSamplingByID(
+		ctx context.Context,
+		customerID uint,
+		campaignUUID string,
+		calculationID int64,
+	) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
 	ExecuteSmartTargetingTestSamplingCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) error
-	StartSmartTargetingExecutionCalculation(ctx context.Context, req *dto.SmartTargetingExecutionCalculationRequest, metadata *ClientMetadata) (*dto.SmartTargetingExecutionCalculationResponse, error)
-	GetCurrentSmartTargetingExecutionCalculation(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingExecutionCalculationResponse, error)
-	GetSmartTargetingExecutionCalculation(ctx context.Context, customerID uint, campaignUUID string, calculationID int64) (*dto.SmartTargetingExecutionCalculationResponse, error)
+	StartSmartTargetingExecutionCalculation(
+		ctx context.Context,
+		req *dto.SmartTargetingExecutionCalculationRequest,
+		metadata *ClientMetadata,
+	) (*dto.SmartTargetingExecutionCalculationResponse, error)
+	GetCurrentSmartTargetingExecutionCalculation(
+		ctx context.Context,
+		customerID uint,
+		campaignUUID string,
+	) (*dto.SmartTargetingExecutionCalculationResponse, error)
+	GetSmartTargetingExecutionCalculation(
+		ctx context.Context,
+		customerID uint,
+		campaignUUID string,
+		calculationID int64,
+	) (*dto.SmartTargetingExecutionCalculationResponse, error)
 	ExecuteSmartTargetingExecutionCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) error
 	ReconcileUndeliveredCampaignRefund(ctx context.Context, campaignID uint, eligibilityDelay time.Duration) error
 }
@@ -194,7 +236,11 @@ func NewCampaignFlow(
 }
 
 // CreateCampaign handles the complete campaign creation process
-func (s *CampaignFlowImpl) CreateCampaign(ctx context.Context, req *dto.CreateCampaignRequest, metadata *ClientMetadata) (*dto.CreateCampaignResponse, error) {
+func (s *CampaignFlowImpl) CreateCampaign(
+	ctx context.Context,
+	req *dto.CreateCampaignRequest,
+	metadata *ClientMetadata,
+) (*dto.CreateCampaignResponse, error) {
 	// Validate business rules
 	if err := s.validateCreateCampaignRequest(ctx, req); err != nil {
 		return nil, NewBusinessError("CAMPAIGN_VALIDATION_FAILED", "Campaign validation failed", err)
@@ -287,7 +333,11 @@ func (s *CampaignFlowImpl) CreateCampaign(ctx context.Context, req *dto.CreateCa
 }
 
 // UpdateCampaign handles the campaign update process
-func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCampaignRequest, metadata *ClientMetadata) (*dto.UpdateCampaignResponse, error) {
+func (s *CampaignFlowImpl) UpdateCampaign(
+	ctx context.Context,
+	req *dto.UpdateCampaignRequest,
+	metadata *ClientMetadata,
+) (*dto.UpdateCampaignResponse, error) {
 	// Validate business rules
 	if err := s.validateUpdateCampaignRequest(req); err != nil {
 		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
@@ -307,7 +357,11 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 
 	// Check if campaign can be updated (only initiated campaigns can be updated)
 	if !canUpdateCampaign(campaign.Status) {
-		return nil, NewBusinessError("CAMPAIGN_UPDATE_NOT_ALLOWED", "Campaign cannot be updated in current status", ErrCampaignUpdateNotAllowed)
+		return nil, NewBusinessError(
+			"CAMPAIGN_UPDATE_NOT_ALLOWED",
+			"Campaign cannot be updated in current status",
+			ErrCampaignUpdateNotAllowed,
+		)
 	}
 
 	// if req.ScheduleAt == nil && campaign.Spec.ScheduleAt == nil {
@@ -322,7 +376,8 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	// }
 	// if scheduleTime != nil && !scheduleTime.IsZero() {
 	// 	if scheduleTime.Before(utils.UTCNow().Add(10 * time.Minute)) {
-	// 		return nil, NewBusinessError("INVALID_SCHEDULE_TIME", "Schedule time must be at least 10 minutes in the future", ErrScheduleTimeTooSoon)
+	// 		return nil, NewBusinessError("INVALID_SCHEDULE_TIME", "Schedule time must be at least 10 minutes in the future",
+	// ErrScheduleTimeTooSoon)
 	// 	}
 	// }
 
@@ -395,10 +450,18 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	}
 	if finalTargetingMethod == models.CampaignAudienceTargetingSmart && finalPhase == models.CampaignPhaseTest {
 		if finalSampleSize == nil {
-			return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", ErrSmartTargetingSampleSizeRequired)
+			return nil, NewBusinessError(
+				"CAMPAIGN_UPDATE_VALIDATION_FAILED",
+				"Campaign update validation failed",
+				ErrSmartTargetingSampleSizeRequired,
+			)
 		}
 		if *finalSampleSize == 0 || *finalSampleSize > math.MaxInt64 {
-			return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", ErrSmartTargetingSampleSizeInvalid)
+			return nil, NewBusinessError(
+				"CAMPAIGN_UPDATE_VALIDATION_FAILED",
+				"Campaign update validation failed",
+				ErrSmartTargetingSampleSizeInvalid,
+			)
 		}
 	}
 	// Validate references against the effective post-update campaign. Validating
@@ -468,7 +531,13 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 		if lockedCampaign.CustomerID != req.CustomerID {
 			return ErrCampaignAccessDenied
 		}
-		samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(txCtx, s.selectedTagRepo, s.lineNumberRepo, lockedCampaign, req)
+		samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(
+			txCtx,
+			s.selectedTagRepo,
+			s.lineNumberRepo,
+			lockedCampaign,
+			req,
+		)
 		if err != nil {
 			return err
 		}
@@ -488,7 +557,8 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 					return err
 				}
 				if active != nil {
-					if err := s.samplingCalculationRepo.Supersede(txCtx, active.ID, "SMART_TARGETING_TEST_SAMPLING_SUPERSEDED", "Campaign configuration changed before the sampling preview completed", time.Now().UTC()); err != nil && !errors.Is(err, repository.ErrCampaignTargetingTestSamplingStateConflict) {
+					if err := s.samplingCalculationRepo.Supersede(txCtx, active.ID, "SMART_TARGETING_TEST_SAMPLING_SUPERSEDED", "Campaign configuration changed before the sampling preview completed", time.Now().UTC()); err != nil &&
+						!errors.Is(err, repository.ErrCampaignTargetingTestSamplingStateConflict) {
 						return err
 					}
 				}
@@ -592,7 +662,11 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	// allocation-fingerprint checks.
 	isSmartTargetingExecution := campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseExecution
 	if isSmartTargetingExecution && req.ExecutionAudienceCalculationID == nil {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_REQUIRED", "A ready execution audience calculation is required before finalization", ErrSmartTargetingExecutionCalculationRequired)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_REQUIRED",
+			"A ready execution audience calculation is required before finalization",
+			ErrSmartTargetingExecutionCalculationRequired,
+		)
 	}
 	executionCalculationID := int64(0)
 	if isSmartTargetingExecution && req.ExecutionAudienceCalculationID != nil {
@@ -623,7 +697,11 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 			return ErrCampaignUpdateNotAllowed
 		}
 		if finalizationRevision == nil || lockedCampaign.UpdatedAt == nil || !lockedCampaign.UpdatedAt.Equal(*finalizationRevision) {
-			return NewBusinessError("CAMPAIGN_FINALIZE_STALE", "Campaign configuration changed while finalization was in progress", ErrInvalidState)
+			return NewBusinessError(
+				"CAMPAIGN_FINALIZE_STALE",
+				"Campaign configuration changed while finalization was in progress",
+				ErrInvalidState,
+			)
 		}
 		if lockedCampaign.Spec.UsesSmartTargeting() && lockedCampaign.Phase == models.CampaignPhaseTest {
 			if err := s.requireCurrentSmartTargetingTestSampling(txCtx, lockedCampaign); err != nil {
@@ -646,7 +724,8 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 				return err
 			}
 			if err := repository.NewCampaignTargetingTestSampleSelectionRepository(s.db).ReserveForCampaign(txCtx, lockedCampaign); err != nil {
-				if errors.Is(err, repository.ErrSmartTargetingTestSelectionUnavailable) || errors.Is(err, repository.ErrSmartTargetingTestSelectionConflict) {
+				if errors.Is(err, repository.ErrSmartTargetingTestSelectionUnavailable) ||
+					errors.Is(err, repository.ErrSmartTargetingTestSelectionConflict) {
 					return ErrSmartTargetingTestPreviewRequired
 				}
 				return err
@@ -656,7 +735,12 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 			if lockedCampaign.BundleID == nil || *lockedCampaign.BundleID == 0 {
 				return ErrBundleNotFound
 			}
-			executionPlan, err := s.executionReservationPlanFromCalculation(txCtx, lockedCampaign, executionCalculationID, cost.NumTargetAudience)
+			executionPlan, err := s.executionReservationPlanFromCalculation(
+				txCtx,
+				lockedCampaign,
+				executionCalculationID,
+				cost.NumTargetAudience,
+			)
 			if err != nil {
 				return err
 			}
@@ -857,7 +941,11 @@ type smartTargetingExecutionReservationPlan struct {
 	header *models.CampaignTargetingExecutionReservationHeader
 }
 
-func (s *CampaignFlowImpl) reserveSmartTargetingExecutionAudience(ctx context.Context, campaign *models.Campaign, plan *smartTargetingExecutionReservationPlan) error {
+func (s *CampaignFlowImpl) reserveSmartTargetingExecutionAudience(
+	ctx context.Context,
+	campaign *models.Campaign,
+	plan *smartTargetingExecutionReservationPlan,
+) error {
 	if campaign == nil || plan == nil || plan.header == nil || campaign.BundleID == nil || *campaign.BundleID == 0 {
 		return repository.ErrSmartTargetingExecutionReservationUnavailable
 	}
@@ -890,15 +978,31 @@ func executionReservationBusinessError(err error) error {
 	}
 	switch {
 	case errors.Is(err, ErrSmartTargetingExecutionCalculationRequired):
-		return NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_REQUIRED", "A ready execution audience calculation is required before finalization", err)
+		return NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_REQUIRED",
+			"A ready execution audience calculation is required before finalization",
+			err,
+		)
 	case errors.Is(err, ErrSmartTargetingExecutionCalculationStale):
-		return NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_STALE", "Execution audience calculation is no longer current; request a new calculation", err)
+		return NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_STALE",
+			"Execution audience calculation is no longer current; request a new calculation",
+			err,
+		)
 	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationInsufficientCapacity):
-		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_INSUFFICIENT_CAPACITY", "The requested execution audience is no longer available", err)
+		return NewBusinessError(
+			"SMART_TARGETING_EXECUTION_RESERVATION_INSUFFICIENT_CAPACITY",
+			"The requested execution audience is no longer available",
+			err,
+		)
 	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationConflict):
 		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_CONFLICT", "Execution audience is no longer available", err)
 	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationConcurrency):
-		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_CONCURRENT_CHANGE", "Execution audience changed while finalizing; retry with a fresh capacity calculation", err)
+		return NewBusinessError(
+			"SMART_TARGETING_EXECUTION_RESERVATION_CONCURRENT_CHANGE",
+			"Execution audience changed while finalizing; retry with a fresh capacity calculation",
+			err,
+		)
 	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationStale):
 		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_STALE", "Execution reservation is no longer valid", err)
 	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationCorrupt):
@@ -936,7 +1040,13 @@ func applyFinalizedCampaignCost(campaign *models.Campaign, cost *dto.CalculateCa
 // smartTargetingTestSamplingConfigurationChanged compares effective values,
 // not merely field presence. Full-form clients commonly resubmit unchanged
 // values while finalizing; that must not discard a current sampling preview.
-func smartTargetingTestSamplingConfigurationChanged(ctx context.Context, selectedTagRepo repository.CampaignSelectedTagRepository, lineNumberRepo repository.LineNumberRepository, campaign *models.Campaign, req *dto.UpdateCampaignRequest) (bool, error) {
+func smartTargetingTestSamplingConfigurationChanged(
+	ctx context.Context,
+	selectedTagRepo repository.CampaignSelectedTagRepository,
+	lineNumberRepo repository.LineNumberRepository,
+	campaign *models.Campaign,
+	req *dto.UpdateCampaignRequest,
+) (bool, error) {
 	if campaign == nil || req == nil {
 		return false, nil
 	}
@@ -1012,7 +1122,11 @@ func smartTargetingTestSamplingConfigurationChanged(ctx context.Context, selecte
 }
 
 // CloneCampaign clones an existing campaign for the same customer with a fresh identity and reset state.
-func (s *CampaignFlowImpl) CloneCampaign(ctx context.Context, req *dto.CloneCampaignRequest, metadata *ClientMetadata) (*dto.CloneCampaignResponse, error) {
+func (s *CampaignFlowImpl) CloneCampaign(
+	ctx context.Context,
+	req *dto.CloneCampaignRequest,
+	metadata *ClientMetadata,
+) (*dto.CloneCampaignResponse, error) {
 	if req == nil || strings.TrimSpace(req.UUID) == "" {
 		return nil, NewBusinessError("CLONE_CAMPAIGN_VALIDATION_FAILED", "Campaign UUID is required", ErrCampaignUUIDRequired)
 	}
@@ -1100,7 +1214,11 @@ func (s *CampaignFlowImpl) CloneCampaign(ctx context.Context, req *dto.CloneCamp
 }
 
 // CancelCampaign allows a customer to cancel their own campaign and refunds budget according to current campaign status.
-func (s *CampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.CancelCampaignRequest, metadata *ClientMetadata) (*dto.CancelCampaignResponse, error) {
+func (s *CampaignFlowImpl) CancelCampaign(
+	ctx context.Context,
+	req *dto.CancelCampaignRequest,
+	metadata *ClientMetadata,
+) (*dto.CancelCampaignResponse, error) {
 	// NOTE: Idempotency
 	if req == nil || req.CampaignID == 0 {
 		return nil, NewBusinessError("CANCEL_CAMPAIGN_VALIDATION_FAILED", "campaign_id is required", ErrCampaignNotFound)
@@ -1203,7 +1321,8 @@ func (s *CampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.CancelCa
 			// 	CreditBalance:      newCredit,
 			// 	SpentOnCampaign:    latestBalance.SpentOnCampaign,
 			// 	AgencyShareWithTax: latestBalance.AgencyShareWithTax,
-			// 	TotalBalance:       newFree + newFrozen + latestBalance.LockedBalance + newCredit + latestBalance.SpentOnCampaign + latestBalance.AgencyShareWithTax,
+			// 	TotalBalance:       newFree + newFrozen + latestBalance.LockedBalance + newCredit + latestBalance.SpentOnCampaign +
+			// latestBalance.AgencyShareWithTax,
 			// 	Reason:             "campaign_cancelled_budget_refund",
 			// 	Description:        fmt.Sprintf("Refund reserved budget for cancelled campaign %d", campaign.ID),
 			// 	Metadata:           metaBytes,
@@ -1339,7 +1458,8 @@ func (s *CampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.CancelCa
 			// 	CreditBalance:      newCredit,
 			// 	SpentOnCampaign:    newSpentOnCampaign,
 			// 	AgencyShareWithTax: latestBalance.AgencyShareWithTax,
-			// 	TotalBalance:       newFree + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign + latestBalance.AgencyShareWithTax,
+			// 	TotalBalance:       newFree + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign +
+			// latestBalance.AgencyShareWithTax,
 			// 	Reason:             "campaign_cancelled_budget_refund_after_approval",
 			// 	Description:        fmt.Sprintf("Refund spent budget for cancelled campaign %d after approval", campaign.ID),
 			// 	Metadata:           metaBytes,
@@ -1421,7 +1541,11 @@ func (s *CampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.CancelCa
 	}, nil
 }
 
-func (s *CampaignFlowImpl) HideCampaigns(ctx context.Context, req *dto.HideCampaignsRequest, metadata *ClientMetadata) (*dto.HideCampaignsResponse, error) {
+func (s *CampaignFlowImpl) HideCampaigns(
+	ctx context.Context,
+	req *dto.HideCampaignsRequest,
+	metadata *ClientMetadata,
+) (*dto.HideCampaignsResponse, error) {
 	_ = metadata
 
 	if req == nil {
@@ -1459,7 +1583,11 @@ func (s *CampaignFlowImpl) HideCampaigns(ctx context.Context, req *dto.HideCampa
 	}, nil
 }
 
-func (s *CampaignFlowImpl) UnhideCampaigns(ctx context.Context, req *dto.UnhideCampaignsRequest, metadata *ClientMetadata) (*dto.UnhideCampaignsResponse, error) {
+func (s *CampaignFlowImpl) UnhideCampaigns(
+	ctx context.Context,
+	req *dto.UnhideCampaignsRequest,
+	metadata *ClientMetadata,
+) (*dto.UnhideCampaignsResponse, error) {
 	_ = metadata
 
 	if req == nil {
@@ -1580,12 +1708,20 @@ func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUI
 	if err != nil {
 		auditFailure(fmt.Sprintf("Campaign report export failed for campaign %s", campaign.UUID.String()), err)
 		if os.IsNotExist(err) {
-			return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available (may have expired or not yet pushed)", nil)
+			return nil, NewBusinessError(
+				"AUDIENCE_REPORT_NOT_AVAILABLE",
+				"audience report data is not available (may have expired or not yet pushed)",
+				nil,
+			)
 		}
 		return nil, NewBusinessError("CAMPAIGN_CLICK_MAPPING_READ_FAILED", "failed to read campaign click mapping", err)
 	}
 	if len(allUIDs) == 0 {
-		return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available (may have expired or not yet pushed)", nil)
+		return nil, NewBusinessError(
+			"AUDIENCE_REPORT_NOT_AVAILABLE",
+			"audience report data is not available (may have expired or not yet pushed)",
+			nil,
+		)
 	}
 
 	clickedCodes, err := s.shortLinkClickRepo.DistinctShortLinkUIDsByCampaignID(ctx, campaign.ID)
@@ -1616,7 +1752,12 @@ func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUI
 // audience UID file and the set of clicked short-link codes. Delivery status
 // is not represented in that file, so it is explicitly reported as unknown
 // rather than inferred from a statistics projection that omits tracking rows.
-func buildCampaignReportRows(allUIDs []string, uidToCode map[string]string, clickedCodes []string, actionUIDs map[string]bool) []campaignReportRow {
+func buildCampaignReportRows(
+	allUIDs []string,
+	uidToCode map[string]string,
+	clickedCodes []string,
+	actionUIDs map[string]bool,
+) []campaignReportRow {
 	clickedCodeSet := make(map[string]struct{}, len(clickedCodes))
 	for _, code := range clickedCodes {
 		clickedCodeSet[code] = struct{}{}
@@ -1638,7 +1779,13 @@ func buildCampaignReportRows(allUIDs []string, uidToCode map[string]string, clic
 	return rows
 }
 
-func buildCampaignAudienceClickReportRows(campaign models.Campaign, allUIDs []string, uidToCode map[string]string, clickedCodes []string, actionUIDs map[string]bool) []campaignAudienceClickReportRow {
+func buildCampaignAudienceClickReportRows(
+	campaign models.Campaign,
+	allUIDs []string,
+	uidToCode map[string]string,
+	clickedCodes []string,
+	actionUIDs map[string]bool,
+) []campaignAudienceClickReportRow {
 	sortedUIDs := uniqueSortedUIDs(allUIDs)
 	sort.Strings(sortedUIDs)
 	return buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(campaign, sortedUIDs, uidToCode, clickedCodes, actionUIDs)
@@ -1646,7 +1793,13 @@ func buildCampaignAudienceClickReportRows(campaign models.Campaign, allUIDs []st
 
 // buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs avoids a second
 // deduplication and sort when the caller already has canonical audience UIDs.
-func buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(campaign models.Campaign, sortedUIDs []string, uidToCode map[string]string, clickedCodes []string, actionUIDs map[string]bool) []campaignAudienceClickReportRow {
+func buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(
+	campaign models.Campaign,
+	sortedUIDs []string,
+	uidToCode map[string]string,
+	clickedCodes []string,
+	actionUIDs map[string]bool,
+) []campaignAudienceClickReportRow {
 	clickedCodeSet := make(map[string]struct{}, len(clickedCodes))
 	for _, code := range clickedCodes {
 		clickedCodeSet[code] = struct{}{}
@@ -1719,7 +1872,11 @@ func (s *CampaignFlowImpl) activeBundleActionUIDSet(ctx context.Context, bundleI
 // ExportCampaignAudienceClickReport exports the audience UID and click report for several
 // campaigns owned by the current customer into one worksheet. It deliberately uses the same
 // durable audience UID/code store as the single-campaign export, so Status remains unknown.
-func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context, campaignIDs []uint, metadata *ClientMetadata) ([]byte, error) {
+func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(
+	ctx context.Context,
+	campaignIDs []uint,
+	metadata *ClientMetadata,
+) ([]byte, error) {
 	if len(campaignIDs) == 0 {
 		return nil, NewBusinessError("CAMPAIGN_IDS_REQUIRED", "at least one campaign id is required", nil)
 	}
@@ -1787,18 +1944,30 @@ func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context
 			if errors.Is(err, errCampaignAudienceUIDLimitExceeded) {
 				err := fmt.Errorf("report contains more than %d rows", maxCampaignAudienceClickReportRows)
 				auditFailure("Campaign audience click report export exceeded the supported row limit", err)
-				return nil, NewBusinessError("CAMPAIGN_REPORT_TOO_LARGE", "campaign audience report is too large for synchronous export", err)
+				return nil, NewBusinessError(
+					"CAMPAIGN_REPORT_TOO_LARGE",
+					"campaign audience report is too large for synchronous export",
+					err,
+				)
 			}
 			auditFailure(fmt.Sprintf("Campaign audience click report export failed for campaign %s", campaign.UUID.String()), err)
 			if os.IsNotExist(err) {
-				return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available for one or more campaigns (may have expired or not yet pushed)", nil)
+				return nil, NewBusinessError(
+					"AUDIENCE_REPORT_NOT_AVAILABLE",
+					"audience report data is not available for one or more campaigns (may have expired or not yet pushed)",
+					nil,
+				)
 			}
 			return nil, NewBusinessError("CAMPAIGN_CLICK_MAPPING_READ_FAILED", "failed to read campaign click mapping", err)
 		}
 		if len(allUIDs) == 0 {
 			err := errors.New("audience report data is empty")
 			auditFailure(fmt.Sprintf("Campaign audience click report export failed for campaign %s", campaign.UUID.String()), err)
-			return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available for one or more campaigns (may have expired or not yet pushed)", nil)
+			return nil, NewBusinessError(
+				"AUDIENCE_REPORT_NOT_AVAILABLE",
+				"audience report data is not available for one or more campaigns (may have expired or not yet pushed)",
+				nil,
+			)
 		}
 		allUIDs = uniqueSortedUIDs(allUIDs)
 		if len(rows)+len(allUIDs) > maxCampaignAudienceClickReportRows || len(rows)+len(allUIDs) > maxExcelWorksheetDataRows {
@@ -1808,10 +1977,21 @@ func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context
 		}
 		actionUIDs, err := s.activeBundleActionUIDSet(ctx, campaign.BundleID, allUIDs)
 		if err != nil {
-			auditFailure(fmt.Sprintf("Campaign audience report export failed while loading action data for campaign %s", campaign.UUID.String()), err)
+			auditFailure(
+				fmt.Sprintf("Campaign audience report export failed while loading action data for campaign %s", campaign.UUID.String()),
+				err,
+			)
 			return nil, NewBusinessError("CAMPAIGN_ACTION_LOOKUP_FAILED", "failed to load campaign action data", err)
 		}
-		rows = append(rows, buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(*campaign, allUIDs, uidToCode, clickedCodesByCampaignID[campaign.ID], actionUIDs)...)
+		rows = append(
+			rows,
+			buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(
+				*campaign,
+				allUIDs,
+				uidToCode,
+				clickedCodesByCampaignID[campaign.ID],
+				actionUIDs,
+			)...)
 	}
 
 	reportBytes, err := buildCampaignAudienceClickReportExcel(rows)
@@ -1826,9 +2006,17 @@ func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context
 }
 
 // CalculateCampaignCapacity handles the campaign capacity calculation process
-func (s *CampaignFlowImpl) CalculateCampaignCapacity(ctx context.Context, req *dto.CalculateCampaignCapacityRequest, metadata *ClientMetadata) (*dto.CalculateCampaignCapacityResponse, error) {
+func (s *CampaignFlowImpl) CalculateCampaignCapacity(
+	ctx context.Context,
+	req *dto.CalculateCampaignCapacityRequest,
+	metadata *ClientMetadata,
+) (*dto.CalculateCampaignCapacityResponse, error) {
 	if err := s.validateCalculateCampaignCapacityRequest(req); err != nil {
-		return nil, NewBusinessError("CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED", "Campaign capacity calculation validation failed", err)
+		return nil, NewBusinessError(
+			"CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED",
+			"Campaign capacity calculation validation failed",
+			err,
+		)
 	}
 
 	campaign, err := getCampaignByID(ctx, s.campaignRepo, req.CampaignID, req.CustomerID)
@@ -1848,14 +2036,34 @@ func (s *CampaignFlowImpl) CalculateCampaignCapacity(ctx context.Context, req *d
 			}
 		}
 		if s.capacityCalculationRepo == nil {
-			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_UNAVAILABLE", "Exact Smart Targeting capacity calculation is unavailable", ErrSmartTargetingExactCapacityRequired)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_CAPACITY_UNAVAILABLE",
+				"Exact Smart Targeting capacity calculation is unavailable",
+				ErrSmartTargetingExactCapacityRequired,
+			)
 		}
-		exact, err := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, &campaign)
+		exact, err := EnsureCurrentSmartTargetingCapacity(
+			ctx,
+			s.db,
+			s.campaignRepo,
+			s.selectedTagRepo,
+			s.capacityCalculationRepo,
+			s.lineNumberRepo,
+			&campaign,
+		)
 		if err != nil {
 			if errors.Is(err, ErrSmartTargetingCapacityPending) {
-				return nil, NewBusinessError("SMART_TARGETING_CAPACITY_PENDING", "Exact Smart Targeting capacity calculation was submitted; please wait and retry", err)
+				return nil, NewBusinessError(
+					"SMART_TARGETING_CAPACITY_PENDING",
+					"Exact Smart Targeting capacity calculation was submitted; please wait and retry",
+					err,
+				)
 			}
-			return nil, NewBusinessError("SMART_TARGETING_EXACT_CAPACITY_LOOKUP_FAILED", "Failed to validate exact Smart Targeting capacity", err)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_EXACT_CAPACITY_LOOKUP_FAILED",
+				"Failed to validate exact Smart Targeting capacity",
+				err,
+			)
 		}
 		if exact.UsableUniqueAudienceCount < 0 {
 			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_INVALID", "Exact Smart Targeting capacity is invalid", ErrInvalidState)
@@ -1867,24 +2075,48 @@ func (s *CampaignFlowImpl) CalculateCampaignCapacity(ctx context.Context, req *d
 	}
 	if !usingTargetAudienceExcelFile {
 		if campaign.Spec.Level1 == nil {
-			return nil, NewBusinessError("CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED", "Campaign capacity calculation validation failed", ErrCampaignLevel1Required)
+			return nil, NewBusinessError(
+				"CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED",
+				"Campaign capacity calculation validation failed",
+				ErrCampaignLevel1Required,
+			)
 		}
 		if len(campaign.Spec.Level2s) == 0 {
-			return nil, NewBusinessError("CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED", "Campaign capacity calculation validation failed", ErrCampaignLevel2sRequired)
+			return nil, NewBusinessError(
+				"CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED",
+				"Campaign capacity calculation validation failed",
+				ErrCampaignLevel2sRequired,
+			)
 		}
 		if len(campaign.Spec.Level3s) == 0 {
-			return nil, NewBusinessError("CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED", "Campaign capacity calculation validation failed", ErrCampaignLevel3sRequired)
+			return nil, NewBusinessError(
+				"CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED",
+				"Campaign capacity calculation validation failed",
+				ErrCampaignLevel3sRequired,
+			)
 		}
 		if len(campaign.Spec.Tags) == 0 {
-			return nil, NewBusinessError("CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED", "Campaign capacity calculation validation failed", ErrCampaignTagsRequired)
+			return nil, NewBusinessError(
+				"CALCULATE_CAMPAIGN_CAPACITY_VALIDATION_FAILED",
+				"Campaign capacity calculation validation failed",
+				ErrCampaignTagsRequired,
+			)
 		}
 	}
 	if usingTargetAudienceExcelFile {
 		if campaign.Spec.TargetAudienceExcelFileUUID == nil ||
 			strings.TrimSpace(*campaign.Spec.TargetAudienceExcelFileUUID) == "" {
-			return nil, NewBusinessError("EXCEL_FILE_REQUIRED", "Excel targeting requires a target audience file", ErrCampaignTargetAudienceExcelFileInvalid)
+			return nil, NewBusinessError(
+				"EXCEL_FILE_REQUIRED",
+				"Excel targeting requires a target audience file",
+				ErrCampaignTargetAudienceExcelFileInvalid,
+			)
 		}
-		count, err := s.CountTargetAudienceFromExcelFile(ctx, campaign.CustomerID, strings.TrimSpace(*campaign.Spec.TargetAudienceExcelFileUUID))
+		count, err := s.CountTargetAudienceFromExcelFile(
+			ctx,
+			campaign.CustomerID,
+			strings.TrimSpace(*campaign.Spec.TargetAudienceExcelFileUUID),
+		)
 		if err != nil {
 			switch {
 			case errors.Is(err, os.ErrNotExist):
@@ -1984,12 +2216,20 @@ func (s *CampaignFlowImpl) CalculateCampaignCapacity(ctx context.Context, req *d
 					}
 					capacity, capacityErr = addAudienceCapacity(capacity, selectedCapacity)
 					if capacityErr != nil {
-						return nil, NewBusinessError("AUDIENCE_CAPACITY_OVERFLOW", "Audience capacity exceeds the supported range", capacityErr)
+						return nil, NewBusinessError(
+							"AUDIENCE_CAPACITY_OVERFLOW",
+							"Audience capacity exceeds the supported range",
+							capacityErr,
+						)
 					}
 					for grade, gradeValue := range gradeCapacity {
 						audienceGradeCapacity[grade], capacityErr = addAudienceCapacity(audienceGradeCapacity[grade], gradeValue)
 						if capacityErr != nil {
-							return nil, NewBusinessError("AUDIENCE_CAPACITY_OVERFLOW", "Audience capacity exceeds the supported range", capacityErr)
+							return nil, NewBusinessError(
+								"AUDIENCE_CAPACITY_OVERFLOW",
+								"Audience capacity exceeds the supported range",
+								capacityErr,
+							)
 						}
 					}
 				}
@@ -2004,7 +2244,11 @@ func (s *CampaignFlowImpl) CalculateCampaignCapacity(ctx context.Context, req *d
 	}, nil
 }
 
-func calculateAudienceSpecItemCapacity(platform string, selectedGrades []string, item dto.AudienceSpecItem) (uint64, map[string]uint64, error) {
+func calculateAudienceSpecItemCapacity(
+	platform string,
+	selectedGrades []string,
+	item dto.AudienceSpecItem,
+) (uint64, map[string]uint64, error) {
 	if !models.IsValidCampaignPlatform(platform) {
 		return 0, nil, ErrCampaignPlatformInvalid
 	}
@@ -2070,9 +2314,17 @@ func addAudienceCapacity(total, value uint64) (uint64, error) {
 }
 
 // CalculateCampaignCost handles the campaign cost calculation process
-func (s *CampaignFlowImpl) CalculateCampaignCost(ctx context.Context, req *dto.CalculateCampaignCostRequest, metadata *ClientMetadata) (*dto.CalculateCampaignCostResponse, error) {
+func (s *CampaignFlowImpl) CalculateCampaignCost(
+	ctx context.Context,
+	req *dto.CalculateCampaignCostRequest,
+	metadata *ClientMetadata,
+) (*dto.CalculateCampaignCostResponse, error) {
 	if req.CampaignID == 0 {
-		return nil, NewBusinessError("CALCULATE_CAMPAIGN_COST_VALIDATION_FAILED", "Campaign cost calculation validation failed", ErrCampaignNotFound)
+		return nil, NewBusinessError(
+			"CALCULATE_CAMPAIGN_COST_VALIDATION_FAILED",
+			"Campaign cost calculation validation failed",
+			ErrCampaignNotFound,
+		)
 	}
 
 	campaign, err := getCampaignByID(ctx, s.campaignRepo, req.CampaignID, req.CustomerID)
@@ -2088,11 +2340,19 @@ func (s *CampaignFlowImpl) CalculateCampaignCost(ctx context.Context, req *dto.C
 	numTargetAudience := availableCapacity
 	if campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseTest {
 		if currentErr := s.requireCurrentSmartTargetingTestSampling(ctx, &campaign); currentErr != nil {
-			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", currentErr)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_TEST_PREVIEW_REQUIRED",
+				"A current Smart Targeting Test sampling preview is required",
+				currentErr,
+			)
 		}
 		intent, intentErr := s.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, &campaign, true)
 		if intentErr != nil {
-			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", intentErr)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_TEST_PREVIEW_REQUIRED",
+				"A current Smart Targeting Test sampling preview is required",
+				intentErr,
+			)
 		}
 		numTargetAudience = intent.effective
 		availableCapacity = intent.effective
@@ -2127,7 +2387,11 @@ func (s *CampaignFlowImpl) CalculateCampaignCost(ctx context.Context, req *dto.C
 
 // CalculateCampaignCostV2 calculates required cost for desired num_messages
 // and caps num_messages by available audience capacity.
-func (s *CampaignFlowImpl) CalculateCampaignCostV2(ctx context.Context, req *dto.CalculateCampaignCostV2Request, metadata *ClientMetadata) (*dto.CalculateCampaignCostResponse, error) {
+func (s *CampaignFlowImpl) CalculateCampaignCostV2(
+	ctx context.Context,
+	req *dto.CalculateCampaignCostV2Request,
+	metadata *ClientMetadata,
+) (*dto.CalculateCampaignCostResponse, error) {
 	campaign, err := getCampaignByID(ctx, s.campaignRepo, req.CampaignID, req.CustomerID)
 	if err != nil {
 		return nil, NewBusinessError("CAMPAIGN_LOOKUP_FAILED", "Failed to lookup campaign", err)
@@ -2141,17 +2405,29 @@ func (s *CampaignFlowImpl) CalculateCampaignCostV2(ctx context.Context, req *dto
 	numTargetAudience := req.NumMessages
 	if campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseTest {
 		if currentErr := s.requireCurrentSmartTargetingTestSampling(ctx, &campaign); currentErr != nil {
-			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", currentErr)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_TEST_PREVIEW_REQUIRED",
+				"A current Smart Targeting Test sampling preview is required",
+				currentErr,
+			)
 		}
 		intent, intentErr := s.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, &campaign, true)
 		if intentErr != nil {
-			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", intentErr)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_TEST_PREVIEW_REQUIRED",
+				"A current Smart Targeting Test sampling preview is required",
+				intentErr,
+			)
 		}
 		numTargetAudience = intent.effective
 		availableCapacity = intent.effective
 	}
 	if campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseExecution && numTargetAudience > availableCapacity {
-		return nil, NewBusinessError("SMART_TARGETING_REQUEST_EXCEEDS_CAPACITY", "The requested audience count exceeds the exact usable capacity.", ErrInsufficientCampaignCapacity)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_REQUEST_EXCEEDS_CAPACITY",
+			"The requested audience count exceeds the exact usable capacity.",
+			ErrInsufficientCampaignCapacity,
+		)
 	}
 	if numTargetAudience > availableCapacity {
 		numTargetAudience = availableCapacity
@@ -2189,7 +2465,11 @@ func (s *CampaignFlowImpl) computePricePerMessage(ctx context.Context, campaign 
 
 	usingTargetAudienceExcelFile := campaign.Spec.UsesExcelTargeting()
 	if len(campaign.Spec.Level3s) == 0 && !usingTargetAudienceExcelFile && !campaign.Spec.UsesSmartTargeting() {
-		return 0, NewBusinessError("LEVEL3_REQUIRED", "At least one level3 option or target audience Excel file is required for cost calculation", ErrLevel3Required)
+		return 0, NewBusinessError(
+			"LEVEL3_REQUIRED",
+			"At least one level3 option or target audience Excel file is required for cost calculation",
+			ErrLevel3Required,
+		)
 	}
 
 	// Pricing constants
@@ -2215,13 +2495,21 @@ func (s *CampaignFlowImpl) computePricePerMessage(ctx context.Context, campaign 
 		if err != nil {
 			if errors.Is(err, ErrSegmentPriceFactorNotFound) {
 				s.notifyMissingSegmentPriceFactor(campaign.Spec.Level3s)
-				return 0, NewBusinessError("SEGMENT_PRICE_FACTOR_NOT_FOUND", "Segment price factor not found for provided level3 options", ErrSegmentPriceFactorNotFound)
+				return 0, NewBusinessError(
+					"SEGMENT_PRICE_FACTOR_NOT_FOUND",
+					"Segment price factor not found for provided level3 options",
+					ErrSegmentPriceFactorNotFound,
+				)
 			}
 			return 0, NewBusinessError("SEGMENT_PRICE_FACTOR_FETCH_FAILED", "Failed to fetch segment price factors", err)
 		}
 		if maxFactor == 0 {
 			s.notifyMissingSegmentPriceFactor(campaign.Spec.Level3s)
-			return 0, NewBusinessError("SEGMENT_PRICE_FACTOR_NOT_FOUND", "Segment price factor not found for provided level3 options", ErrSegmentPriceFactorNotFound)
+			return 0, NewBusinessError(
+				"SEGMENT_PRICE_FACTOR_NOT_FOUND",
+				"Segment price factor not found for provided level3 options",
+				ErrSegmentPriceFactorNotFound,
+			)
 		}
 		segmentPriceFactor = maxFactor
 	}
@@ -2233,7 +2521,11 @@ func (s *CampaignFlowImpl) computePricePerMessage(ctx context.Context, campaign 
 		return 0, NewBusinessError("PLATFORM_BASE_PRICE_FETCH_FAILED", "Failed to fetch platform base price", err)
 	}
 	if pbp == nil {
-		return 0, NewBusinessError("PLATFORM_BASE_PRICE_NOT_FOUND", "Platform base price not found for platform "+platform, ErrPlatformBasePriceNotFound)
+		return 0, NewBusinessError(
+			"PLATFORM_BASE_PRICE_NOT_FOUND",
+			"Platform base price not found for platform "+platform,
+			ErrPlatformBasePriceNotFound,
+		)
 	}
 	pp, err := s.pagePriceRepo.LatestByPlatform(ctx, platform)
 	if err != nil {
@@ -2268,17 +2560,41 @@ func (s *CampaignFlowImpl) computeCostInputs(
 	// capacity that is no longer operationally valid.
 	if campaign.Spec.UsesSmartTargeting() {
 		if s.capacityCalculationRepo == nil {
-			return 0, 0, NewBusinessError("SMART_TARGETING_EXACT_CAPACITY_REQUIRED", "A current exact Smart Targeting capacity calculation is required", ErrSmartTargetingExactCapacityRequired)
+			return 0, 0, NewBusinessError(
+				"SMART_TARGETING_EXACT_CAPACITY_REQUIRED",
+				"A current exact Smart Targeting capacity calculation is required",
+				ErrSmartTargetingExactCapacityRequired,
+			)
 		}
-		exact, err := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, &campaign)
+		exact, err := EnsureCurrentSmartTargetingCapacity(
+			ctx,
+			s.db,
+			s.campaignRepo,
+			s.selectedTagRepo,
+			s.capacityCalculationRepo,
+			s.lineNumberRepo,
+			&campaign,
+		)
 		if err != nil {
 			if errors.Is(err, ErrSmartTargetingCapacityPending) {
-				return 0, 0, NewBusinessError("SMART_TARGETING_CAPACITY_PENDING", "Exact Smart Targeting capacity calculation was submitted; please wait and retry", err)
+				return 0, 0, NewBusinessError(
+					"SMART_TARGETING_CAPACITY_PENDING",
+					"Exact Smart Targeting capacity calculation was submitted; please wait and retry",
+					err,
+				)
 			}
-			return 0, 0, NewBusinessError("SMART_TARGETING_EXACT_CAPACITY_LOOKUP_FAILED", "Failed to validate exact Smart Targeting capacity", err)
+			return 0, 0, NewBusinessError(
+				"SMART_TARGETING_EXACT_CAPACITY_LOOKUP_FAILED",
+				"Failed to validate exact Smart Targeting capacity",
+				err,
+			)
 		}
 		if exact.UsableUniqueAudienceCount < 0 {
-			return 0, 0, NewBusinessError("SMART_TARGETING_EXACT_CAPACITY_INVALID", "Exact Smart Targeting capacity is invalid", ErrInvalidState)
+			return 0, 0, NewBusinessError(
+				"SMART_TARGETING_EXACT_CAPACITY_INVALID",
+				"Exact Smart Targeting capacity is invalid",
+				ErrInvalidState,
+			)
 		}
 		return pricePerMsg, uint64(exact.UsableUniqueAudienceCount), nil
 	}
@@ -2435,7 +2751,12 @@ func (s *CampaignFlowImpl) readPlatformBasePriceFromMetadata(ctx context.Context
 
 // resolveSegmentPriceFactor reads segment price factor from transaction metadata,
 // falling back to the segment price repo if not found.
-func (s *CampaignFlowImpl) resolveSegmentPriceFactor(ctx context.Context, campaignID uint, level3s []string, platform string) (*float64, error) {
+func (s *CampaignFlowImpl) resolveSegmentPriceFactor(
+	ctx context.Context,
+	campaignID uint,
+	level3s []string,
+	platform string,
+) (*float64, error) {
 	spf, err := s.readSegmentPriceFromMetadata(ctx, campaignID)
 	if err != nil {
 		return nil, err
@@ -2557,7 +2878,11 @@ func resolveAudienceTargetingMethod(method *string, targetAudienceExcelFileUUID 
 	return resolveAudienceTargetingMethodWithSelectedTags(method, nil, targetAudienceExcelFileUUID)
 }
 
-func resolveAudienceTargetingMethodWithSelectedTags(method *string, selectedTagIDs []uint, targetAudienceExcelFileUUID *string) (string, error) {
+func resolveAudienceTargetingMethodWithSelectedTags(
+	method *string,
+	selectedTagIDs []uint,
+	targetAudienceExcelFileUUID *string,
+) (string, error) {
 	// An explicit method always wins. The UI intentionally retains values from
 	// previously explored methods, so those values must never override it.
 	if method != nil && strings.TrimSpace(*method) != "" {
@@ -2580,7 +2905,11 @@ func campaignAudienceTargetingMethod(spec models.CampaignSpec) string {
 	return spec.EffectiveAudienceTargetingMethod()
 }
 
-func (s *CampaignFlowImpl) prepareAudienceTargetingUpdate(ctx context.Context, req *dto.UpdateCampaignRequest, campaign *models.Campaign) error {
+func (s *CampaignFlowImpl) prepareAudienceTargetingUpdate(
+	ctx context.Context,
+	req *dto.UpdateCampaignRequest,
+	campaign *models.Campaign,
+) error {
 	currentMethod := campaignAudienceTargetingMethod(campaign.Spec)
 	finalMethod := currentMethod
 
@@ -2748,7 +3077,11 @@ func buildCampaignResponse(c *models.Campaign, e campaignDisplayEnrichments) dto
 }
 
 // ListCampaigns retrieves user's campaigns with pagination, ordering and filters
-func (s *CampaignFlowImpl) ListCampaigns(ctx context.Context, req *dto.ListCampaignsRequest, metadata *ClientMetadata) (*dto.ListCampaignsResponse, error) {
+func (s *CampaignFlowImpl) ListCampaigns(
+	ctx context.Context,
+	req *dto.ListCampaignsRequest,
+	metadata *ClientMetadata,
+) (*dto.ListCampaignsResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -2844,7 +3177,14 @@ func (s *CampaignFlowImpl) ListCampaigns(ctx context.Context, req *dto.ListCampa
 	// which appends the schedule_at secondary ordering to each of them.
 	orderBy := "default_schedule_at"
 	switch req.OrderBy {
-	case "oldest", "newest", "phase_test_first", "phase_execution_first", "highest_click_rate", "lowest_click_rate", "schedule_at_asc", "schedule_at_desc":
+	case "oldest",
+		"newest",
+		"phase_test_first",
+		"phase_execution_first",
+		"highest_click_rate",
+		"lowest_click_rate",
+		"schedule_at_asc",
+		"schedule_at_desc":
 		orderBy = req.OrderBy
 	case "schedule_time_asc":
 		orderBy = "schedule_at_asc"
@@ -2918,7 +3258,11 @@ func (s *CampaignFlowImpl) ListCampaigns(ctx context.Context, req *dto.ListCampa
 }
 
 // GetLastInitiatedCampaign retrieves the most recent initiated or in-progress campaign for the given customer.
-func (s *CampaignFlowImpl) GetLastInitiatedCampaign(ctx context.Context, customerID uint, metadata *ClientMetadata) (*dto.GetLastInitiatedCampaignResponse, error) {
+func (s *CampaignFlowImpl) GetLastInitiatedCampaign(
+	ctx context.Context,
+	customerID uint,
+	metadata *ClientMetadata,
+) (*dto.GetLastInitiatedCampaignResponse, error) {
 	_, err := getCustomer(ctx, s.customerRepo, customerID)
 	if err != nil {
 		return nil, NewBusinessError("GET_LAST_INITIATED_CAMPAIGN_FAILED", "Failed to get last initiated campaign", err)
@@ -2983,7 +3327,11 @@ func (s *CampaignFlowImpl) GetLastInitiatedCampaign(ctx context.Context, custome
 
 // validateCreateCampaignRequest validates the campaign creation request
 func (s *CampaignFlowImpl) validateCreateCampaignRequest(ctx context.Context, req *dto.CreateCampaignRequest) error {
-	targetingMethod, err := resolveAudienceTargetingMethodWithSelectedTags(req.AudienceTargetingMethod, req.SelectedTagIDs, req.TargetAudienceExcelFileUUID)
+	targetingMethod, err := resolveAudienceTargetingMethodWithSelectedTags(
+		req.AudienceTargetingMethod,
+		req.SelectedTagIDs,
+		req.TargetAudienceExcelFileUUID,
+	)
 	if err != nil {
 		return err
 	}
@@ -3147,7 +3495,11 @@ func getTehranLocation() *time.Location {
 }
 
 // createCampaign creates the campaign in the database
-func (s *CampaignFlowImpl) createCampaign(ctx context.Context, req *dto.CreateCampaignRequest, customer *models.Customer) (*models.Campaign, error) {
+func (s *CampaignFlowImpl) createCampaign(
+	ctx context.Context,
+	req *dto.CreateCampaignRequest,
+	customer *models.Customer,
+) (*models.Campaign, error) {
 	shortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
 	if err != nil {
 		return nil, err
@@ -3159,7 +3511,11 @@ func (s *CampaignFlowImpl) createCampaign(ctx context.Context, req *dto.CreateCa
 
 	// Build campaign spec
 	spec := models.CampaignSpec{}
-	targetingMethod, err := resolveAudienceTargetingMethodWithSelectedTags(req.AudienceTargetingMethod, req.SelectedTagIDs, req.TargetAudienceExcelFileUUID)
+	targetingMethod, err := resolveAudienceTargetingMethodWithSelectedTags(
+		req.AudienceTargetingMethod,
+		req.SelectedTagIDs,
+		req.TargetAudienceExcelFileUUID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -3249,7 +3605,13 @@ func (s *CampaignFlowImpl) createCampaign(ctx context.Context, req *dto.CreateCa
 	return c, nil
 }
 
-func (s *CampaignFlowImpl) ensureCampaignBundleAndPhase(ctx context.Context, customerID uint, bundleID *uint, phase *string, required bool) error {
+func (s *CampaignFlowImpl) ensureCampaignBundleAndPhase(
+	ctx context.Context,
+	customerID uint,
+	bundleID *uint,
+	phase *string,
+	required bool,
+) error {
 	if required && (bundleID == nil || *bundleID == 0) {
 		return ErrBundleNotFound
 	}
@@ -3943,7 +4305,8 @@ func (s *CampaignFlowImpl) expireCustomerCampaigns(ctx context.Context, customer
 			// 	CreditBalance:      newCredit,
 			// 	SpentOnCampaign:    latestBalance.SpentOnCampaign,
 			// 	AgencyShareWithTax: latestBalance.AgencyShareWithTax,
-			// 	TotalBalance:       newFree + newFrozen + latestBalance.LockedBalance + newCredit + latestBalance.SpentOnCampaign + latestBalance.AgencyShareWithTax,
+			// 	TotalBalance:       newFree + newFrozen + latestBalance.LockedBalance + newCredit + latestBalance.SpentOnCampaign +
+			// latestBalance.AgencyShareWithTax,
 			// 	Reason:             "campaign_expired_budget_refund",
 			// 	Description:        fmt.Sprintf("Refund reserved budget for expired campaign %d", campaign.ID),
 			// 	Metadata:           metaBytes,
@@ -4040,7 +4403,11 @@ func (s *CampaignFlowImpl) ReconcileUndeliveredCampaignRefund(ctx context.Contex
 // reconcileUndeliveredCampaignRefunds is scoped to one durable work item.
 // This avoids the former unbounded per-customer listing scan and lets the
 // queue retry every unexpected error rather than suppressing it in Statistics.
-func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(ctx context.Context, customerID, campaignID uint, eligibilityDelay time.Duration) error {
+func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(
+	ctx context.Context,
+	customerID, campaignID uint,
+	eligibilityDelay time.Duration,
+) error {
 	if customerID == 0 || campaignID == 0 {
 		return repository.ErrCampaignRefundReconciliationNoop
 	}
@@ -4068,7 +4435,10 @@ func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(ctx context.Conte
 			return campaignRefundManualReview(ErrScheduleTimeNotPresent)
 		}
 		if utils.UTCNow().Before(campaign.Spec.ScheduleAt.Add(eligibilityDelay)) {
-			return fmt.Errorf("campaign refund reconciliation is not eligible until %s", campaign.Spec.ScheduleAt.Add(eligibilityDelay).UTC().Format(time.RFC3339))
+			return fmt.Errorf(
+				"campaign refund reconciliation is not eligible until %s",
+				campaign.Spec.ScheduleAt.Add(eligibilityDelay).UTC().Format(time.RFC3339),
+			)
 		}
 		if campaign.NumAudience == nil {
 			return campaignRefundManualReview(errors.New("campaign audience count is missing"))
@@ -4146,7 +4516,9 @@ func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(ctx context.Conte
 		debitTx := debitTxs[0]
 
 		if debitTx.Amount < refundAmount {
-			return campaignRefundManualReview(fmt.Errorf("refund amount %d exceeds campaign debit amount %d for campaign=%d", refundAmount, debitTx.Amount, campaign.ID))
+			return campaignRefundManualReview(
+				fmt.Errorf("refund amount %d exceeds campaign debit amount %d for campaign=%d", refundAmount, debitTx.Amount, campaign.ID),
+			)
 		}
 
 		customer, err := getCustomer(txCtx, s.customerRepo, campaign.CustomerID)
@@ -4217,7 +4589,8 @@ func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(ctx context.Conte
 		// 	CreditBalance:      newCredit,
 		// 	SpentOnCampaign:    newSpentOnCampaign,
 		// 	AgencyShareWithTax: latestBalance.AgencyShareWithTax,
-		// 	TotalBalance:       newFree + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign + latestBalance.AgencyShareWithTax,
+		// 	TotalBalance:       newFree + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign +
+		// latestBalance.AgencyShareWithTax,
 		// 	Reason:             "campaign_partial_refund_for_undelivered_messages",
 		// 	Description:        fmt.Sprintf("Refund undelivered messages for campaign %d", campaign.ID),
 		// 	Metadata:           metaBytes,
@@ -4323,7 +4696,8 @@ func (s *CampaignFlowImpl) releaseFlowLock(suffix, token string) {
 	lockKey := redisKey(s.cacheConfig, "flow_lock:"+suffix)
 	// Delete only our own token. An expired lease could have been acquired by a
 	// later cancellation while this request was finishing.
-	_ = s.rc.Eval(ctx, `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`, []string{lockKey}, token).Err()
+	_ = s.rc.Eval(ctx, `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`, []string{lockKey}, token).
+		Err()
 }
 
 func parseAggregatedTotalSent(stats json.RawMessage) (uint64, bool) {
@@ -4764,7 +5138,14 @@ func campaignAudienceGradesOrDefault(grades []string) []string {
 }
 
 // createAuditLog creates an audit log entry for the campaign operation
-func (s *CampaignFlowImpl) createAuditLog(ctx context.Context, customer *models.Customer, action, description string, success bool, errorMsg *string, metadata *ClientMetadata) error {
+func (s *CampaignFlowImpl) createAuditLog(
+	ctx context.Context,
+	customer *models.Customer,
+	action, description string,
+	success bool,
+	errorMsg *string,
+	metadata *ClientMetadata,
+) error {
 	var customerID *uint
 	if customer != nil {
 		customerID = &customer.ID
@@ -4803,7 +5184,11 @@ func (s *CampaignFlowImpl) createAuditLog(ctx context.Context, customer *models.
 	return nil
 }
 
-func (s *CampaignFlowImpl) CountTargetAudienceFromExcelFile(ctx context.Context, customerID uint, targetAudienceExcelFileUUID string) (uint64, error) {
+func (s *CampaignFlowImpl) CountTargetAudienceFromExcelFile(
+	ctx context.Context,
+	customerID uint,
+	targetAudienceExcelFileUUID string,
+) (uint64, error) {
 	asset, err := s.multimediaRepo.ByUUID(ctx, targetAudienceExcelFileUUID)
 	if err != nil {
 		return 0, err
@@ -4910,7 +5295,12 @@ func buildCampaignReportExcel(rows []campaignReportRow) ([]byte, error) {
 	}
 
 	for i, row := range rows {
-		record := []string{excelSafeString(row.AudienceProfileUID), excelSafeString(row.Status), excelSafeString(row.Clicked), excelSafeString(row.Action)}
+		record := []string{
+			excelSafeString(row.AudienceProfileUID),
+			excelSafeString(row.Status),
+			excelSafeString(row.Clicked),
+			excelSafeString(row.Action),
+		}
 		cellRef, err := excelize.CoordinatesToCellName(1, i+2)
 		if err != nil {
 			return nil, err
@@ -5018,12 +5408,20 @@ func (s *CampaignFlowImpl) ExportCampaignClickReport(ctx context.Context, campai
 	allUIDs, uidToCode, err := readCampaignAudienceUIDs(campaign.ID)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available (may have expired or not yet pushed)", nil)
+			return nil, NewBusinessError(
+				"AUDIENCE_REPORT_NOT_AVAILABLE",
+				"audience report data is not available (may have expired or not yet pushed)",
+				nil,
+			)
 		}
 		return nil, NewBusinessError("AUDIENCE_UIDS_FETCH_FAILED", "failed to fetch audience UIDs", err)
 	}
 	if len(allUIDs) == 0 {
-		return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available (may have expired or not yet pushed)", nil)
+		return nil, NewBusinessError(
+			"AUDIENCE_REPORT_NOT_AVAILABLE",
+			"audience report data is not available (may have expired or not yet pushed)",
+			nil,
+		)
 	}
 
 	clickedCodes := make(map[string]struct{})

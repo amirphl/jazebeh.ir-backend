@@ -6,10 +6,14 @@ import (
 )
 
 func TestSameExecutionReservationRequestSnapshotIgnoresJSONBFormatting(t *testing.T) {
-	created := json.RawMessage(`{"tag_ids":[14696,15557,16270,16456,17000],"score_classes":["A"],"allowed_colors":["white","pink"],"platform":"sms"}`)
+	created := json.RawMessage(
+		`{"tag_ids":[14696,15557,16270,16456,17000],"score_classes":["A"],"allowed_colors":["white","pink"],"platform":"sms"}`,
+	)
 	// PostgreSQL JSONB returns a normalized textual representation, not the
 	// compact bytes originally written by json.Marshal.
-	readBack := json.RawMessage(`{ "platform": "sms", "allowed_colors": ["white", "pink"], "score_classes": ["A"], "tag_ids": [14696, 15557, 16270, 16456, 17000] }`)
+	readBack := json.RawMessage(
+		`{ "platform": "sms", "allowed_colors": ["white", "pink"], "score_classes": ["A"], "tag_ids": [14696, 15557, 16270, 16456, 17000] }`,
+	)
 
 	if !sameExecutionReservationRequestSnapshot(created, readBack) {
 		t.Fatal("semantically identical JSONB snapshots must match")

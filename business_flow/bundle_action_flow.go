@@ -33,6 +33,7 @@ const (
 
 const defaultBundleActionFileStorageRoot = "data/uploads/bundle-action-files"
 
+// BundleActionFlow defines bundle action-file management and reporting operations.
 type BundleActionFlow interface {
 	Upload(context.Context, uint, uint, string, string, io.Reader) (*models.BundleActionFile, error)
 	Get(context.Context, uint, uint, int64) (*models.BundleActionFile, error)
@@ -43,148 +44,218 @@ type BundleActionFlow interface {
 	CampaignMetric(context.Context, uint, string) (*models.BundleActionCampaignMetric, error)
 	ExecuteBundleActionFile(context.Context, int64, time.Time) error
 }
+
+// BundleActionFlowImpl coordinates bundle action-file storage, processing, and reporting.
 type BundleActionFlowImpl struct {
-	repo         repository.BundleActionRepository
-	bundleRepo   repository.BundleRepository
-	campaignRepo repository.CampaignRepository
-	db           *gorm.DB
-	storageRoot  string
+	actionRepository   repository.BundleActionRepository
+	bundleRepository   repository.BundleRepository
+	campaignRepository repository.CampaignRepository
+	db                 *gorm.DB
+	storageRoot        string
 }
 
-func NewBundleActionFlow(repo repository.BundleActionRepository, bundles repository.BundleRepository, campaigns repository.CampaignRepository, db *gorm.DB) *BundleActionFlowImpl {
+// NewBundleActionFlow creates a flow for managing bundle action files.
+func NewBundleActionFlow(
+	actionRepository repository.BundleActionRepository,
+	bundleRepository repository.BundleRepository,
+	campaignRepository repository.CampaignRepository,
+	db *gorm.DB,
+) *BundleActionFlowImpl {
 	storageRoot := strings.TrimSpace(os.Getenv("BUNDLE_ACTION_FILE_STORAGE_ROOT"))
 	if storageRoot == "" {
 		storageRoot = defaultBundleActionFileStorageRoot
 	}
-	return &BundleActionFlowImpl{repo: repo, bundleRepo: bundles, campaignRepo: campaigns, db: db, storageRoot: storageRoot}
+	return &BundleActionFlowImpl{
+		actionRepository:   actionRepository,
+		bundleRepository:   bundleRepository,
+		campaignRepository: campaignRepository,
+		db:                 db,
+		storageRoot:        storageRoot,
+	}
 }
-func (s *BundleActionFlowImpl) bundleActionOwnedBundle(ctx context.Context, customerID, bundleID uint) (*models.Bundle, error) {
-	b, err := s.bundleRepo.ByID(ctx, bundleID)
+
+// getCustomerBundle returns a bundle after confirming that it belongs to the customer.
+func (flow *BundleActionFlowImpl) getCustomerBundle(ctx context.Context, customerID, bundleID uint) (*models.Bundle, error) {
+	bundle, err := flow.bundleRepository.ByID(ctx, bundleID)
 	if err != nil {
 		return nil, err
 	}
-	if b.CustomerID != customerID {
+	if bundle.CustomerID != customerID {
 		return nil, ErrBundleAccessDenied
 	}
-	return b, nil
+	return bundle, nil
 }
-func bundleActionFileStoragePath(root string, bundleID uint, id int64) string {
-	return filepath.Join(root, fmt.Sprintf("%d", bundleID), fmt.Sprintf("%d.xlsx", id))
+
+// actionFileStoragePath returns the destination path for a bundle action file.
+func actionFileStoragePath(storageRoot string, bundleID uint, actionFileID int64) string {
+	return filepath.Join(storageRoot, fmt.Sprintf("%d", bundleID), fmt.Sprintf("%d.xlsx", actionFileID))
 }
-func (s *BundleActionFlowImpl) Upload(ctx context.Context, customerID, bundleID uint, name, actionLevel string, source io.Reader) (*models.BundleActionFile, error) {
-	if _, err := s.bundleActionOwnedBundle(ctx, customerID, bundleID); err != nil {
+
+// Upload validates, stores, and queues an XLSX action file for a customer bundle.
+func (flow *BundleActionFlowImpl) Upload(
+	ctx context.Context,
+	customerID, bundleID uint,
+	fileName, actionLevel string,
+	source io.Reader,
+) (*models.BundleActionFile, error) {
+	if _, err := flow.getCustomerBundle(ctx, customerID, bundleID); err != nil {
 		return nil, err
 	}
-	if strings.ToLower(filepath.Ext(name)) != ".xlsx" {
+	if strings.ToLower(filepath.Ext(fileName)) != ".xlsx" {
 		return nil, NewBusinessError("ACTION_FILE_FORMAT_INVALID", "only .xlsx action files are supported", nil)
 	}
-	data, err := io.ReadAll(io.LimitReader(source, maxBundleActionFileBytes+1))
+	fileData, err := io.ReadAll(io.LimitReader(source, maxBundleActionFileBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxBundleActionFileBytes {
+	if int64(len(fileData)) > maxBundleActionFileBytes {
 		return nil, NewBusinessError("ACTION_FILE_TOO_LARGE", "action file exceeds the 50 MB limit", nil)
 	}
-	if len(data) == 0 {
+	if len(fileData) == 0 {
 		return nil, NewBusinessError("ACTION_FILE_EMPTY", "action file is empty", nil)
 	}
-	hash := sha256.Sum256(data)
+	fileHash := sha256.Sum256(fileData)
 	now := utils.UTCNow()
-	row := &models.BundleActionFile{BundleID: bundleID, OriginalFileName: filepath.Base(name), ActionLevel: actionLevel, ContentSHA256: hex.EncodeToString(hash[:]), Status: models.BundleActionFilePending, UploadedByCustomerID: customerID, CreatedAt: now, UpdatedAt: now, StoragePath: "pending"}
-	if err := s.repo.Create(ctx, row); err != nil {
+	actionFile := &models.BundleActionFile{
+		BundleID:             bundleID,
+		OriginalFileName:     filepath.Base(fileName),
+		ActionLevel:          actionLevel,
+		ContentSHA256:        hex.EncodeToString(fileHash[:]),
+		Status:               models.BundleActionFilePending,
+		UploadedByCustomerID: customerID,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		StoragePath:          "pending",
+	}
+	if err := flow.actionRepository.Create(ctx, actionFile); err != nil {
 		return nil, err
 	}
-	path := bundleActionFileStoragePath(s.storageRoot, bundleID, row.ID)
-	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+	storagePath := actionFileStoragePath(flow.storageRoot, bundleID, actionFile.ID)
+	if err := os.MkdirAll(filepath.Dir(storagePath), 0750); err != nil {
 		return nil, fmt.Errorf("create action storage: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0640); err != nil {
+	if err := os.WriteFile(storagePath, fileData, 0640); err != nil {
 		return nil, fmt.Errorf("store action file: %w", err)
 	}
-	if err := s.db.WithContext(ctx).Model(&models.BundleActionFile{}).Where("id=?", row.ID).Update("storage_path", path).Error; err != nil {
+	// TODO: Move to repo.
+	if err := flow.db.WithContext(ctx).Model(&models.BundleActionFile{}).Where("id=?", actionFile.ID).Update("storage_path", storagePath).Error; err != nil {
 		return nil, err
 	}
-	row.StoragePath = path
-	return row, nil
+	actionFile.StoragePath = storagePath
+	return actionFile, nil
 }
-func (s *BundleActionFlowImpl) Get(ctx context.Context, c, b uint, id int64) (*models.BundleActionFile, error) {
-	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
+
+// Get returns an action file when it belongs to the customer's bundle.
+func (flow *BundleActionFlowImpl) Get(
+	ctx context.Context,
+	customerID, bundleID uint,
+	actionFileID int64,
+) (*models.BundleActionFile, error) {
+	if _, err := flow.getCustomerBundle(ctx, customerID, bundleID); err != nil {
 		return nil, err
 	}
-	x, err := s.repo.ByID(ctx, id)
-	if err == nil && x.BundleID != b {
+	actionFile, err := flow.actionRepository.ByID(ctx, actionFileID)
+	if err == nil && actionFile.BundleID != bundleID {
 		return nil, ErrBundleAccessDenied
 	}
-	return x, err
+	return actionFile, err
 }
-func (s *BundleActionFlowImpl) List(ctx context.Context, c, b uint, page, limit int) ([]*models.BundleActionFile, int64, error) {
-	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
+
+// List returns a page of action files for a customer's bundle.
+func (flow *BundleActionFlowImpl) List(
+	ctx context.Context,
+	customerID, bundleID uint,
+	page, limit int,
+) ([]*models.BundleActionFile, int64, error) {
+	if _, err := flow.getCustomerBundle(ctx, customerID, bundleID); err != nil {
 		return nil, 0, err
 	}
-	return s.repo.List(ctx, b, limit, (page-1)*limit)
+	return flow.actionRepository.List(ctx, bundleID, limit, (page-1)*limit)
 }
-func (s *BundleActionFlowImpl) Delete(ctx context.Context, c, b uint, id int64) error {
-	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
+
+// Delete requests deletion of a processed action file owned by the customer's bundle.
+func (flow *BundleActionFlowImpl) Delete(ctx context.Context, customerID, bundleID uint, actionFileID int64) error {
+	if _, err := flow.getCustomerBundle(ctx, customerID, bundleID); err != nil {
 		return err
 	}
-	x, err := s.repo.ByID(ctx, id)
+	actionFile, err := flow.actionRepository.ByID(ctx, actionFileID)
 	if err != nil {
 		return err
 	}
-	if x.BundleID != b {
+	if actionFile.BundleID != bundleID {
 		return ErrBundleAccessDenied
 	}
-	if x.Status != models.BundleActionFileProcessed {
+	if actionFile.Status != models.BundleActionFileProcessed {
 		return NewBusinessError("ACTION_FILE_NOT_DELETABLE", "only processed action files can be deleted", nil)
 	}
-	return s.repo.RequestDelete(ctx, id, c, utils.UTCNow())
+	return flow.actionRepository.RequestDelete(ctx, actionFileID, customerID, utils.UTCNow())
 }
-func (s *BundleActionFlowImpl) Summary(ctx context.Context, c, b uint) (*models.BundleActionSummary, error) {
-	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
+
+// Summary returns aggregate action metrics for a customer's bundle.
+func (flow *BundleActionFlowImpl) Summary(ctx context.Context, customerID, bundleID uint) (*models.BundleActionSummary, error) {
+	if _, err := flow.getCustomerBundle(ctx, customerID, bundleID); err != nil {
 		return nil, err
 	}
-	return s.repo.Summary(ctx, b)
+	return flow.actionRepository.Summary(ctx, bundleID)
 }
-func (s *BundleActionFlowImpl) TagMetrics(ctx context.Context, c, b uint) ([]*models.BundleActionTagMetric, error) {
-	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
+
+// TagMetrics returns action metrics grouped by tag for a customer's bundle.
+func (flow *BundleActionFlowImpl) TagMetrics(ctx context.Context, customerID, bundleID uint) ([]*models.BundleActionTagMetric, error) {
+	if _, err := flow.getCustomerBundle(ctx, customerID, bundleID); err != nil {
 		return nil, err
 	}
-	return s.repo.TagMetrics(ctx, b)
+	return flow.actionRepository.TagMetrics(ctx, bundleID)
 }
-func (s *BundleActionFlowImpl) CampaignMetric(ctx context.Context, c uint, campaignUUID string) (*models.BundleActionCampaignMetric, error) {
-	campaign, err := getCampaign(ctx, s.campaignRepo, campaignUUID, c)
+
+// CampaignMetric returns action metrics for a campaign, if the campaign belongs to a bundle.
+func (flow *BundleActionFlowImpl) CampaignMetric(
+	ctx context.Context,
+	customerID uint,
+	campaignUUID string,
+) (*models.BundleActionCampaignMetric, error) {
+	campaign, err := getCampaign(ctx, flow.campaignRepository, campaignUUID, customerID)
 	if err != nil {
 		return nil, err
 	}
 	if campaign.BundleID == nil {
 		return &models.BundleActionCampaignMetric{CampaignID: campaign.ID}, nil
 	}
-	return s.repo.CampaignMetric(ctx, *campaign.BundleID, campaign.ID)
+	return flow.actionRepository.CampaignMetric(ctx, *campaign.BundleID, campaign.ID)
 }
-func (s *BundleActionFlowImpl) ExecuteBundleActionFile(ctx context.Context, id int64, lease time.Time) error {
-	file, err := s.repo.ByID(ctx, id)
+
+// ExecuteBundleActionFile processes a claimed action file or completes its pending deletion.
+func (flow *BundleActionFlowImpl) ExecuteBundleActionFile(ctx context.Context, actionFileID int64, _ time.Time) error {
+	actionFile, err := flow.actionRepository.ByID(ctx, actionFileID)
 	if err != nil {
 		return err
 	}
-	if file.Status == models.BundleActionFileDeletePending {
-		return s.repo.Complete(ctx, id, utils.UTCNow())
+	if actionFile.Status == models.BundleActionFileDeletePending {
+		return flow.actionRepository.Complete(ctx, actionFileID, utils.UTCNow())
 	}
-	if file.Status != models.BundleActionFileProcessing {
+	if actionFile.Status != models.BundleActionFileProcessing {
 		return nil
 	}
-	uids, total, dupes, invalid, err := parseBundleActionFileXLSX(file.StoragePath)
+	uids, totalRowCount, duplicateUIDCount, invalidUIDCount, err := parseBundleActionXLSX(actionFile.StoragePath)
 	if err != nil {
-		_ = s.repo.Fail(context.Background(), id, utils.UTCNow(), "ACTION_FILE_PARSE_FAILED", "The action file could not be parsed")
+		_ = flow.actionRepository.Fail(
+			context.Background(),
+			actionFileID,
+			utils.UTCNow(),
+			"ACTION_FILE_PARSE_FAILED",
+			"The action file could not be parsed",
+		)
 		return err
 	}
 	now := utils.UTCNow()
-	if err := s.repo.StoreUIDsAndResult(ctx, id, file.BundleID, uids, total, dupes, invalid, now); err != nil {
+	if err := flow.actionRepository.StoreUIDsAndResult(ctx, actionFileID, actionFile.BundleID, uids, totalRowCount, duplicateUIDCount, invalidUIDCount, now); err != nil {
 		return err
 	}
-	return s.repo.Complete(ctx, id, now)
+	return flow.actionRepository.Complete(ctx, actionFileID, now)
 }
-func parseBundleActionFileXLSX(path string) (uids []string, total, duplicates, invalid int64, err error) {
-	f, err := excelize.OpenFile(path, excelize.Options{
+
+// parseBundleActionXLSX extracts sorted, unique valid UIDs and row-count metrics from an XLSX file.
+func parseBundleActionXLSX(filePath string) (uids []string, totalRows, duplicateUIDs, invalidUIDs int64, err error) {
+	workbook, err := excelize.OpenFile(filePath, excelize.Options{
 		RawCellValue:      true,
 		UnzipSizeLimit:    maxBundleActionFileUncompressedBytes,
 		UnzipXMLSizeLimit: maxBundleActionFileXMLInMemoryBytes,
@@ -192,86 +263,87 @@ func parseBundleActionFileXLSX(path string) (uids []string, total, duplicates, i
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	defer f.Close()
-	sheets := f.GetSheetList()
-	if len(sheets) == 0 {
+	defer workbook.Close()
+
+	worksheetNames := workbook.GetSheetList()
+	if len(worksheetNames) == 0 {
 		return nil, 0, 0, 0, errors.New("no worksheet")
 	}
-	rows, err := f.Rows(sheets[0])
+	rowIterator, err := workbook.Rows(worksheetNames[0])
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		if err := rows.Error(); err != nil {
+	defer rowIterator.Close()
+	if !rowIterator.Next() {
+		if err := rowIterator.Error(); err != nil {
 			return nil, 0, 0, 0, err
 		}
 		return nil, 0, 0, 0, errors.New("no data rows")
 	}
-	header, err := rows.Columns(excelize.Options{RawCellValue: true})
+	firstRow, err := rowIterator.Columns(excelize.Options{RawCellValue: true})
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	uidColumn := -1
-	for i, h := range header {
-		if strings.EqualFold(strings.TrimSpace(h), "uid") {
-			if uidColumn >= 0 {
+	uidColumnIndex := -1
+	for columnIndex, columnName := range firstRow {
+		if strings.EqualFold(strings.TrimSpace(columnName), "uid") {
+			if uidColumnIndex >= 0 {
 				return nil, 0, 0, 0, errors.New("duplicate uid column")
 			}
-			uidColumn = i
+			uidColumnIndex = columnIndex
 		}
 	}
 	// A uid header is optional. A first row with a uid column is treated as the
 	// header; otherwise the first column is a headerless UID list and its first
 	// row is processed as data.
-	row := header
-	if uidColumn < 0 {
-		uidColumn = 0
-	} else if !rows.Next() {
-		if err := rows.Error(); err != nil {
+	currentRow := firstRow
+	if uidColumnIndex < 0 {
+		uidColumnIndex = 0
+	} else if !rowIterator.Next() {
+		if err := rowIterator.Error(); err != nil {
 			return nil, 0, 0, 0, err
 		}
 		return nil, 0, 0, 0, errors.New("no data rows")
-	} else if row, err = rows.Columns(excelize.Options{RawCellValue: true}); err != nil {
+	} else if currentRow, err = rowIterator.Columns(excelize.Options{RawCellValue: true}); err != nil {
 		return nil, 0, 0, 0, err
 	}
-	seen := map[string]struct{}{}
+	uniqueUIDs := map[string]struct{}{}
 	for {
-		total++
-		if total > maxBundleActionFileRows {
-			return nil, total, duplicates, invalid, fmt.Errorf("action file exceeds the %d row limit", maxBundleActionFileRows)
+		totalRows++
+		if totalRows > maxBundleActionFileRows {
+			return nil, totalRows, duplicateUIDs, invalidUIDs, fmt.Errorf("action file exceeds the %d row limit", maxBundleActionFileRows)
 		}
 		var uid string
-		if uidColumn < len(row) {
-			uid = strings.TrimSpace(row[uidColumn])
+		if uidColumnIndex < len(currentRow) {
+			uid = strings.TrimSpace(currentRow[uidColumnIndex])
 		}
 		if uid == "" || len(uid) > 255 {
-			invalid++
-		} else if _, ok := seen[uid]; ok {
-			duplicates++
+			invalidUIDs++
+		} else if _, exists := uniqueUIDs[uid]; exists {
+			duplicateUIDs++
 		} else {
-			seen[uid] = struct{}{}
+			uniqueUIDs[uid] = struct{}{}
 		}
-		if !rows.Next() {
+		if !rowIterator.Next() {
 			break
 		}
-		row, err = rows.Columns(excelize.Options{RawCellValue: true})
+		currentRow, err = rowIterator.Columns(excelize.Options{RawCellValue: true})
 		if err != nil {
-			return nil, total, duplicates, invalid, err
+			return nil, totalRows, duplicateUIDs, invalidUIDs, err
 		}
 	}
-	if err := rows.Error(); err != nil {
-		return nil, total, duplicates, invalid, err
+	if err := rowIterator.Error(); err != nil {
+		return nil, totalRows, duplicateUIDs, invalidUIDs, err
 	}
-	if len(seen) == 0 {
-		return nil, total, duplicates, invalid, errors.New("no valid uid")
+	if len(uniqueUIDs) == 0 {
+		return nil, totalRows, duplicateUIDs, invalidUIDs, errors.New("no valid uid")
 	}
-	uids = make([]string, 0, len(seen))
-	for uid := range seen {
+	uids = make([]string, 0, len(uniqueUIDs))
+	for uid := range uniqueUIDs {
 		uids = append(uids, uid)
 	}
 	sort.Strings(uids)
-	return uids, total, duplicates, invalid, nil
+	return uids, totalRows, duplicateUIDs, invalidUIDs, nil
 }
 
 var _ BundleActionFlow = (*BundleActionFlowImpl)(nil)

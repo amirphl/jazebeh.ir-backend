@@ -15,13 +15,17 @@ import (
 )
 
 var (
-	ErrSmartTargetingExecutionReservationUnavailable          = errors.New("smart targeting execution reservation is unavailable")
-	ErrSmartTargetingExecutionReservationMissing              = errors.New("smart targeting execution reservation is missing")
-	ErrSmartTargetingExecutionReservationConflict             = errors.New("smart targeting execution reservation conflicts with current bundle availability")
-	ErrSmartTargetingExecutionReservationInsufficientCapacity = errors.New("smart targeting execution reservation has insufficient eligible capacity")
-	ErrSmartTargetingExecutionReservationStale                = errors.New("smart targeting execution reservation is stale")
-	ErrSmartTargetingExecutionReservationCorrupt              = errors.New("smart targeting execution reservation is corrupt")
-	ErrSmartTargetingExecutionReservationConcurrency          = errors.New("smart targeting execution reservation changed concurrently")
+	ErrSmartTargetingExecutionReservationUnavailable = errors.New("smart targeting execution reservation is unavailable")
+	ErrSmartTargetingExecutionReservationMissing     = errors.New("smart targeting execution reservation is missing")
+	ErrSmartTargetingExecutionReservationConflict    = errors.New(
+		"smart targeting execution reservation conflicts with current bundle availability",
+	)
+	ErrSmartTargetingExecutionReservationInsufficientCapacity = errors.New(
+		"smart targeting execution reservation has insufficient eligible capacity",
+	)
+	ErrSmartTargetingExecutionReservationStale       = errors.New("smart targeting execution reservation is stale")
+	ErrSmartTargetingExecutionReservationCorrupt     = errors.New("smart targeting execution reservation is corrupt")
+	ErrSmartTargetingExecutionReservationConcurrency = errors.New("smart targeting execution reservation changed concurrently")
 )
 
 // ExecutionReservationRequestSnapshot is persisted verbatim in the immutable
@@ -39,7 +43,12 @@ type CampaignTargetingExecutionReservationSnapshot struct {
 }
 
 type CampaignTargetingExecutionReservationRepository interface {
-	ReserveForCampaign(context.Context, *models.Campaign, *models.CampaignTargetingExecutionReservationHeader, []models.CampaignTargetingExecutionReservation) error
+	ReserveForCampaign(
+		context.Context,
+		*models.Campaign,
+		*models.CampaignTargetingExecutionReservationHeader,
+		[]models.CampaignTargetingExecutionReservation,
+	) error
 	ActiveReservedForCampaign(context.Context, uint, int64) (*CampaignTargetingExecutionReservationSnapshot, error)
 	ValidateMaterializedForCampaign(context.Context, uint, uint, int64, []int64) error
 	HasActiveRowsForCampaign(context.Context, uint) (bool, error)
@@ -88,14 +97,19 @@ func validExecutionReservationHeader(h *models.CampaignTargetingExecutionReserva
 		len(h.SelectionInputHash) == 64 && len(h.AllocationFingerprint) == 64 && len(h.RequestSnapshot) > 0
 }
 
-func validateExecutionReservationRows(c *models.Campaign, h *models.CampaignTargetingExecutionReservationHeader, rows []models.CampaignTargetingExecutionReservation) error {
+func validateExecutionReservationRows(
+	c *models.Campaign,
+	h *models.CampaignTargetingExecutionReservationHeader,
+	rows []models.CampaignTargetingExecutionReservation,
+) error {
 	if c == nil || c.BundleID == nil || *c.BundleID == 0 || !validExecutionReservationHeader(h, c, int64(len(rows))) || len(rows) == 0 {
 		return ErrSmartTargetingExecutionReservationUnavailable
 	}
 	seen := make(map[int64]struct{}, len(rows))
 	for i := range rows {
 		row := &rows[i]
-		if row.CampaignID != c.ID || row.BundleID != *c.BundleID || row.AudienceID <= 0 || row.AssignedTagID == 0 || row.SelectionOrder != int64(i) {
+		if row.CampaignID != c.ID || row.BundleID != *c.BundleID || row.AudienceID <= 0 || row.AssignedTagID == 0 ||
+			row.SelectionOrder != int64(i) {
 			return ErrSmartTargetingExecutionReservationUnavailable
 		}
 		if _, duplicate := seen[row.AudienceID]; duplicate {
@@ -106,7 +120,9 @@ func validateExecutionReservationRows(c *models.Campaign, h *models.CampaignTarg
 	return nil
 }
 
-func decodeExecutionReservationSnapshot(h *models.CampaignTargetingExecutionReservationHeader) (*ExecutionReservationRequestSnapshot, error) {
+func decodeExecutionReservationSnapshot(
+	h *models.CampaignTargetingExecutionReservationHeader,
+) (*ExecutionReservationRequestSnapshot, error) {
 	if h == nil {
 		return nil, ErrSmartTargetingExecutionReservationMissing
 	}
@@ -120,7 +136,12 @@ func decodeExecutionReservationSnapshot(h *models.CampaignTargetingExecutionRese
 // ReserveForCampaign runs only in the short finalization transaction. Candidate
 // discovery occurs before the Bundle lock; this method then atomically checks
 // all direct mutable constraints/conflicts and writes header plus members.
-func (r *CampaignTargetingExecutionReservationRepositoryImpl) ReserveForCampaign(ctx context.Context, c *models.Campaign, h *models.CampaignTargetingExecutionReservationHeader, rows []models.CampaignTargetingExecutionReservation) error {
+func (r *CampaignTargetingExecutionReservationRepositoryImpl) ReserveForCampaign(
+	ctx context.Context,
+	c *models.Campaign,
+	h *models.CampaignTargetingExecutionReservationHeader,
+	rows []models.CampaignTargetingExecutionReservation,
+) error {
 	if err := validateExecutionReservationRows(c, h, rows); err != nil {
 		return err
 	}
@@ -131,7 +152,12 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ReserveForCampaign
 		if existing.State != "active" {
 			return ErrSmartTargetingExecutionReservationStale
 		}
-		if existing.BundleID != h.BundleID || existing.Phase != h.Phase || existing.ReservationVersion != h.ReservationVersion || existing.RequestedAudienceCount != h.RequestedAudienceCount || existing.SelectionInputVersion != h.SelectionInputVersion || existing.SelectionInputHash != h.SelectionInputHash || existing.AllocationFingerprintVersion != h.AllocationFingerprintVersion || existing.AllocationFingerprint != h.AllocationFingerprint {
+		if existing.BundleID != h.BundleID || existing.Phase != h.Phase || existing.ReservationVersion != h.ReservationVersion ||
+			existing.RequestedAudienceCount != h.RequestedAudienceCount ||
+			existing.SelectionInputVersion != h.SelectionInputVersion ||
+			existing.SelectionInputHash != h.SelectionInputHash ||
+			existing.AllocationFingerprintVersion != h.AllocationFingerprintVersion ||
+			existing.AllocationFingerprint != h.AllocationFingerprint {
 			return ErrSmartTargetingExecutionReservationConcurrency
 		}
 		snapshot, readErr := r.activeSnapshot(ctx, &existing, int64(len(rows)))
@@ -194,7 +220,11 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ReserveForCampaign
 // profiles can shift p33/p66 and reclassify an unchanged member. Persist and
 // validate the original bounds, or re-evaluate every proposed member against
 // current bounds while holding the Bundle lock.
-func lockAndValidateExecutionReservationScores(ctx context.Context, db *gorm.DB, reservations []models.CampaignTargetingExecutionReservation) error {
+func lockAndValidateExecutionReservationScores(
+	ctx context.Context,
+	db *gorm.DB,
+	reservations []models.CampaignTargetingExecutionReservation,
+) error {
 	ids := make([]int64, 0, len(reservations))
 	planned := make(map[int64]*float64, len(reservations))
 	for _, reservation := range reservations {
@@ -250,8 +280,16 @@ func executionReservationInsertError(err error, header bool) error {
 	return fmt.Errorf("create execution reservation members: %w", err)
 }
 
-func (r *CampaignTargetingExecutionReservationRepositoryImpl) activeSnapshot(ctx context.Context, h *models.CampaignTargetingExecutionReservationHeader, expected int64) (*CampaignTargetingExecutionReservationSnapshot, error) {
-	if h == nil || h.State != "active" || h.Phase != models.CampaignPhaseExecution || h.ReservationVersion != models.SmartTargetingExecutionReservationSchemaVersion || h.RequestedAudienceCount != expected || h.SelectionInputVersion != models.SmartTargetingExecutionReservationSelectionInputVersion || h.AllocationFingerprintVersion != models.SmartTargetingExecutionReservationAllocationFingerprintVersion {
+func (r *CampaignTargetingExecutionReservationRepositoryImpl) activeSnapshot(
+	ctx context.Context,
+	h *models.CampaignTargetingExecutionReservationHeader,
+	expected int64,
+) (*CampaignTargetingExecutionReservationSnapshot, error) {
+	if h == nil || h.State != "active" || h.Phase != models.CampaignPhaseExecution ||
+		h.ReservationVersion != models.SmartTargetingExecutionReservationSchemaVersion ||
+		h.RequestedAudienceCount != expected ||
+		h.SelectionInputVersion != models.SmartTargetingExecutionReservationSelectionInputVersion ||
+		h.AllocationFingerprintVersion != models.SmartTargetingExecutionReservationAllocationFingerprintVersion {
 		return nil, ErrSmartTargetingExecutionReservationCorrupt
 	}
 	if _, err := decodeExecutionReservationSnapshot(h); err != nil {
@@ -266,7 +304,8 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) activeSnapshot(ctx
 	}
 	seen := make(map[int64]struct{}, len(rows))
 	for i, row := range rows {
-		if row.BundleID != h.BundleID || row.AudienceID <= 0 || row.AssignedTagID == 0 || row.SelectionOrder != int64(i) || row.State != "active" {
+		if row.BundleID != h.BundleID || row.AudienceID <= 0 || row.AssignedTagID == 0 || row.SelectionOrder != int64(i) ||
+			row.State != "active" {
 			return nil, ErrSmartTargetingExecutionReservationCorrupt
 		}
 		if _, duplicate := seen[row.AudienceID]; duplicate {
@@ -277,7 +316,11 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) activeSnapshot(ctx
 	return &CampaignTargetingExecutionReservationSnapshot{Header: h, Members: rows}, nil
 }
 
-func (r *CampaignTargetingExecutionReservationRepositoryImpl) ActiveReservedForCampaign(ctx context.Context, campaignID uint, expected int64) (*CampaignTargetingExecutionReservationSnapshot, error) {
+func (r *CampaignTargetingExecutionReservationRepositoryImpl) ActiveReservedForCampaign(
+	ctx context.Context,
+	campaignID uint,
+	expected int64,
+) (*CampaignTargetingExecutionReservationSnapshot, error) {
 	if campaignID == 0 || expected <= 0 {
 		return nil, ErrSmartTargetingExecutionReservationUnavailable
 	}
@@ -301,7 +344,11 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ActiveReservedForC
 // the legacy reservation reader. It intentionally performs no profile lookup:
 // the immutable candidate rows are the reservation after the final money
 // transaction commits.
-func (r *CampaignTargetingExecutionReservationRepositoryImpl) committedCalculationSnapshot(ctx context.Context, campaignID uint, expected int64) (*CampaignTargetingExecutionReservationSnapshot, error) {
+func (r *CampaignTargetingExecutionReservationRepositoryImpl) committedCalculationSnapshot(
+	ctx context.Context,
+	campaignID uint,
+	expected int64,
+) (*CampaignTargetingExecutionReservationSnapshot, error) {
 	var calculation models.CampaignTargetingExecutionCalculation
 	if err := r.getDB(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationCommitted).
@@ -311,7 +358,8 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) committedCalculati
 		}
 		return nil, err
 	}
-	if calculation.RequestedAudienceCount != expected || calculation.BundleID == 0 || calculation.CalculationVersion != models.SmartTargetingExecutionCalculationVersion {
+	if calculation.RequestedAudienceCount != expected || calculation.BundleID == 0 ||
+		calculation.CalculationVersion != models.SmartTargetingExecutionCalculationVersion {
 		return nil, ErrSmartTargetingExecutionReservationCorrupt
 	}
 	var members []models.CampaignTargetingExecutionCalculationMember
@@ -331,9 +379,33 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) committedCalculati
 			return nil, ErrSmartTargetingExecutionReservationCorrupt
 		}
 		seen[member.AudienceID] = struct{}{}
-		rows = append(rows, models.CampaignTargetingExecutionReservation{CampaignID: campaignID, BundleID: calculation.BundleID, AudienceID: member.AudienceID, AssignedTagID: member.AssignedTagID, SelectionOrder: member.SelectionOrder, AudienceScore: member.AudienceScore, State: "active"})
+		rows = append(
+			rows,
+			models.CampaignTargetingExecutionReservation{
+				CampaignID:     campaignID,
+				BundleID:       calculation.BundleID,
+				AudienceID:     member.AudienceID,
+				AssignedTagID:  member.AssignedTagID,
+				SelectionOrder: member.SelectionOrder,
+				AudienceScore:  member.AudienceScore,
+				State:          "active",
+			},
+		)
 	}
-	header := &models.CampaignTargetingExecutionReservationHeader{CampaignID: campaignID, BundleID: calculation.BundleID, Phase: models.CampaignPhaseExecution, ReservationVersion: models.SmartTargetingExecutionReservationSchemaVersion, RequestedAudienceCount: calculation.RequestedAudienceCount, CandidateGeneration: models.SmartTargetingCapacityAlgorithmVersion, SelectionInputVersion: models.SmartTargetingExecutionReservationSelectionInputVersion, SelectionInputHash: calculation.SelectionInputHash, AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion, AllocationFingerprint: calculation.AllocationFingerprint, RequestSnapshot: calculation.RequestSnapshot, State: "active"}
+	header := &models.CampaignTargetingExecutionReservationHeader{
+		CampaignID:                   campaignID,
+		BundleID:                     calculation.BundleID,
+		Phase:                        models.CampaignPhaseExecution,
+		ReservationVersion:           models.SmartTargetingExecutionReservationSchemaVersion,
+		RequestedAudienceCount:       calculation.RequestedAudienceCount,
+		CandidateGeneration:          models.SmartTargetingCapacityAlgorithmVersion,
+		SelectionInputVersion:        models.SmartTargetingExecutionReservationSelectionInputVersion,
+		SelectionInputHash:           calculation.SelectionInputHash,
+		AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion,
+		AllocationFingerprint:        calculation.AllocationFingerprint,
+		RequestSnapshot:              calculation.RequestSnapshot,
+		State:                        "active",
+	}
 	return &CampaignTargetingExecutionReservationSnapshot{Header: header, Members: rows}, nil
 }
 
@@ -341,7 +413,12 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) committedCalculati
 // created Bundle selection is trusted for a modern campaign only when its
 // ordered members exactly equal the corresponding materialized execution
 // reservation; otherwise a direct/partial write could bypass the frozen set.
-func (r *CampaignTargetingExecutionReservationRepositoryImpl) ValidateMaterializedForCampaign(ctx context.Context, campaignID, bundleID uint, expected int64, audienceIDs []int64) error {
+func (r *CampaignTargetingExecutionReservationRepositoryImpl) ValidateMaterializedForCampaign(
+	ctx context.Context,
+	campaignID, bundleID uint,
+	expected int64,
+	audienceIDs []int64,
+) error {
 	if campaignID == 0 || bundleID == 0 || expected <= 0 || int64(len(audienceIDs)) != expected {
 		return ErrSmartTargetingExecutionReservationCorrupt
 	}
@@ -367,7 +444,11 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ValidateMaterializ
 		}
 		return err
 	}
-	if h.State != "materialized" || h.BundleID != bundleID || h.Phase != models.CampaignPhaseExecution || h.ReservationVersion != models.SmartTargetingExecutionReservationSchemaVersion || h.RequestedAudienceCount != expected || h.SelectionInputVersion != models.SmartTargetingExecutionReservationSelectionInputVersion || h.AllocationFingerprintVersion != models.SmartTargetingExecutionReservationAllocationFingerprintVersion {
+	if h.State != "materialized" || h.BundleID != bundleID || h.Phase != models.CampaignPhaseExecution ||
+		h.ReservationVersion != models.SmartTargetingExecutionReservationSchemaVersion ||
+		h.RequestedAudienceCount != expected ||
+		h.SelectionInputVersion != models.SmartTargetingExecutionReservationSelectionInputVersion ||
+		h.AllocationFingerprintVersion != models.SmartTargetingExecutionReservationAllocationFingerprintVersion {
 		return ErrSmartTargetingExecutionReservationCorrupt
 	}
 	if _, err := decodeExecutionReservationSnapshot(&h); err != nil {
@@ -384,7 +465,8 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ValidateMaterializ
 	}
 	seen := make(map[int64]struct{}, len(rows))
 	for index, row := range rows {
-		if row.BundleID != bundleID || row.AudienceID <= 0 || row.AssignedTagID == 0 || row.SelectionOrder != int64(index) || row.AudienceID != audienceIDs[index] {
+		if row.BundleID != bundleID || row.AudienceID <= 0 || row.AssignedTagID == 0 || row.SelectionOrder != int64(index) ||
+			row.AudienceID != audienceIDs[index] {
 			return ErrSmartTargetingExecutionReservationCorrupt
 		}
 		if _, duplicate := seen[row.AudienceID]; duplicate {
@@ -397,11 +479,19 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ValidateMaterializ
 
 func (r *CampaignTargetingExecutionReservationRepositoryImpl) HasActiveRowsForCampaign(ctx context.Context, campaignID uint) (bool, error) {
 	var count int64
-	err := r.getDB(ctx).Model(&models.CampaignTargetingExecutionReservation{}).Where("campaign_id = ? AND state = 'active'", campaignID).Count(&count).Error
+	err := r.getDB(ctx).
+		Model(&models.CampaignTargetingExecutionReservation{}).
+		Where("campaign_id = ? AND state = 'active'", campaignID).
+		Count(&count).
+		Error
 	if err != nil || count > 0 {
 		return count > 0, err
 	}
-	err = r.getDB(ctx).Model(&models.CampaignTargetingExecutionCalculation{}).Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationCommitted).Count(&count).Error
+	err = r.getDB(ctx).
+		Model(&models.CampaignTargetingExecutionCalculation{}).
+		Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationCommitted).
+		Count(&count).
+		Error
 	return count > 0, err
 }
 
@@ -438,7 +528,11 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) InvalidateForCampa
 	return r.transitionForCampaign(ctx, campaignID, "stale")
 }
 
-func (r *CampaignTargetingExecutionReservationRepositoryImpl) transitionForCampaign(ctx context.Context, campaignID uint, headerState string) error {
+func (r *CampaignTargetingExecutionReservationRepositoryImpl) transitionForCampaign(
+	ctx context.Context,
+	campaignID uint,
+	headerState string,
+) error {
 	if campaignID == 0 {
 		return nil
 	}
@@ -479,5 +573,8 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) transitionForCampa
 	if err := db.Model(&models.CampaignTargetingExecutionReservation{}).Where("campaign_id = ? AND state = 'active'", campaignID).Updates(map[string]any{"state": "released", "released_at": now}).Error; err != nil {
 		return err
 	}
-	return db.Model(&models.CampaignTargetingExecutionReservationHeader{}).Where("campaign_id = ? AND state = 'active'", campaignID).Updates(map[string]any{"state": headerState, "released_at": now}).Error
+	return db.Model(&models.CampaignTargetingExecutionReservationHeader{}).
+		Where("campaign_id = ? AND state = 'active'", campaignID).
+		Updates(map[string]any{"state": headerState, "released_at": now}).
+		Error
 }

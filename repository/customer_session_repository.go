@@ -81,7 +81,10 @@ func (r *CustomerSessionRepositoryImpl) ByRefreshToken(ctx context.Context, toke
 }
 
 // ListActiveSessionsByCustomer retrieves all active sessions for a customer
-func (r *CustomerSessionRepositoryImpl) ListActiveSessionsByCustomer(ctx context.Context, customerID uint) ([]*models.CustomerSession, error) {
+func (r *CustomerSessionRepositoryImpl) ListActiveSessionsByCustomer(
+	ctx context.Context,
+	customerID uint,
+) ([]*models.CustomerSession, error) {
 	filter := models.CustomerSessionFilter{
 		CustomerID: &customerID,
 		IsActive:   utils.ToPtr(true),
@@ -189,7 +192,12 @@ func (r *CustomerSessionRepositoryImpl) applyFilter(query *gorm.DB, filter model
 }
 
 // ByFilter retrieves customer sessions based on filter criteria
-func (r *CustomerSessionRepositoryImpl) ByFilter(ctx context.Context, filter models.CustomerSessionFilter, orderBy string, limit, offset int) ([]*models.CustomerSession, error) {
+func (r *CustomerSessionRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.CustomerSessionFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.CustomerSession, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.CustomerSession{})
 
@@ -247,7 +255,10 @@ func (r *CustomerSessionRepositoryImpl) Exists(ctx context.Context, filter model
 }
 
 // GetLatestByCorrelationID retrieves the latest session record for a given correlation ID
-func (r *CustomerSessionRepositoryImpl) GetLatestByCorrelationID(ctx context.Context, correlationID uuid.UUID) (*models.CustomerSession, error) {
+func (r *CustomerSessionRepositoryImpl) GetLatestByCorrelationID(
+	ctx context.Context,
+	correlationID uuid.UUID,
+) (*models.CustomerSession, error) {
 	db := r.getDB(ctx)
 
 	var session models.CustomerSession
@@ -266,7 +277,10 @@ func (r *CustomerSessionRepositoryImpl) GetLatestByCorrelationID(ctx context.Con
 }
 
 // GetHistoryByCorrelationID retrieves all session records for a given correlation ID (full history)
-func (r *CustomerSessionRepositoryImpl) GetHistoryByCorrelationID(ctx context.Context, correlationID uuid.UUID) ([]*models.CustomerSession, error) {
+func (r *CustomerSessionRepositoryImpl) GetHistoryByCorrelationID(
+	ctx context.Context,
+	correlationID uuid.UUID,
+) ([]*models.CustomerSession, error) {
 	db := r.getDB(ctx)
 
 	var sessions []*models.CustomerSession

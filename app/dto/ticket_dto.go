@@ -11,7 +11,7 @@ type CreateTicketRequest struct {
 	CustomerID       uint    `json:"customer_id"`
 	Title            string  `json:"title"`
 	Content          string  `json:"content"`
-	AttachedFileURL  *string `json:"attached_file_url,omitempty" validate:"omitempty"`
+	AttachedFileURL  *string `json:"attached_file_url,omitempty"  validate:"omitempty"`
 	AttachedFileName *string `json:"attached_file_name,omitempty" validate:"omitempty"`
 	AttachedFileSize *int64  `json:"attached_file_size,omitempty" validate:"omitempty"`
 	// Internal: populated by handler when user uploads a file (not exposed in API)
@@ -80,7 +80,7 @@ type CreateResponseTicketRequest struct {
 	CustomerID       uint    `json:"customer_id"`
 	TicketID         uint    `json:"ticket_id"`
 	Content          string  `json:"content"`
-	AttachedFileURL  *string `json:"attached_file_url,omitempty" validate:"omitempty"`
+	AttachedFileURL  *string `json:"attached_file_url,omitempty"  validate:"omitempty"`
 	AttachedFileName *string `json:"attached_file_name,omitempty" validate:"omitempty"`
 	AttachedFileSize *int64  `json:"attached_file_size,omitempty" validate:"omitempty"`
 	// Internal: populated by handler when customer uploads a file
@@ -102,7 +102,7 @@ type CreateResponseTicketResponse struct {
 type AdminCreateResponseTicketRequest struct {
 	TicketID         uint    `json:"ticket_id"`
 	Content          string  `json:"content"`
-	AttachedFileURL  *string `json:"attached_file_url,omitempty" validate:"omitempty"`
+	AttachedFileURL  *string `json:"attached_file_url,omitempty"  validate:"omitempty"`
 	AttachedFileName *string `json:"attached_file_name,omitempty" validate:"omitempty"`
 	AttachedFileSize *int64  `json:"attached_file_size,omitempty" validate:"omitempty"`
 	// Internal: populated by handler when admin uploads a file

@@ -18,7 +18,10 @@ type AdminCustomerManagementFlow interface {
 	GetCustomersShares(ctx context.Context, req *dto.AdminCustomersSharesRequest) (*dto.AdminCustomersSharesResponse, error)
 	GetCustomerWithCampaigns(ctx context.Context, customerID uint) (*dto.AdminCustomerWithCampaignsResponse, error)
 	GetCustomerDiscountsHistory(ctx context.Context, customerID uint) (*dto.AdminCustomerDiscountHistoryResponse, error)
-	SetCustomerActiveStatus(ctx context.Context, req *dto.AdminSetCustomerActiveStatusRequest) (*dto.AdminSetCustomerActiveStatusResponse, error)
+	SetCustomerActiveStatus(
+		ctx context.Context,
+		req *dto.AdminSetCustomerActiveStatusRequest,
+	) (*dto.AdminSetCustomerActiveStatusResponse, error)
 }
 
 // AdminCustomerManagementFlowImpl implements AdminCustomerManagementFlow
@@ -83,7 +86,10 @@ func (f *AdminCustomerManagementFlowImpl) ListCustomers(ctx context.Context) (*d
 }
 
 // GetCustomersShares returns aggregated shares per customer with optional date range
-func (f *AdminCustomerManagementFlowImpl) GetCustomersShares(ctx context.Context, req *dto.AdminCustomersSharesRequest) (*dto.AdminCustomersSharesResponse, error) {
+func (f *AdminCustomerManagementFlowImpl) GetCustomersShares(
+	ctx context.Context,
+	req *dto.AdminCustomersSharesRequest,
+) (*dto.AdminCustomersSharesResponse, error) {
 	var err error
 	startStr := ""
 	endStr := ""
@@ -96,10 +102,19 @@ func (f *AdminCustomerManagementFlowImpl) GetCustomersShares(ctx context.Context
 	defer func() {
 		if err != nil {
 			err = NewBusinessError("GET_ADMIN_CUSTOMERS_SHARES_FAILED", "Failed to get customers shares", err)
-			logAdminAction(ctx, f.auditRepo, models.AuditActionAdminViewCustomerShares, "Admin viewed customers shares", false, nil, map[string]any{
-				"start_date": startStr,
-				"end_date":   endStr,
-			}, err)
+			logAdminAction(
+				ctx,
+				f.auditRepo,
+				models.AuditActionAdminViewCustomerShares,
+				"Admin viewed customers shares",
+				false,
+				nil,
+				map[string]any{
+					"start_date": startStr,
+					"end_date":   endStr,
+				},
+				err,
+			)
 		}
 	}()
 
@@ -220,7 +235,10 @@ func (f *AdminCustomerManagementFlowImpl) GetCustomersShares(ctx context.Context
 }
 
 // GetCustomerWithCampaigns retrieves full customer info plus their campaigns
-func (f *AdminCustomerManagementFlowImpl) GetCustomerWithCampaigns(ctx context.Context, customerID uint) (*dto.AdminCustomerWithCampaignsResponse, error) {
+func (f *AdminCustomerManagementFlowImpl) GetCustomerWithCampaigns(
+	ctx context.Context,
+	customerID uint,
+) (*dto.AdminCustomerWithCampaignsResponse, error) {
 	customer, err := f.customerRepo.ByID(ctx, customerID)
 	if err != nil {
 		return nil, NewBusinessError("GET_ADMIN_CUSTOMER_FAILED", "Failed to get customer", err)
@@ -364,9 +382,18 @@ func (f *AdminCustomerManagementFlowImpl) GetCustomerWithCampaigns(ctx context.C
 			TotalDelivered:              totalDelivered,
 		})
 	}
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminViewCustomer, "Admin fetched customer with campaigns", true, &customerID, map[string]any{
-		"campaigns": len(campaigns),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminViewCustomer,
+		"Admin fetched customer with campaigns",
+		true,
+		&customerID,
+		map[string]any{
+			"campaigns": len(campaigns),
+		},
+		nil,
+	)
 	return resp, nil
 }
 
@@ -400,12 +427,24 @@ func toAdminCustomerDetailDTO(c models.Customer) dto.AdminCustomerDetailDTO {
 }
 
 // GetCustomerDiscountsHistory returns discounts used by a customer across agencies
-func (f *AdminCustomerManagementFlowImpl) GetCustomerDiscountsHistory(ctx context.Context, customerID uint) (*dto.AdminCustomerDiscountHistoryResponse, error) {
+func (f *AdminCustomerManagementFlowImpl) GetCustomerDiscountsHistory(
+	ctx context.Context,
+	customerID uint,
+) (*dto.AdminCustomerDiscountHistoryResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
 			err = NewBusinessError("GET_ADMIN_CUSTOMER_DISCOUNTS_HISTORY_FAILED", "Failed to get customer discounts history", err)
-			logAdminAction(ctx, f.auditRepo, models.AuditActionAdminViewCustomerDiscounts, "Admin viewed customer discount history", false, &customerID, nil, err)
+			logAdminAction(
+				ctx,
+				f.auditRepo,
+				models.AuditActionAdminViewCustomerDiscounts,
+				"Admin viewed customer discount history",
+				false,
+				&customerID,
+				nil,
+				err,
+			)
 		}
 	}()
 
@@ -437,14 +476,26 @@ func (f *AdminCustomerManagementFlowImpl) GetCustomerDiscountsHistory(ctx contex
 		Message: "Customer discounts history retrieved successfully",
 		Items:   items,
 	}
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminViewCustomerDiscounts, "Admin viewed customer discount history", true, &customerID, map[string]any{
-		"items": len(items),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminViewCustomerDiscounts,
+		"Admin viewed customer discount history",
+		true,
+		&customerID,
+		map[string]any{
+			"items": len(items),
+		},
+		nil,
+	)
 	return resp, nil
 }
 
 // SetCustomerActiveStatus sets the is_active flag based on request body
-func (f *AdminCustomerManagementFlowImpl) SetCustomerActiveStatus(ctx context.Context, req *dto.AdminSetCustomerActiveStatusRequest) (*dto.AdminSetCustomerActiveStatusResponse, error) {
+func (f *AdminCustomerManagementFlowImpl) SetCustomerActiveStatus(
+	ctx context.Context,
+	req *dto.AdminSetCustomerActiveStatusRequest,
+) (*dto.AdminSetCustomerActiveStatusResponse, error) {
 	if req == nil || req.CustomerID == 0 {
 		return nil, NewBusinessError("VALIDATION_ERROR", "Invalid request", nil)
 	}
@@ -472,21 +523,39 @@ func (f *AdminCustomerManagementFlowImpl) SetCustomerActiveStatus(ctx context.Co
 		return resp, nil
 	}
 	if err := f.customerRepo.UpdateActiveStatus(ctx, req.CustomerID, req.IsActive); err != nil {
-		logAdminAction(ctx, f.auditRepo, models.AuditActionAdminSetCustomerStatus, "Admin toggled customer active status", false, &req.CustomerID, map[string]any{
-			"desired_active": req.IsActive,
-			"previous":       prevActive,
-		}, err)
+		logAdminAction(
+			ctx,
+			f.auditRepo,
+			models.AuditActionAdminSetCustomerStatus,
+			"Admin toggled customer active status",
+			false,
+			&req.CustomerID,
+			map[string]any{
+				"desired_active": req.IsActive,
+				"previous":       prevActive,
+			},
+			err,
+		)
 		return nil, NewBusinessError("SET_CUSTOMER_ACTIVE_STATUS_FAILED", "Failed to update active status", err)
 	}
 	resp := &dto.AdminSetCustomerActiveStatusResponse{
 		Message:  "Customer status updated successfully",
 		IsActive: req.IsActive,
 	}
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminSetCustomerStatus, "Admin toggled customer active status", true, &req.CustomerID, map[string]any{
-		"desired_active": req.IsActive,
-		"previous":       prevActive,
-		"changed":        true,
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminSetCustomerStatus,
+		"Admin toggled customer active status",
+		true,
+		&req.CustomerID,
+		map[string]any{
+			"desired_active": req.IsActive,
+			"previous":       prevActive,
+			"changed":        true,
+		},
+		nil,
+	)
 	return resp, nil
 }
 
@@ -501,7 +570,10 @@ func isSystemOrTaxCustomer(cust *models.Customer) bool {
 		strings.EqualFold(fullName, "Tax Collector")
 }
 
-func (f *AdminCustomerManagementFlowImpl) readCampaignPriceFactorsFromMetadata(ctx context.Context, campaignID uint) (*float64, *float64, error) {
+func (f *AdminCustomerManagementFlowImpl) readCampaignPriceFactorsFromMetadata(
+	ctx context.Context,
+	campaignID uint,
+) (*float64, *float64, error) {
 	source := "campaign_update"
 	operation := "reserve_budget"
 	txs, err := f.transactionRepo.ByFilter(ctx, models.TransactionFilter{

@@ -48,7 +48,11 @@ func NewBundleFlow(
 	}
 }
 
-func (f *BundleFlowImpl) CreateBundle(ctx context.Context, req *dto.CreateBundleRequest, metadata *ClientMetadata) (*dto.CreateBundleResponse, error) {
+func (f *BundleFlowImpl) CreateBundle(
+	ctx context.Context,
+	req *dto.CreateBundleRequest,
+	metadata *ClientMetadata,
+) (*dto.CreateBundleResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("CREATE_BUNDLE_FAILED", "Failed to create bundle", ErrInvalidState)
 	}
@@ -58,7 +62,18 @@ func (f *BundleFlowImpl) CreateBundle(ctx context.Context, req *dto.CreateBundle
 		return nil, NewBusinessError("CREATE_BUNDLE_FAILED", "Failed to create bundle", err)
 	}
 
-	bundleInput, err := validateBundleInput(customer, req.Title, req.Objective, req.TargetAudiencePersona, req.ShortLinkDomain, req.Description, req.AdLink, req.TargetCustomerName, req.Category, req.Job)
+	bundleInput, err := validateBundleInput(
+		customer,
+		req.Title,
+		req.Objective,
+		req.TargetAudiencePersona,
+		req.ShortLinkDomain,
+		req.Description,
+		req.AdLink,
+		req.TargetCustomerName,
+		req.Category,
+		req.Job,
+	)
 	if err != nil {
 		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
 	}
@@ -91,7 +106,11 @@ func (f *BundleFlowImpl) CreateBundle(ctx context.Context, req *dto.CreateBundle
 	}, nil
 }
 
-func (f *BundleFlowImpl) UpdateBundle(ctx context.Context, req *dto.UpdateBundleRequest, metadata *ClientMetadata) (*dto.UpdateBundleResponse, error) {
+func (f *BundleFlowImpl) UpdateBundle(
+	ctx context.Context,
+	req *dto.UpdateBundleRequest,
+	metadata *ClientMetadata,
+) (*dto.UpdateBundleResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("UPDATE_BUNDLE_FAILED", "Failed to update bundle", ErrInvalidState)
 	}
@@ -101,7 +120,18 @@ func (f *BundleFlowImpl) UpdateBundle(ctx context.Context, req *dto.UpdateBundle
 		return nil, NewBusinessError("UPDATE_BUNDLE_FAILED", "Failed to update bundle", err)
 	}
 
-	bundleInput, err := validateBundleInput(customer, req.Title, req.Objective, req.TargetAudiencePersona, req.ShortLinkDomain, req.Description, req.AdLink, req.TargetCustomerName, req.Category, req.Job)
+	bundleInput, err := validateBundleInput(
+		customer,
+		req.Title,
+		req.Objective,
+		req.TargetAudiencePersona,
+		req.ShortLinkDomain,
+		req.Description,
+		req.AdLink,
+		req.TargetCustomerName,
+		req.Category,
+		req.Job,
+	)
 	if err != nil {
 		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
 	}
@@ -131,7 +161,13 @@ func (f *BundleFlowImpl) UpdateBundle(ctx context.Context, req *dto.UpdateBundle
 
 		return nil
 	}); err != nil {
-		errMsg := fmt.Sprintf("Bundle update failed for customer %d bundle %d title=%q: %s", customer.ID, req.ID, bundleInput.title, err.Error())
+		errMsg := fmt.Sprintf(
+			"Bundle update failed for customer %d bundle %d title=%q: %s",
+			customer.ID,
+			req.ID,
+			bundleInput.title,
+			err.Error(),
+		)
 		_ = createAuditLog(ctx, f.auditRepo, &customer, models.AuditActionBundleUpdateFailed, errMsg, false, &errMsg, metadata)
 		return nil, NewBusinessError("UPDATE_BUNDLE_FAILED", "Failed to update bundle", err)
 	}
@@ -143,7 +179,11 @@ func (f *BundleFlowImpl) UpdateBundle(ctx context.Context, req *dto.UpdateBundle
 	}, nil
 }
 
-func (f *BundleFlowImpl) GetBundle(ctx context.Context, req *dto.GetBundleRequest, metadata *ClientMetadata) (*dto.GetBundleResponse, error) {
+func (f *BundleFlowImpl) GetBundle(
+	ctx context.Context,
+	req *dto.GetBundleRequest,
+	metadata *ClientMetadata,
+) (*dto.GetBundleResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("GET_BUNDLE_FAILED", "Failed to get bundle", ErrInvalidState)
 	}
@@ -177,7 +217,11 @@ func (f *BundleFlowImpl) GetBundle(ctx context.Context, req *dto.GetBundleReques
 	}, nil
 }
 
-func (f *BundleFlowImpl) ListBundles(ctx context.Context, req *dto.ListBundlesRequest, metadata *ClientMetadata) (*dto.ListBundlesResponse, error) {
+func (f *BundleFlowImpl) ListBundles(
+	ctx context.Context,
+	req *dto.ListBundlesRequest,
+	metadata *ClientMetadata,
+) (*dto.ListBundlesResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("LIST_BUNDLES_FAILED", "Failed to list bundles", ErrInvalidState)
 	}
@@ -450,7 +494,10 @@ func (f *BundleFlowImpl) injectBundleStatistics(ctx context.Context, customerID 
 	return nil
 }
 
-func (f *BundleFlowImpl) aggregateBundleStatistics(ctx context.Context, campaigns []*models.Campaign) (map[uint]bundleStatisticsAggregate, error) {
+func (f *BundleFlowImpl) aggregateBundleStatistics(
+	ctx context.Context,
+	campaigns []*models.Campaign,
+) (map[uint]bundleStatisticsAggregate, error) {
 	out := make(map[uint]bundleStatisticsAggregate)
 	if len(campaigns) == 0 {
 		return out, nil

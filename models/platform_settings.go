@@ -108,23 +108,23 @@ func (s PlatformSettingsStatus) Value() (driver.Value, error) {
 
 // PlatformSettings represents platform settings with optional multimedia attachment.
 type PlatformSettings struct {
-	ID                uint                     `gorm:"primaryKey;autoIncrement" json:"id"`
-	UUID              uuid.UUID                `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()" json:"uuid"`
-	CustomerID        uint                     `gorm:"not null;index;uniqueIndex:uk_platform_settings_customer_name,priority:1" json:"customer_id"`
-	Platform          string                   `gorm:"type:varchar(20);not null;index" json:"platform"`
+	ID                uint                     `gorm:"primaryKey;autoIncrement"                                                    json:"id"`
+	UUID              uuid.UUID                `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()"                    json:"uuid"`
+	CustomerID        uint                     `gorm:"not null;index;uniqueIndex:uk_platform_settings_customer_name,priority:1"    json:"customer_id"`
+	Platform          string                   `gorm:"type:varchar(20);not null;index"                                             json:"platform"`
 	Name              *string                  `gorm:"type:varchar(255);uniqueIndex:uk_platform_settings_customer_name,priority:2" json:"name,omitempty"`
-	Description       *string                  `gorm:"type:text" json:"description,omitempty"`
-	Website           *string                  `gorm:"type:text" json:"website,omitempty"`
-	MultimediaID      *uint                    `gorm:"index" json:"multimedia_id,omitempty"`
-	BusinessLicenseID *uint                    `gorm:"index" json:"business_license_id,omitempty"`
-	Metadata          PlatformSettingsMetadata `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
-	Status            PlatformSettingsStatus   `gorm:"type:varchar(20);not null;default:'initialized';index" json:"status"`
-	CreatedAt         time.Time                `gorm:"not null;default:CURRENT_TIMESTAMP;index" json:"created_at"`
-	UpdatedAt         time.Time                `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
+	Description       *string                  `gorm:"type:text"                                                                   json:"description,omitempty"`
+	Website           *string                  `gorm:"type:text"                                                                   json:"website,omitempty"`
+	MultimediaID      *uint                    `gorm:"index"                                                                       json:"multimedia_id,omitempty"`
+	BusinessLicenseID *uint                    `gorm:"index"                                                                       json:"business_license_id,omitempty"`
+	Metadata          PlatformSettingsMetadata `gorm:"type:jsonb;not null;default:'{}'"                                            json:"metadata"`
+	Status            PlatformSettingsStatus   `gorm:"type:varchar(20);not null;default:'initialized';index"                       json:"status"`
+	CreatedAt         time.Time                `gorm:"not null;default:CURRENT_TIMESTAMP;index"                                    json:"created_at"`
+	UpdatedAt         time.Time                `gorm:"not null;default:CURRENT_TIMESTAMP"                                          json:"updated_at"`
 
-	Multimedia      *MultimediaAsset `gorm:"foreignKey:MultimediaID;references:ID;constraint:OnDelete:SET NULL" json:"multimedia,omitempty"`
+	Multimedia      *MultimediaAsset `gorm:"foreignKey:MultimediaID;references:ID;constraint:OnDelete:SET NULL"      json:"multimedia,omitempty"`
 	BusinessLicense *MultimediaAsset `gorm:"foreignKey:BusinessLicenseID;references:ID;constraint:OnDelete:SET NULL" json:"business_license,omitempty"`
-	Customer        *Customer        `gorm:"foreignKey:CustomerID;references:ID;constraint:OnDelete:CASCADE" json:"customer,omitempty"`
+	Customer        *Customer        `gorm:"foreignKey:CustomerID;references:ID;constraint:OnDelete:CASCADE"         json:"customer,omitempty"`
 }
 
 func (PlatformSettings) TableName() string { return "platform_settings" }

@@ -205,7 +205,12 @@ func (r *AudienceProfileRepositoryImpl) applyFilter(db *gorm.DB, f models.Audien
 	return db
 }
 
-func (r *AudienceProfileRepositoryImpl) ByFilter(ctx context.Context, filter models.AudienceProfileFilter, orderBy string, limit, offset int) ([]*models.AudienceProfile, error) {
+func (r *AudienceProfileRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.AudienceProfileFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.AudienceProfile, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.AudienceProfile{}), filter)
 

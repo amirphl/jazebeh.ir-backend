@@ -164,7 +164,12 @@ func (r *WalletRepositoryImpl) GetBalanceHistory(ctx context.Context, walletID u
 }
 
 // ByFilter retrieves wallets based on filter criteria
-func (r *WalletRepositoryImpl) ByFilter(ctx context.Context, filter models.WalletFilter, orderBy string, limit, offset int) ([]*models.Wallet, error) {
+func (r *WalletRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.WalletFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Wallet, error) {
 	db := r.getDB(ctx)
 	var wallets []*models.Wallet
 

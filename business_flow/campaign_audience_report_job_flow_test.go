@@ -53,7 +53,10 @@ func (transferredReportCampaignRepository) ByCustomerIDAndIDs(context.Context, u
 
 func TestEnsureJobCampaignsAreStillOwnedRejectsTransferredCampaign(t *testing.T) {
 	flow := &CampaignAudienceReportJobFlowImpl{campaigns: transferredReportCampaignRepository{}}
-	err := flow.ensureJobCampaignsAreStillOwned(context.Background(), &models.CampaignAudienceReportJob{CustomerID: 1, CampaignIDs: pq.Int64Array{42}})
+	err := flow.ensureJobCampaignsAreStillOwned(
+		context.Background(),
+		&models.CampaignAudienceReportJob{CustomerID: 1, CampaignIDs: pq.Int64Array{42}},
+	)
 	be, ok := err.(*BusinessError)
 	if !ok || be.Code != "CAMPAIGN_REPORT_JOB_NOT_FOUND" {
 		t.Fatalf("error = %#v, want CAMPAIGN_REPORT_JOB_NOT_FOUND", err)

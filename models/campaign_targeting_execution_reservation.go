@@ -12,17 +12,17 @@ import "time"
 // audience.
 type CampaignTargetingExecutionReservation struct {
 	ID             int64      `gorm:"primaryKey;autoIncrement;type:bigserial" json:"id"`
-	HeaderID       int64      `gorm:"not null;index" json:"header_id"`
-	CampaignID     uint       `gorm:"not null" json:"campaign_id"`
-	BundleID       uint       `gorm:"not null" json:"bundle_id"`
-	AudienceID     int64      `gorm:"not null" json:"audience_id"`
-	AssignedTagID  uint       `gorm:"not null" json:"assigned_tag_id"`
-	SelectionOrder int64      `gorm:"not null" json:"selection_order"`
-	AudienceScore  *float64   `gorm:"type:numeric" json:"audience_score,omitempty"`
-	State          string     `gorm:"type:varchar(16);not null" json:"state"`
-	CreatedAt      time.Time  `json:"created_at"`
-	ReleasedAt     *time.Time `json:"released_at,omitempty"`
-	MaterializedAt *time.Time `json:"materialized_at,omitempty"`
+	HeaderID       int64      `gorm:"not null;index"                          json:"header_id"`
+	CampaignID     uint       `gorm:"not null"                                json:"campaign_id"`
+	BundleID       uint       `gorm:"not null"                                json:"bundle_id"`
+	AudienceID     int64      `gorm:"not null"                                json:"audience_id"`
+	AssignedTagID  uint       `gorm:"not null"                                json:"assigned_tag_id"`
+	SelectionOrder int64      `gorm:"not null"                                json:"selection_order"`
+	AudienceScore  *float64   `gorm:"type:numeric"                            json:"audience_score,omitempty"`
+	State          string     `gorm:"type:varchar(16);not null"               json:"state"`
+	CreatedAt      time.Time  `                                               json:"created_at"`
+	ReleasedAt     *time.Time `                                               json:"released_at,omitempty"`
+	MaterializedAt *time.Time `                                               json:"materialized_at,omitempty"`
 }
 
 func (CampaignTargetingExecutionReservation) TableName() string {

@@ -19,7 +19,8 @@ func TestSmartTargetingPopulationUsesOptionalParameterizedColorFilter(t *testing
 		}
 	}
 	for _, population := range []string{smartTargetingBasePopulationCTE, smartTargetingSelectionBasePopulationCTE} {
-		if !strings.Contains(population, "AND NOT EXISTS (\n          SELECT 1\n          FROM bundle_audience_exclusions") || strings.Contains(population, "?::boolean OR NOT EXISTS") {
+		if !strings.Contains(population, "AND NOT EXISTS (\n          SELECT 1\n          FROM bundle_audience_exclusions") ||
+			strings.Contains(population, "?::boolean OR NOT EXISTS") {
 			t.Fatalf("Bundle exclusions must be unconditional for every selection phase:\n%s", population)
 		}
 	}
@@ -37,7 +38,9 @@ func TestSmartTargetingPopulationUsesOptionalParameterizedColorFilter(t *testing
 }
 
 func TestSmartTargetingPopulationArgsKeepBundleExclusionsMandatory(t *testing.T) {
-	args := smartTargetingPopulationArgs(SmartTargetingAudienceQuery{TagIDs: []int64{7}, BundleID: 3, Phase: SmartTargetingSelectionPhaseExecution})
+	args := smartTargetingPopulationArgs(
+		SmartTargetingAudienceQuery{TagIDs: []int64{7}, BundleID: 3, Phase: SmartTargetingSelectionPhaseExecution},
+	)
 	if disabled, ok := args[1].(bool); !ok || !disabled {
 		t.Fatalf("empty allowed colors produced disabled=%#v, want true", args[1])
 	}
@@ -48,7 +51,13 @@ func TestSmartTargetingPopulationArgsKeepBundleExclusionsMandatory(t *testing.T)
 	if disabled, ok := args[1].(bool); !ok || disabled {
 		t.Fatalf("SMS allowed colors produced disabled=%#v, want false", args[1])
 	}
-	if len(args) != 14 || args[3] != uint(3) || args[4] != uint(3) || args[5] != uint(0) || args[6] != uint(0) || args[7] != uint(3) || args[8] != uint(0) || args[9] != uint(0) || args[10] != uint(3) || args[11] != uint(0) || args[12] != uint(0) || args[13] != uint(3) {
+	if len(args) != 14 || args[3] != uint(3) || args[4] != uint(3) || args[5] != uint(0) || args[6] != uint(0) || args[7] != uint(3) ||
+		args[8] != uint(0) ||
+		args[9] != uint(0) ||
+		args[10] != uint(3) ||
+		args[11] != uint(0) ||
+		args[12] != uint(0) ||
+		args[13] != uint(3) {
 		t.Fatalf("population arguments = %#v, want colors and Bundle eligibility inputs", args)
 	}
 }
@@ -128,7 +137,14 @@ func TestSmartTargetingPerTagSelectionUsesNoOrdering(t *testing.T) {
 	query := SmartTargetingAudienceQuery{
 		BundleID: 3, Phase: SmartTargetingSelectionPhaseTest, TagIDs: []int64{9, 2}, ScoreClasses: []string{"A", "C"},
 	}
-	sql, args, err := smartTargetingPerTagSelectionQuery(query, &SmartTargetingScoreBounds{P33: &p33, P66: &p66}, 9, []int64{101, 102}, 600, true)
+	sql, args, err := smartTargetingPerTagSelectionQuery(
+		query,
+		&SmartTargetingScoreBounds{P33: &p33, P66: &p66},
+		9,
+		[]int64{101, 102},
+		600,
+		true,
+	)
 	if err != nil {
 		t.Fatalf("build per-tag selection query: %v", err)
 	}
@@ -201,7 +217,8 @@ func TestSmartTargetingPerTagSelectionPreservesAllClassColorEligibility(t *testi
 			t.Fatalf("all-class per-tag ID query unexpectedly contains %q:\n%s", forbidden, sql)
 		}
 	}
-	if len(args) != 15 || args[0] != int64(9) || args[2] != uint(3) || args[3] != uint(3) || args[6] != uint(3) || args[9] != uint(3) || args[12] != uint(3) {
+	if len(args) != 15 || args[0] != int64(9) || args[2] != uint(3) || args[3] != uint(3) || args[6] != uint(3) || args[9] != uint(3) ||
+		args[12] != uint(3) {
 		t.Fatalf("all-class per-tag arguments = %#v", args)
 	}
 }
@@ -257,7 +274,9 @@ func TestSmartTargetingPerTagScorePredicatesPreserveClassBoundaries(t *testing.T
 	}
 
 	emptyBounds := &SmartTargetingScoreBounds{}
-	if sql, args, err := smartTargetingPerTagScorePredicate([]string{"A"}, emptyBounds); err != nil || !strings.Contains(sql, "AND FALSE") || len(args) != 0 {
+	if sql, args, err := smartTargetingPerTagScorePredicate([]string{"A"}, emptyBounds); err != nil ||
+		!strings.Contains(sql, "AND FALSE") ||
+		len(args) != 0 {
 		t.Fatalf("empty population predicate = %q %#v, %v; want AND FALSE", sql, args, err)
 	}
 	if _, _, err := smartTargetingPerTagScorePredicate([]string{"A"}, nil); err == nil {

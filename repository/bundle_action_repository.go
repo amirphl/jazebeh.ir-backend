@@ -52,7 +52,12 @@ func (r *BundleActionRepositoryImpl) ByID(ctx context.Context, id int64) (*model
 	}
 	return &row, nil
 }
-func (r *BundleActionRepositoryImpl) List(ctx context.Context, bundleID uint, limit, offset int) ([]*models.BundleActionFile, int64, error) {
+
+func (r *BundleActionRepositoryImpl) List(
+	ctx context.Context,
+	bundleID uint,
+	limit, offset int,
+) ([]*models.BundleActionFile, int64, error) {
 	db := r.getDB(ctx).Where("bundle_id = ?", bundleID)
 	var n int64
 	if err := db.Model(&models.BundleActionFile{}).Count(&n).Error; err != nil {
@@ -65,7 +70,11 @@ func (r *BundleActionRepositoryImpl) List(ctx context.Context, bundleID uint, li
 	return rows, n, err
 }
 func (r *BundleActionRepositoryImpl) RequestDelete(ctx context.Context, id int64, customerID uint, at time.Time) error {
-	return r.getDB(ctx).Model(&models.BundleActionFile{}).Where("id = ? AND status = ?", id, models.BundleActionFileProcessed).Updates(map[string]any{"status": models.BundleActionFileDeletePending, "deleted_by_customer_id": customerID, "updated_at": at}).Error
+	return r.getDB(ctx).
+		Model(&models.BundleActionFile{}).
+		Where("id = ? AND status = ?", id, models.BundleActionFileProcessed).
+		Updates(map[string]any{"status": models.BundleActionFileDeletePending, "deleted_by_customer_id": customerID, "updated_at": at}).
+		Error
 }
 
 func (r *BundleActionRepositoryImpl) ClaimPending(ctx context.Context, limit int, stale, at time.Time) ([]*models.BundleActionFile, error) {
@@ -158,7 +167,14 @@ FOR UPDATE OF f SKIP LOCKED`, []models.BundleActionFileStatus{models.BundleActio
 // not updated, the function returns an error. Any error rolls back all changes
 // in this transaction. Complete is called afterward by the business flow to mark
 // the file complete and publish live metrics.
-func (r *BundleActionRepositoryImpl) StoreUIDsAndResult(ctx context.Context, fileID int64, bundleID uint, uids []string, total, duplicates, invalid int64, at time.Time) error {
+func (r *BundleActionRepositoryImpl) StoreUIDsAndResult(
+	ctx context.Context,
+	fileID int64,
+	bundleID uint,
+	uids []string,
+	total, duplicates, invalid int64,
+	at time.Time,
+) error {
 	return r.getDB(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("bundle_action_file_id = ?", fileID).Delete(&models.BundleActionFileUID{}).Error; err != nil {
 			return err
@@ -293,7 +309,11 @@ func (r *BundleActionRepositoryImpl) Fail(ctx context.Context, id int64, at time
 	if len(message) > 255 {
 		message = message[:255]
 	}
-	return r.getDB(ctx).Model(&models.BundleActionFile{}).Where("id=? AND status=?", id, models.BundleActionFileProcessing).Updates(map[string]any{"status": models.BundleActionFileFailed, "processed_at": at, "error_code": code, "error_message": message, "updated_at": at}).Error
+	return r.getDB(ctx).
+		Model(&models.BundleActionFile{}).
+		Where("id=? AND status=?", id, models.BundleActionFileProcessing).
+		Updates(map[string]any{"status": models.BundleActionFileFailed, "processed_at": at, "error_code": code, "error_message": message, "updated_at": at}).
+		Error
 }
 
 func (r *BundleActionRepositoryImpl) Complete(ctx context.Context, id int64, at time.Time) error {
@@ -323,7 +343,10 @@ func (r *BundleActionRepositoryImpl) Complete(ctx context.Context, id int64, at 
 		if err := refreshBundleActionMetrics(tx, file.BundleID, at); err != nil {
 			return err
 		}
-		return tx.Model(&models.Bundle{}).Where("id=?", file.BundleID).Updates(map[string]any{"action_data_updated_at": at, "updated_at": at}).Error
+		return tx.Model(&models.Bundle{}).
+			Where("id=?", file.BundleID).
+			Updates(map[string]any{"action_data_updated_at": at, "updated_at": at}).
+			Error
 	})
 }
 
@@ -360,7 +383,11 @@ func refreshBundleActionMetrics(tx *gorm.DB, bundleID uint, at time.Time) error 
 		return err
 	}
 	if active == 0 {
-		return tx.Exec(`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) VALUES (?,false,0,0,?) ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=false,action_count=0,eligible_delivered_count=0,updated_at=EXCLUDED.updated_at`, bundleID, at).Error
+		return tx.Exec(
+			`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) VALUES (?,false,0,0,?) ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=false,action_count=0,eligible_delivered_count=0,updated_at=EXCLUDED.updated_at`,
+			bundleID,
+			at,
+		).Error
 	}
 	// Materialize the high-volume delivery join once. Previously each metric
 	// insert reran bundleActionEligibleAudienceSQL, including four correlated delivery
@@ -376,7 +403,11 @@ SELECT campaign_id, tag_id, phase, action FROM marked`, bundleID, bundleID).Erro
 	if err := tx.Exec(`INSERT INTO bundle_action_tag_metrics(bundle_id,tag_id,test_action_count,test_eligible_delivered_count,overall_action_count,overall_eligible_delivered_count,updated_at) SELECT ?,tag_id,COUNT(*) FILTER(WHERE phase='test' AND action),COUNT(*) FILTER(WHERE phase='test'),COUNT(*) FILTER(WHERE action),COUNT(*),? FROM bundle_action_eligible GROUP BY tag_id`, bundleID, at).Error; err != nil {
 		return fmt.Errorf("refresh tag atr: %w", err)
 	}
-	return tx.Exec(`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) SELECT ?,true,COUNT(*) FILTER(WHERE action),COUNT(*),? FROM bundle_action_eligible ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=true,action_count=EXCLUDED.action_count,eligible_delivered_count=EXCLUDED.eligible_delivered_count,updated_at=EXCLUDED.updated_at`, bundleID, at).Error
+	return tx.Exec(
+		`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) SELECT ?,true,COUNT(*) FILTER(WHERE action),COUNT(*),? FROM bundle_action_eligible ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=true,action_count=EXCLUDED.action_count,eligible_delivered_count=EXCLUDED.eligible_delivered_count,updated_at=EXCLUDED.updated_at`,
+		bundleID,
+		at,
+	).Error
 }
 func (r *BundleActionRepositoryImpl) Summary(ctx context.Context, bundleID uint) (*models.BundleActionSummary, error) {
 	var x models.BundleActionSummary
@@ -386,7 +417,11 @@ func (r *BundleActionRepositoryImpl) Summary(ctx context.Context, bundleID uint)
 	}
 	return &x, err
 }
-func (r *BundleActionRepositoryImpl) CampaignMetric(ctx context.Context, bundleID, campaignID uint) (*models.BundleActionCampaignMetric, error) {
+
+func (r *BundleActionRepositoryImpl) CampaignMetric(
+	ctx context.Context,
+	bundleID, campaignID uint,
+) (*models.BundleActionCampaignMetric, error) {
 	var x models.BundleActionCampaignMetric
 	err := r.getDB(ctx).Where("bundle_id=? AND campaign_id=?", bundleID, campaignID).First(&x).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -410,7 +445,13 @@ func (r *BundleActionRepositoryImpl) ActiveUIDSet(ctx context.Context, bundleID 
 		return out, nil
 	}
 	var found []string
-	err := r.getDB(ctx).Table("bundle_action_file_uids u").Select("DISTINCT u.uid").Joins("JOIN bundle_action_files f ON f.id=u.bundle_action_file_id").Where("u.bundle_id=? AND f.status=? AND u.uid IN ?", bundleID, models.BundleActionFileProcessed, uids).Scan(&found).Error
+	err := r.getDB(ctx).
+		Table("bundle_action_file_uids u").
+		Select("DISTINCT u.uid").
+		Joins("JOIN bundle_action_files f ON f.id=u.bundle_action_file_id").
+		Where("u.bundle_id=? AND f.status=? AND u.uid IN ?", bundleID, models.BundleActionFileProcessed, uids).
+		Scan(&found).
+		Error
 	for _, uid := range found {
 		out[uid] = true
 	}

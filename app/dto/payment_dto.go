@@ -9,7 +9,7 @@ import (
 
 // ChargeWalletRequest represents the request to charge a wallet
 type ChargeWalletRequest struct {
-	AmountWithTax uint64 `json:"amount" validate:"required,min=1000,max=1000000000"` // Amount in Tomans (minimum 1000, maximum 1000000000)
+	AmountWithTax uint64 `json:"amount"         validate:"required,min=1000,max=1000000000"` // Amount in Tomans (minimum 1000, maximum 1000000000)
 	CustomerID    uint   `json:"-"`
 	Lang          string `json:"lang,omitempty" validate:"omitempty,oneof=FA EN fa en"`
 }
@@ -23,9 +23,9 @@ type ChargeWalletResponse struct {
 
 // AdminChargeWalletRequest represents an admin request to directly charge a customer wallet.
 type AdminChargeWalletRequest struct {
-	CustomerID     uint   `json:"customer_id" validate:"required,min=1"`
-	AmountWithTax  uint64 `json:"amount_with_tax" validate:"required,min=1000,max=1000000000"`
-	AdminNote      string `json:"admin_note,omitempty" validate:"omitempty,max=1000"`
+	CustomerID     uint   `json:"customer_id"               validate:"required,min=1"`
+	AmountWithTax  uint64 `json:"amount_with_tax"           validate:"required,min=1000,max=1000000000"`
+	AdminNote      string `json:"admin_note,omitempty"      validate:"omitempty,max=1000"`
 	IdempotencyKey string `json:"idempotency_key,omitempty" validate:"omitempty,min=8,max=128"`
 }
 
@@ -43,7 +43,7 @@ type AdminChargeWalletResponse struct {
 
 // AdminPreviewWalletChargeImpactRequest represents a read-only admin preview for a wallet charge.
 type AdminPreviewWalletChargeImpactRequest struct {
-	CustomerID    uint   `json:"customer_id" validate:"required,min=1"`
+	CustomerID    uint   `json:"customer_id"     validate:"required,min=1"`
 	AmountWithTax uint64 `json:"amount_with_tax" validate:"required,min=1000,max=1000000000"`
 }
 
@@ -78,13 +78,13 @@ type AtipayRequest struct {
 
 // GetTransactionHistoryRequest represents the request to retrieve transaction history
 type GetTransactionHistoryRequest struct {
-	CustomerID uint       `json:"-"`                                         // Customer ID (from authenticated context)
-	Page       uint       `json:"page" validate:"min=1"`                     // Page number (1-based)
-	PageSize   uint       `json:"page_size" validate:"min=1,max=100"`        // Number of items per page
-	StartDate  *time.Time `json:"start_date,omitempty" validate:"omitempty"` // Optional start date filter
-	EndDate    *time.Time `json:"end_date,omitempty" validate:"omitempty"`   // Optional end date filter
-	Type       *string    `json:"type,omitempty" validate:"omitempty"`       // Optional transaction type filter // TODO: one of
-	Status     *string    `json:"status,omitempty" validate:"omitempty"`     // Optional transaction status filter // TODO: one of
+	CustomerID uint       `json:"-"`                                             // Customer ID (from authenticated context)
+	Page       uint       `json:"page"                 validate:"min=1"`         // Page number (1-based)
+	PageSize   uint       `json:"page_size"            validate:"min=1,max=100"` // Number of items per page
+	StartDate  *time.Time `json:"start_date,omitempty" validate:"omitempty"`     // Optional start date filter
+	EndDate    *time.Time `json:"end_date,omitempty"   validate:"omitempty"`     // Optional end date filter
+	Type       *string    `json:"type,omitempty"       validate:"omitempty"`     // Optional transaction type filter // TODO: one of
+	Status     *string    `json:"status,omitempty"     validate:"omitempty"`     // Optional transaction status filter // TODO: one of
 }
 
 // TransactionHistoryItem represents a single transaction history item
@@ -100,11 +100,11 @@ type TransactionHistoryItem struct {
 	Source              string            `json:"source"`                                                    // Metadata source key
 	DepositMethod       string            `json:"deposit_method,omitempty"`                                  // payment_gateway, deposit_receipt, or admin_charge
 	DateTime            time.Time         `json:"datetime"`                                                  // When the transaction occurred
-	ExternalRef         *string           `json:"external_ref,omitempty" validate:"omitempty"`               // External reference (e.g., Atipay reference)
+	ExternalRef         *string           `json:"external_ref,omitempty"          validate:"omitempty"`      // External reference (e.g., Atipay reference)
 	CustomerInvoiceUUID *string           `json:"customer_invoice_uuid,omitempty" validate:"omitempty,uuid"` //
 	BalanceBefore       map[string]uint64 `json:"balance_before"`                                            // Balance before transaction
 	BalanceAfter        map[string]uint64 `json:"balance_after"`                                             // Balance after transaction
-	Metadata            map[string]any    `json:"metadata,omitempty" validate:"omitempty"`                   // Additional transaction metadata
+	Metadata            map[string]any    `json:"metadata,omitempty"              validate:"omitempty"`      // Additional transaction metadata
 }
 
 // TransactionHistoryResponse represents the response for transaction history
@@ -114,11 +114,11 @@ type TransactionHistoryResponse struct {
 }
 
 type AdminListTransactionsRequest struct {
-	Page         uint       `json:"page" validate:"min=1"`
-	PageSize     uint       `json:"page_size" validate:"min=1,max=100"`
-	StartDate    *time.Time `json:"start_date,omitempty" validate:"omitempty"`
-	EndDate      *time.Time `json:"end_date,omitempty" validate:"omitempty"`
-	CustomerID   *uint      `json:"customer_id,omitempty" validate:"omitempty,min=1"`
+	Page         uint       `json:"page"                    validate:"min=1"`
+	PageSize     uint       `json:"page_size"               validate:"min=1,max=100"`
+	StartDate    *time.Time `json:"start_date,omitempty"    validate:"omitempty"`
+	EndDate      *time.Time `json:"end_date,omitempty"      validate:"omitempty"`
+	CustomerID   *uint      `json:"customer_id,omitempty"   validate:"omitempty,min=1"`
 	CustomerName *string    `json:"customer_name,omitempty" validate:"omitempty"`
 }
 
@@ -136,11 +136,11 @@ type AdminTransactionItem struct {
 	Source              string                       `json:"source"`
 	DepositMethod       string                       `json:"deposit_method,omitempty"`
 	DateTime            time.Time                    `json:"datetime"`
-	ExternalRef         *string                      `json:"external_ref,omitempty" validate:"omitempty"`
+	ExternalRef         *string                      `json:"external_ref,omitempty"          validate:"omitempty"`
 	CustomerInvoiceUUID *string                      `json:"customer_invoice_uuid,omitempty" validate:"omitempty,uuid"`
 	BalanceBefore       map[string]uint64            `json:"balance_before"`
 	BalanceAfter        map[string]uint64            `json:"balance_after"`
-	Metadata            map[string]any               `json:"metadata,omitempty" validate:"omitempty"`
+	Metadata            map[string]any               `json:"metadata,omitempty"              validate:"omitempty"`
 }
 
 type AdminTransactionCustomerInfo struct {
@@ -226,12 +226,12 @@ const (
 
 type SubmitDepositReceiptRequest struct {
 	CustomerID  uint   `json:"-"` // from auth context
-	Amount      uint64 `json:"amount" validate:"required,min=1000,max=1000000000"`
+	Amount      uint64 `json:"amount"         validate:"required,min=1000,max=1000000000"`
 	Lang        string `json:"lang,omitempty" validate:"omitempty,oneof=FA EN"`
-	FileName    string `json:"file_name" validate:"required,min=3,max=255"`
-	ContentType string `json:"content_type" validate:"required,min=3,max=120"`
-	FileSize    int64  `json:"file_size" validate:"required,min=1,max=5242880"` // cap 5MB
-	FileBase64  string `json:"file_base64" validate:"required"`                 // frontend will send; backend decodes to []byte
+	FileName    string `json:"file_name"      validate:"required,min=3,max=255"`
+	ContentType string `json:"content_type"   validate:"required,min=3,max=120"`
+	FileSize    int64  `json:"file_size"      validate:"required,min=1,max=5242880"` // cap 5MB
+	FileBase64  string `json:"file_base64"    validate:"required"`                   // frontend will send; backend decodes to []byte
 }
 
 type SubmitDepositReceiptResponse struct {
@@ -268,21 +268,21 @@ type ProformaPreviewResponse struct {
 }
 
 type UpdateDepositReceiptFileRequest struct {
-	FileName    string `json:"file_name" validate:"required,min=3,max=255"`
+	FileName    string `json:"file_name"    validate:"required,min=3,max=255"`
 	ContentType string `json:"content_type" validate:"required,min=3,max=120"`
-	FileSize    int64  `json:"file_size" validate:"required,min=1,max=5242880"`
-	FileBase64  string `json:"file_base64" validate:"required"`
+	FileSize    int64  `json:"file_size"    validate:"required,min=1,max=5242880"`
+	FileBase64  string `json:"file_base64"  validate:"required"`
 }
 
 type AdminUpdateDepositReceiptStatusRequest struct {
-	ReceiptUUID string `json:"receipt_uuid" validate:"required"`
-	Action      string `json:"action" validate:"required,oneof=approve reject"`
+	ReceiptUUID string `json:"receipt_uuid"     validate:"required"`
+	Action      string `json:"action"           validate:"required,oneof=approve reject"`
 	// CustomerInvoiceUUID string `json:"customer_invoice_uuid,omitempty" validate:"omitempty,uuid"`
 	Reason string `json:"reason,omitempty" validate:"omitempty,min=3,max=500"`
 }
 
 type AdminAddInvoiceToTransactionRequest struct {
-	TransactionUUID     string `json:"transaction_uuid" validate:"required,uuid"`
+	TransactionUUID     string `json:"transaction_uuid"      validate:"required,uuid"`
 	CustomerInvoiceUUID string `json:"customer_invoice_uuid" validate:"required,uuid"`
 }
 

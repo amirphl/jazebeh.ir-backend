@@ -17,7 +17,11 @@ import (
 
 // PlatformSettingsFlow defines operations for platform settings.
 type PlatformSettingsFlow interface {
-	CreatePlatformSettings(ctx context.Context, req *dto.CreatePlatformSettingsRequest, metadata *ClientMetadata) (*dto.CreatePlatformSettingsResponse, error)
+	CreatePlatformSettings(
+		ctx context.Context,
+		req *dto.CreatePlatformSettingsRequest,
+		metadata *ClientMetadata,
+	) (*dto.CreatePlatformSettingsResponse, error)
 	ListPlatformSettings(ctx context.Context, customerID uint) (*dto.ListPlatformSettingsResponse, error)
 }
 
@@ -44,7 +48,11 @@ func NewPlatformSettingsFlow(
 	}
 }
 
-func (f *PlatformSettingsFlowImpl) CreatePlatformSettings(ctx context.Context, req *dto.CreatePlatformSettingsRequest, metadata *ClientMetadata) (*dto.CreatePlatformSettingsResponse, error) {
+func (f *PlatformSettingsFlowImpl) CreatePlatformSettings(
+	ctx context.Context,
+	req *dto.CreatePlatformSettingsRequest,
+	metadata *ClientMetadata,
+) (*dto.CreatePlatformSettingsResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("INVALID_REQUEST", "request is required", nil)
 	}
@@ -66,10 +74,18 @@ func (f *PlatformSettingsFlowImpl) CreatePlatformSettings(ctx context.Context, r
 			Name:       normalizedName,
 		})
 		if err != nil {
-			return nil, NewBusinessError("PLATFORM_SETTINGS_DUPLICATE_CHECK_FAILED", "failed to check duplicate platform settings name", err)
+			return nil, NewBusinessError(
+				"PLATFORM_SETTINGS_DUPLICATE_CHECK_FAILED",
+				"failed to check duplicate platform settings name",
+				err,
+			)
 		}
 		if exists {
-			return nil, NewBusinessError("PLATFORM_SETTINGS_NAME_ALREADY_EXISTS", "platform settings name already exists for this customer", ErrPlatformSettingsNameExists)
+			return nil, NewBusinessError(
+				"PLATFORM_SETTINGS_NAME_ALREADY_EXISTS",
+				"platform settings name already exists for this customer",
+				ErrPlatformSettingsNameExists,
+			)
 		}
 	}
 

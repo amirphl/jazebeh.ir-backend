@@ -234,7 +234,12 @@ func (r *CustomerRepositoryImpl) applyFilter(query *gorm.DB, filter models.Custo
 }
 
 // ByFilter retrieves customers based on filter criteria
-func (r *CustomerRepositoryImpl) ByFilter(ctx context.Context, filter models.CustomerFilter, orderBy string, limit, offset int) ([]*models.Customer, error) {
+func (r *CustomerRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.CustomerFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Customer, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.Customer{})
 
@@ -328,7 +333,12 @@ func (r *CustomerRepositoryImpl) UpdatePassword(ctx context.Context, customerID 
 
 // UpdateVerificationStatus updates verification fields for an existing customer
 // This is a special case that allows updating verification status while maintaining referential integrity
-func (r *CustomerRepositoryImpl) UpdateVerificationStatus(ctx context.Context, customerID uint, isMobileVerified, isEmailVerified *bool, mobileVerifiedAt, emailVerifiedAt *time.Time) error {
+func (r *CustomerRepositoryImpl) UpdateVerificationStatus(
+	ctx context.Context,
+	customerID uint,
+	isMobileVerified, isEmailVerified *bool,
+	mobileVerifiedAt, emailVerifiedAt *time.Time,
+) error {
 	db, shouldCommit, err := r.getDBForWrite(ctx)
 	if err != nil {
 		return err

@@ -33,7 +33,8 @@ func NewAdminCustomerManagementHandler(flow businessflow.AdminCustomerManagement
 }
 
 func (h *AdminCustomerManagementHandler) ErrorResponse(c fiber.Ctx, statusCode int, message, errorCode string, details any) error {
-	return c.Status(statusCode).JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: errorCode, Details: details}})
+	return c.Status(statusCode).
+		JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: errorCode, Details: details}})
 }
 
 func (h *AdminCustomerManagementHandler) SuccessResponse(c fiber.Ctx, statusCode int, message string, data any) error {
@@ -134,7 +135,12 @@ func (h *AdminCustomerManagementHandler) GetCustomerWithCampaigns(c fiber.Ctx) e
 	res, err := h.flow.GetCustomerWithCampaigns(ctx, uint(cid))
 	if err != nil {
 		log.Println("Admin get customer with campaigns failed", err)
-		return h.respondAdminCustomerManagementError(c, err, "Failed to retrieve customer details", "GET_ADMIN_CUSTOMER_WITH_CAMPAIGNS_FAILED")
+		return h.respondAdminCustomerManagementError(
+			c,
+			err,
+			"Failed to retrieve customer details",
+			"GET_ADMIN_CUSTOMER_WITH_CAMPAIGNS_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Customer details retrieved successfully", res)
 }
@@ -190,7 +196,12 @@ func (h *AdminCustomerManagementHandler) GetCustomerDiscountsHistory(c fiber.Ctx
 	res, err := h.flow.GetCustomerDiscountsHistory(ctx, uint(cid))
 	if err != nil {
 		log.Println("Admin list customer discounts history failed", err)
-		return h.respondAdminCustomerManagementError(c, err, "Failed to list customer discounts history", "LIST_CUSTOMER_DISCOUNTS_HISTORY_FAILED")
+		return h.respondAdminCustomerManagementError(
+			c,
+			err,
+			"Failed to list customer discounts history",
+			"LIST_CUSTOMER_DISCOUNTS_HISTORY_FAILED",
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Customer discounts history retrieved successfully", res)
 }
@@ -230,7 +241,11 @@ func (h *AdminCustomerManagementHandler) respondAdminCustomerManagementError(
 	return h.ErrorResponse(c, fiber.StatusInternalServerError, defaultMessage, defaultCode, nil)
 }
 
-func (h *AdminCustomerManagementHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *AdminCustomerManagementHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

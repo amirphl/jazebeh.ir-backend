@@ -132,7 +132,13 @@ EXISTS (
 // also terminalizes runs with delivery intent. A sent row is written immediately
 // before external dispatch, so it is the durable no-replay boundary even if the
 // worker dies before persisting a provider response.
-func recoverUndeliveredCampaigns(ctx context.Context, db *gorm.DB, selector string, selectorArgs []any, staleResult *CampaignExecutionRecoveryResult) error {
+func recoverUndeliveredCampaigns(
+	ctx context.Context,
+	db *gorm.DB,
+	selector string,
+	selectorArgs []any,
+	staleResult *CampaignExecutionRecoveryResult,
+) error {
 	if db == nil {
 		return errors.New("campaign execution recovery database is nil")
 	}
@@ -210,7 +216,11 @@ type BundleActiveTestReservation struct {
 // reservations used by exact-capacity deductions and fingerprint validation.
 // Excel targeting is intentionally excluded: its recipients are explicitly
 // reusable and never participate in the bundle audience-selection ledger.
-func ListBundleCampaignAllocations(ctx context.Context, db *gorm.DB, bundleID, excludedCampaignID uint) ([]BundleCampaignAllocation, error) {
+func ListBundleCampaignAllocations(
+	ctx context.Context,
+	db *gorm.DB,
+	bundleID, excludedCampaignID uint,
+) ([]BundleCampaignAllocation, error) {
 	queryDB := db.WithContext(ctx)
 	if tx, ok := ctx.Value(TxContextKey).(*gorm.DB); ok && tx != nil {
 		queryDB = tx.WithContext(ctx)
@@ -225,7 +235,11 @@ func ListBundleCampaignAllocations(ctx context.Context, db *gorm.DB, bundleID, e
 // other campaigns in the Bundle. They are already excluded by audience
 // candidate queries, so callers use this only to make old capacity snapshots
 // stale when the candidate population changes.
-func ListBundleActiveTestReservations(ctx context.Context, db *gorm.DB, bundleID, excludedCampaignID uint) ([]BundleActiveTestReservation, error) {
+func ListBundleActiveTestReservations(
+	ctx context.Context,
+	db *gorm.DB,
+	bundleID, excludedCampaignID uint,
+) ([]BundleActiveTestReservation, error) {
 	queryDB := db.WithContext(ctx)
 	if tx, ok := ctx.Value(TxContextKey).(*gorm.DB); ok && tx != nil {
 		queryDB = tx.WithContext(ctx)
@@ -238,7 +252,11 @@ func ListBundleActiveTestReservations(ctx context.Context, db *gorm.DB, bundleID
 
 // ListBundleActiveExecutionReservations returns execution-phase reservations
 // in the same compact fingerprint form as Test snapshots.
-func ListBundleActiveExecutionReservations(ctx context.Context, db *gorm.DB, bundleID, excludedCampaignID uint) ([]BundleActiveTestReservation, error) {
+func ListBundleActiveExecutionReservations(
+	ctx context.Context,
+	db *gorm.DB,
+	bundleID, excludedCampaignID uint,
+) ([]BundleActiveTestReservation, error) {
 	queryDB := db.WithContext(ctx)
 	if tx, ok := ctx.Value(TxContextKey).(*gorm.DB); ok && tx != nil {
 		queryDB = tx.WithContext(ctx)

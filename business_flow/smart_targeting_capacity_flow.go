@@ -38,9 +38,18 @@ var (
 // previously calculated generation becomes stale by derivation when its input
 // hash, allocation fingerprint, or expiry no longer matches.
 type SmartTargetingCapacityFlow interface {
-	Start(ctx context.Context, req *dto.StartSmartTargetingCapacityCalculationRequest, metadata *ClientMetadata) (*dto.SmartTargetingCapacityCalculationResponse, error)
+	Start(
+		ctx context.Context,
+		req *dto.StartSmartTargetingCapacityCalculationRequest,
+		metadata *ClientMetadata,
+	) (*dto.SmartTargetingCapacityCalculationResponse, error)
 	GetCurrent(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingCapacityCalculationResponse, error)
-	GetByID(ctx context.Context, customerID uint, campaignUUID string, calculationID int64) (*dto.SmartTargetingCapacityCalculationResponse, error)
+	GetByID(
+		ctx context.Context,
+		customerID uint,
+		campaignUUID string,
+		calculationID int64,
+	) (*dto.SmartTargetingCapacityCalculationResponse, error)
 	ExecuteCampaignTargetingCapacityCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) error
 }
 
@@ -156,7 +165,9 @@ func smartTargetingTagHash(campaignID uint, ids []uint) string {
 	for i, id := range canonicalIDs {
 		parts[i] = strconv.FormatUint(uint64(id), 10)
 	}
-	return hashSmartTargetingCapacityString("v1|campaign=" + strconv.FormatUint(uint64(campaignID), 10) + "|tags=" + strings.Join(parts, ","))
+	return hashSmartTargetingCapacityString(
+		"v1|campaign=" + strconv.FormatUint(uint64(campaignID), 10) + "|tags=" + strings.Join(parts, ","),
+	)
 }
 
 func smartTargetingCapacityPhase(campaign *models.Campaign) repository.SmartTargetingSelectionPhase {
@@ -173,7 +184,13 @@ func smartTargetingCapacityPhase(campaign *models.Campaign) repository.SmartTarg
 	}
 }
 
-func smartTargetingInputHash(tagHash string, classes []string, platform string, allowedColors []string, phase repository.SmartTargetingSelectionPhase) string {
+func smartTargetingInputHash(
+	tagHash string,
+	classes []string,
+	platform string,
+	allowedColors []string,
+	phase repository.SmartTargetingSelectionPhase,
+) string {
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	return hashSmartTargetingCapacityString(
 		"v5|algorithm=" + strconv.Itoa(models.SmartTargetingCapacityAlgorithmVersion) +
@@ -208,7 +225,11 @@ func smartTargetingScoreClass(score, p33, p66 *float64) string {
 	return "A"
 }
 
-func (f *SmartTargetingCapacityFlowImpl) ownedSmartCampaign(ctx context.Context, customerID uint, campaignUUID string) (*models.Campaign, error) {
+func (f *SmartTargetingCapacityFlowImpl) ownedSmartCampaign(
+	ctx context.Context,
+	customerID uint,
+	campaignUUID string,
+) (*models.Campaign, error) {
 	if customerID == 0 {
 		return nil, NewBusinessError("MISSING_CUSTOMER_ID", "Customer ID is required", ErrCustomerNotFound)
 	}
@@ -268,7 +289,11 @@ func canonicalSmartTargetingCapacityTagIDs(ids []uint) pq.Int64Array {
 	return result
 }
 
-func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.StartSmartTargetingCapacityCalculationRequest, metadata *ClientMetadata) (*dto.SmartTargetingCapacityCalculationResponse, error) {
+func (f *SmartTargetingCapacityFlowImpl) Start(
+	ctx context.Context,
+	req *dto.StartSmartTargetingCapacityCalculationRequest,
+	metadata *ClientMetadata,
+) (*dto.SmartTargetingCapacityCalculationResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("SMART_TARGETING_CAPACITY_REQUEST_INVALID", "Exact capacity request is invalid", ErrInvalidState)
 	}
@@ -284,7 +309,11 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 		return nil, NewBusinessError("SMART_TARGETING_SCORE_CLASSES_INVALID", "Audience score classes are invalid", err)
 	}
 	if !canCalculateSmartTargetingCapacity(campaign) {
-		return nil, NewBusinessError("SMART_TARGETING_CAPACITY_NOT_ALLOWED", "Exact capacity calculation is not allowed in the current campaign state", ErrInvalidState)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_CAPACITY_NOT_ALLOWED",
+			"Exact capacity calculation is not allowed in the current campaign state",
+			ErrInvalidState,
+		)
 	}
 
 	var calculation *models.CampaignTargetingCapacityCalculation
@@ -297,7 +326,9 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 		if err := txDB.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedCampaign, campaign.ID).Error; err != nil {
 			return err
 		}
-		if !canCalculateSmartTargetingCapacity(&lockedCampaign) || !lockedCampaign.Spec.UsesSmartTargeting() || lockedCampaign.BundleID == nil || *lockedCampaign.BundleID == 0 {
+		if !canCalculateSmartTargetingCapacity(&lockedCampaign) || !lockedCampaign.Spec.UsesSmartTargeting() ||
+			lockedCampaign.BundleID == nil ||
+			*lockedCampaign.BundleID == 0 {
 			return ErrInvalidState
 		}
 		platform := strings.ToLower(strings.TrimSpace(lockedCampaign.Spec.Platform))
@@ -422,7 +453,11 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 			return nil, NewBusinessError("SMART_TARGETING_SELECTION_INVALID", "The selected Smart Targeting tags are no longer valid", err)
 		}
 		if errors.Is(err, ErrInvalidState) {
-			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_NOT_ALLOWED", "Exact capacity calculation is not allowed for the requested campaign configuration", err)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_CAPACITY_NOT_ALLOWED",
+				"Exact capacity calculation is not allowed for the requested campaign configuration",
+				err,
+			)
 		}
 		return nil, NewBusinessError("SMART_TARGETING_CAPACITY_REQUEST_FAILED", "Failed to request exact capacity calculation", err)
 	}
@@ -430,7 +465,11 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 	return capacityDTO(calculation, reused, false), nil
 }
 
-func (f *SmartTargetingCapacityFlowImpl) GetCurrent(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingCapacityCalculationResponse, error) {
+func (f *SmartTargetingCapacityFlowImpl) GetCurrent(
+	ctx context.Context,
+	customerID uint,
+	campaignUUID string,
+) (*dto.SmartTargetingCapacityCalculationResponse, error) {
 	campaign, err := f.ownedSmartCampaign(ctx, customerID, campaignUUID)
 	if err != nil {
 		return nil, err
@@ -444,11 +483,19 @@ func (f *SmartTargetingCapacityFlowImpl) GetCurrent(ctx context.Context, custome
 		}
 		allowedColors, colorsErr := smartTargetingAllowedColorsForCampaign(ctx, f.lineNumberRepo, campaign)
 		if colorsErr != nil {
-			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_LOOKUP_FAILED", "Failed to resolve Smart Targeting delivery eligibility", colorsErr)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_CAPACITY_LOOKUP_FAILED",
+				"Failed to resolve Smart Targeting delivery eligibility",
+				colorsErr,
+			)
 		}
 		phase := smartTargetingCapacityPhase(campaign)
 		if phase == "" {
-			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_NOT_ALLOWED", "Exact capacity calculation has an invalid campaign phase", ErrInvalidState)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_CAPACITY_NOT_ALLOWED",
+				"Exact capacity calculation has an invalid campaign phase",
+				ErrInvalidState,
+			)
 		}
 		inputHash := smartTargetingInputHash(
 			smartTargetingTagHash(campaign.ID, ids),
@@ -459,12 +506,20 @@ func (f *SmartTargetingCapacityFlowImpl) GetCurrent(ctx context.Context, custome
 		)
 		calculated, calculatedErr := f.calculationRepo.LatestCalculatedByInput(ctx, campaign.ID, inputHash)
 		if calculatedErr != nil {
-			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_LOOKUP_FAILED", "Failed to load exact capacity calculation", calculatedErr)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_CAPACITY_LOOKUP_FAILED",
+				"Failed to load exact capacity calculation",
+				calculatedErr,
+			)
 		}
 		if calculated != nil {
 			current, currentErr := isCurrentSmartTargetingCapacity(ctx, f.db, f.selectionRepo, f.lineNumberRepo, calculated, campaign)
 			if currentErr != nil {
-				return nil, NewBusinessError("SMART_TARGETING_CAPACITY_LOOKUP_FAILED", "Failed to validate exact capacity calculation", currentErr)
+				return nil, NewBusinessError(
+					"SMART_TARGETING_CAPACITY_LOOKUP_FAILED",
+					"Failed to validate exact capacity calculation",
+					currentErr,
+				)
 			}
 			if current {
 				return capacityDTO(calculated, true, false), nil
@@ -502,7 +557,12 @@ func (f *SmartTargetingCapacityFlowImpl) GetCurrent(ctx context.Context, custome
 	return response, nil
 }
 
-func (f *SmartTargetingCapacityFlowImpl) GetByID(ctx context.Context, customerID uint, campaignUUID string, calculationID int64) (*dto.SmartTargetingCapacityCalculationResponse, error) {
+func (f *SmartTargetingCapacityFlowImpl) GetByID(
+	ctx context.Context,
+	customerID uint,
+	campaignUUID string,
+	calculationID int64,
+) (*dto.SmartTargetingCapacityCalculationResponse, error) {
 	campaign, err := f.ownedSmartCampaign(ctx, customerID, campaignUUID)
 	if err != nil {
 		return nil, err
@@ -517,7 +577,11 @@ func (f *SmartTargetingCapacityFlowImpl) GetByID(ctx context.Context, customerID
 	return f.statusDTO(ctx, campaign, calculation)
 }
 
-func (f *SmartTargetingCapacityFlowImpl) statusDTO(ctx context.Context, campaign *models.Campaign, calculation *models.CampaignTargetingCapacityCalculation) (*dto.SmartTargetingCapacityCalculationResponse, error) {
+func (f *SmartTargetingCapacityFlowImpl) statusDTO(
+	ctx context.Context,
+	campaign *models.Campaign,
+	calculation *models.CampaignTargetingCapacityCalculation,
+) (*dto.SmartTargetingCapacityCalculationResponse, error) {
 	if calculation != nil && calculation.Status == models.CampaignTargetingCapacityFailed {
 		return capacityDTO(calculation, false, false), nil
 	}
@@ -535,7 +599,14 @@ func (f *SmartTargetingCapacityFlowImpl) statusDTO(ctx context.Context, campaign
 
 // CurrentSmartTargetingCapacity is shared by campaign cost calculation. It
 // intentionally rejects pending, failed, expired and fingerprint-stale rows.
-func CurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selectionRepo repository.CampaignSelectedTagRepository, calculationRepo repository.CampaignTargetingCapacityRepository, lineNumberRepo repository.LineNumberRepository, campaign *models.Campaign) (*models.CampaignTargetingCapacityCalculation, error) {
+func CurrentSmartTargetingCapacity(
+	ctx context.Context,
+	db *gorm.DB,
+	selectionRepo repository.CampaignSelectedTagRepository,
+	calculationRepo repository.CampaignTargetingCapacityRepository,
+	lineNumberRepo repository.LineNumberRepository,
+	campaign *models.Campaign,
+) (*models.CampaignTargetingCapacityCalculation, error) {
 	if campaign == nil || !campaign.Spec.UsesSmartTargeting() || campaign.BundleID == nil {
 		return nil, ErrSmartTargetingExactCapacityRequired
 	}
@@ -611,14 +682,24 @@ func EnsureCurrentSmartTargetingCapacity(
 	return nil, &SmartTargetingCapacityPendingError{Response: response}
 }
 
-func isCurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selectionRepo repository.CampaignSelectedTagRepository, lineNumberRepo repository.LineNumberRepository, calculation *models.CampaignTargetingCapacityCalculation, campaign *models.Campaign) (bool, error) {
-	if calculation == nil || campaign == nil || calculation.CampaignID != campaign.ID || calculation.BundleID == 0 || campaign.BundleID == nil || calculation.BundleID != *campaign.BundleID {
+func isCurrentSmartTargetingCapacity(
+	ctx context.Context,
+	db *gorm.DB,
+	selectionRepo repository.CampaignSelectedTagRepository,
+	lineNumberRepo repository.LineNumberRepository,
+	calculation *models.CampaignTargetingCapacityCalculation,
+	campaign *models.Campaign,
+) (bool, error) {
+	if calculation == nil || campaign == nil || calculation.CampaignID != campaign.ID || calculation.BundleID == 0 ||
+		campaign.BundleID == nil ||
+		calculation.BundleID != *campaign.BundleID {
 		return false, nil
 	}
 	if calculation.Phase != string(campaign.Phase) {
 		return false, nil
 	}
-	if calculation.Status != models.CampaignTargetingCapacityCalculated || calculation.ExpiresAt == nil || !calculation.ExpiresAt.After(time.Now().UTC()) {
+	if calculation.Status != models.CampaignTargetingCapacityCalculated || calculation.ExpiresAt == nil ||
+		!calculation.ExpiresAt.After(time.Now().UTC()) {
 		return false, nil
 	}
 	if campaign.Spec.ScheduleAt != nil && !calculation.ExpiresAt.After(campaign.Spec.ScheduleAt.UTC()) {
@@ -692,14 +773,22 @@ func smartTargetingBundleAllocationState(ctx context.Context, db *gorm.DB, bundl
 	if err != nil {
 		return 0, "", err
 	}
-	return smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(bundleID, rows, append(activeTestReservations, activeExecutionReservations...))
+	return smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(
+		bundleID,
+		rows,
+		append(activeTestReservations, activeExecutionReservations...),
+	)
 }
 
 func smartTargetingBundleAllocationStateFromRows(bundleID uint, rows []repository.BundleCampaignAllocation) (int64, string, error) {
 	return smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(bundleID, rows, nil)
 }
 
-func smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(bundleID uint, rows []repository.BundleCampaignAllocation, activeTestReservations []repository.BundleActiveTestReservation) (int64, string, error) {
+func smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(
+	bundleID uint,
+	rows []repository.BundleCampaignAllocation,
+	activeTestReservations []repository.BundleActiveTestReservation,
+) (int64, string, error) {
 	if bundleID == 0 {
 		return 0, "", ErrBundleNotFound
 	}
@@ -720,13 +809,27 @@ func smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(bundle
 			return 0, "", fmt.Errorf("approved campaign audience deduction overflow")
 		}
 		_, concretelyReserved := concreteReservationCampaigns[row.CampaignID]
-		if (row.Status == models.CampaignStatusApproved || row.Status == models.CampaignStatusRunning) && !row.Materialized && !concretelyReserved {
+		if (row.Status == models.CampaignStatusApproved || row.Status == models.CampaignStatusRunning) && !row.Materialized &&
+			!concretelyReserved {
 			if total > math.MaxInt64-int64(amount) {
 				return 0, "", fmt.Errorf("approved campaign audience deduction overflow")
 			}
 			total += int64(amount)
 		}
-		parts = append(parts, strconv.FormatUint(uint64(row.CampaignID), 10)+":"+strconv.FormatUint(amount, 10)+":"+string(row.Status)+":"+strconv.FormatBool(row.Materialized))
+		parts = append(
+			parts,
+			strconv.FormatUint(
+				uint64(row.CampaignID),
+				10,
+			)+":"+strconv.FormatUint(
+				amount,
+				10,
+			)+":"+string(
+				row.Status,
+			)+":"+strconv.FormatBool(
+				row.Materialized,
+			),
+		)
 	}
 	fingerprintInput := "v3|bundle=" + strconv.FormatUint(uint64(bundleID), 10) + "|allocations=" + strings.Join(parts, ",")
 	if len(activeTestReservations) > 0 {
@@ -757,7 +860,12 @@ func smartTargetingBundleAllocationFingerprint(ctx context.Context, db *gorm.DB,
 	return fingerprint, err
 }
 
-func approvedCampaignDeduction(ctx context.Context, db *gorm.DB, calculation *models.CampaignTargetingCapacityCalculation, currentCampaignID uint) (int64, string, error) {
+func approvedCampaignDeduction(
+	ctx context.Context,
+	db *gorm.DB,
+	calculation *models.CampaignTargetingCapacityCalculation,
+	currentCampaignID uint,
+) (int64, string, error) {
 	if calculation == nil {
 		return 0, "", ErrInvalidState
 	}
@@ -793,12 +901,17 @@ func smartTargetingCapacityAudienceQuery(calculation *models.CampaignTargetingCa
 	return query
 }
 
-func (f *SmartTargetingCapacityFlowImpl) ExecuteCampaignTargetingCapacityCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) (err error) {
+func (f *SmartTargetingCapacityFlowImpl) ExecuteCampaignTargetingCapacityCalculation(
+	ctx context.Context,
+	calculationID int64,
+	leaseStartedAt time.Time,
+) (err error) {
 	calculation, err := f.calculationRepo.ByID(ctx, calculationID)
 	if err != nil {
 		return err
 	}
-	if calculation == nil || calculation.Status != models.CampaignTargetingCapacityCalculating || calculation.StartedAt == nil || !calculation.StartedAt.Equal(leaseStartedAt) {
+	if calculation == nil || calculation.Status != models.CampaignTargetingCapacityCalculating || calculation.StartedAt == nil ||
+		!calculation.StartedAt.Equal(leaseStartedAt) {
 		return nil
 	}
 	defer func() {
@@ -812,7 +925,14 @@ func (f *SmartTargetingCapacityFlowImpl) ExecuteCampaignTargetingCapacityCalcula
 		// remains in worker logs, never in polling responses.
 		failCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = f.calculationRepo.Fail(failCtx, calculation.ID, leaseStartedAt, "SMART_TARGETING_CAPACITY_CALCULATION_FAILED", "Exact capacity calculation could not be completed", time.Now().UTC())
+		_ = f.calculationRepo.Fail(
+			failCtx,
+			calculation.ID,
+			leaseStartedAt,
+			"SMART_TARGETING_CAPACITY_CALCULATION_FAILED",
+			"Exact capacity calculation could not be completed",
+			time.Now().UTC(),
+		)
 	}()
 	if calculation.ExpiresAt == nil || !calculation.ExpiresAt.After(time.Now().UTC()) {
 		return errors.New("exact Smart Targeting capacity calculation expired before execution")
@@ -824,7 +944,8 @@ func (f *SmartTargetingCapacityFlowImpl) ExecuteCampaignTargetingCapacityCalcula
 		if err := txDB.First(&current, calculation.ID).Error; err != nil {
 			return err
 		}
-		if current.Status != models.CampaignTargetingCapacityCalculating || current.StartedAt == nil || !current.StartedAt.Equal(leaseStartedAt) {
+		if current.Status != models.CampaignTargetingCapacityCalculating || current.StartedAt == nil ||
+			!current.StartedAt.Equal(leaseStartedAt) {
 			return nil
 		}
 		if current.ExpiresAt == nil || !current.ExpiresAt.After(time.Now().UTC()) {
@@ -836,7 +957,8 @@ func (f *SmartTargetingCapacityFlowImpl) ExecuteCampaignTargetingCapacityCalcula
 		if err := repository.LockBundleForShare(txCtx, current.BundleID); err != nil {
 			return err
 		}
-		capacity, err := repository.NewSmartTargetingAudienceRepository(txDB).CalculateCapacity(txCtx, smartTargetingCapacityAudienceQuery(&current))
+		capacity, err := repository.NewSmartTargetingAudienceRepository(txDB).
+			CalculateCapacity(txCtx, smartTargetingCapacityAudienceQuery(&current))
 		if err != nil {
 			return err
 		}
@@ -848,11 +970,24 @@ func (f *SmartTargetingCapacityFlowImpl) ExecuteCampaignTargetingCapacityCalcula
 		if usable < 0 {
 			usable = 0
 		}
-		return f.calculationRepo.Complete(txCtx, current.ID, leaseStartedAt, capacity.RawUniqueCount, capacity.EligibleUniqueCount, deduction, usable, fingerprint, time.Now().UTC())
+		return f.calculationRepo.Complete(
+			txCtx,
+			current.ID,
+			leaseStartedAt,
+			capacity.RawUniqueCount,
+			capacity.EligibleUniqueCount,
+			deduction,
+			usable,
+			fingerprint,
+			time.Now().UTC(),
+		)
 	})
 }
 
-func capacityDTO(calculation *models.CampaignTargetingCapacityCalculation, current, recalculationRequired bool) *dto.SmartTargetingCapacityCalculationResponse {
+func capacityDTO(
+	calculation *models.CampaignTargetingCapacityCalculation,
+	current, recalculationRequired bool,
+) *dto.SmartTargetingCapacityCalculationResponse {
 	if calculation == nil {
 		return &dto.SmartTargetingCapacityCalculationResponse{Status: "not_calculated", SelectedScoreClasses: []string{"A", "B", "C"}}
 	}

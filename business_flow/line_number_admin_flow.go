@@ -18,7 +18,11 @@ type AdminLineNumberFlow interface {
 	Create(ctx context.Context, req *dto.AdminCreateLineNumberRequest, metadata *ClientMetadata) (*dto.AdminLineNumberDTO, error)
 	ListAll(ctx context.Context, metadata *ClientMetadata) ([]*dto.AdminLineNumberDTO, error)
 	UpdateBatch(ctx context.Context, req *dto.AdminUpdateLineNumbersRequest, metadata *ClientMetadata) error
-	UpdatePriceFactor(ctx context.Context, req *dto.AdminUpdateLineNumberPriceFactorRequest, metadata *ClientMetadata) (*dto.AdminLineNumberDTO, error)
+	UpdatePriceFactor(
+		ctx context.Context,
+		req *dto.AdminUpdateLineNumberPriceFactorRequest,
+		metadata *ClientMetadata,
+	) (*dto.AdminLineNumberDTO, error)
 	GetReport(ctx context.Context, metadata *ClientMetadata) ([]*dto.AdminLineNumberReportItem, error)
 }
 
@@ -28,7 +32,11 @@ type AdminLineNumberFlowImpl struct {
 	auditRepo repository.AuditLogRepository
 }
 
-func NewAdminLineNumberFlow(lineRepo repository.LineNumberRepository, db *gorm.DB, auditRepo repository.AuditLogRepository) AdminLineNumberFlow {
+func NewAdminLineNumberFlow(
+	lineRepo repository.LineNumberRepository,
+	db *gorm.DB,
+	auditRepo repository.AuditLogRepository,
+) AdminLineNumberFlow {
 	return &AdminLineNumberFlowImpl{
 		lineRepo:  lineRepo,
 		db:        db,
@@ -36,7 +44,11 @@ func NewAdminLineNumberFlow(lineRepo repository.LineNumberRepository, db *gorm.D
 	}
 }
 
-func (f *AdminLineNumberFlowImpl) Create(ctx context.Context, req *dto.AdminCreateLineNumberRequest, metadata *ClientMetadata) (*dto.AdminLineNumberDTO, error) {
+func (f *AdminLineNumberFlowImpl) Create(
+	ctx context.Context,
+	req *dto.AdminCreateLineNumberRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminLineNumberDTO, error) {
 	// Validate
 	if req == nil {
 		return nil, NewBusinessError("LINE_NUMBER_VALIDATION_FAILED", "Create line number validation failed", ErrLineNumberValueRequired)
@@ -73,18 +85,36 @@ func (f *AdminLineNumberFlowImpl) Create(ctx context.Context, req *dto.AdminCrea
 		existing.UpdatedAt = utils.UTCNow()
 
 		if err := f.lineRepo.Update(ctx, existing); err != nil {
-			logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin update existing line number", false, nil, map[string]any{
-				"line_number": value,
-				"id":          existing.ID,
-			}, err)
+			logAdminAction(
+				ctx,
+				f.auditRepo,
+				models.AuditActionAdminLineNumberUpdate,
+				"Admin update existing line number",
+				false,
+				nil,
+				map[string]any{
+					"line_number": value,
+					"id":          existing.ID,
+				},
+				err,
+			)
 			return nil, err
 		}
 
 		resp := ToLineNumberDTO(*existing)
-		logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin update existing line number", true, nil, map[string]any{
-			"line_number": value,
-			"id":          existing.ID,
-		}, nil)
+		logAdminAction(
+			ctx,
+			f.auditRepo,
+			models.AuditActionAdminLineNumberUpdate,
+			"Admin update existing line number",
+			true,
+			nil,
+			map[string]any{
+				"line_number": value,
+				"id":          existing.ID,
+			},
+			nil,
+		)
 		return &resp, nil
 	}
 
@@ -160,9 +190,18 @@ func (f *AdminLineNumberFlowImpl) UpdateBatch(ctx context.Context, req *dto.Admi
 	}
 	// Persist
 	if err := f.lineRepo.UpdateBatch(ctx, updates); err != nil {
-		logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin batch update line numbers", false, nil, map[string]any{
-			"updates": len(updates),
-		}, err)
+		logAdminAction(
+			ctx,
+			f.auditRepo,
+			models.AuditActionAdminLineNumberUpdate,
+			"Admin batch update line numbers",
+			false,
+			nil,
+			map[string]any{
+				"updates": len(updates),
+			},
+			err,
+		)
 		return NewBusinessError("LINE_NUMBER_BATCH_UPDATE_FAILED", "Failed to update line numbers", err)
 	}
 	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin batch update line numbers", true, nil, map[string]any{
@@ -171,9 +210,17 @@ func (f *AdminLineNumberFlowImpl) UpdateBatch(ctx context.Context, req *dto.Admi
 	return nil
 }
 
-func (f *AdminLineNumberFlowImpl) UpdatePriceFactor(ctx context.Context, req *dto.AdminUpdateLineNumberPriceFactorRequest, metadata *ClientMetadata) (*dto.AdminLineNumberDTO, error) {
+func (f *AdminLineNumberFlowImpl) UpdatePriceFactor(
+	ctx context.Context,
+	req *dto.AdminUpdateLineNumberPriceFactorRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminLineNumberDTO, error) {
 	if req == nil {
-		return nil, NewBusinessError("LINE_NUMBER_VALIDATION_FAILED", "Update line number price factor validation failed", ErrLineNumberValueRequired)
+		return nil, NewBusinessError(
+			"LINE_NUMBER_VALIDATION_FAILED",
+			"Update line number price factor validation failed",
+			ErrLineNumberValueRequired,
+		)
 	}
 
 	value := strings.TrimSpace(req.LineNumber)
@@ -195,26 +242,53 @@ func (f *AdminLineNumberFlowImpl) UpdatePriceFactor(ctx context.Context, req *dt
 	existing.PriceFactor = req.PriceFactor
 	existing.UpdatedAt = utils.UTCNow()
 	if err := f.lineRepo.Update(ctx, existing); err != nil {
-		logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin update line number price factor", false, nil, map[string]any{
-			"line_number":  value,
-			"price_factor": req.PriceFactor,
-		}, err)
+		logAdminAction(
+			ctx,
+			f.auditRepo,
+			models.AuditActionAdminLineNumberUpdate,
+			"Admin update line number price factor",
+			false,
+			nil,
+			map[string]any{
+				"line_number":  value,
+				"price_factor": req.PriceFactor,
+			},
+			err,
+		)
 		return nil, NewBusinessError("LINE_NUMBER_UPDATE_FAILED", "Failed to update line number price factor", err)
 	}
 
 	resp := ToLineNumberDTO(*existing)
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin update line number price factor", true, nil, map[string]any{
-		"line_number":  value,
-		"price_factor": req.PriceFactor,
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminLineNumberUpdate,
+		"Admin update line number price factor",
+		true,
+		nil,
+		map[string]any{
+			"line_number":  value,
+			"price_factor": req.PriceFactor,
+		},
+		nil,
+	)
 	return &resp, nil
 }
 
 func (f *AdminLineNumberFlowImpl) GetReport(ctx context.Context, metadata *ClientMetadata) ([]*dto.AdminLineNumberReportItem, error) {
 	// TODO: implement aggregation logic across messages/campaigns/transactions
 	items := []*dto.AdminLineNumberReportItem{}
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberReport, "Admin requested line number report", true, nil, map[string]any{
-		"items": len(items),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminLineNumberReport,
+		"Admin requested line number report",
+		true,
+		nil,
+		map[string]any{
+			"items": len(items),
+		},
+		nil,
+	)
 	return items, nil
 }

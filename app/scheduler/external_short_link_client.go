@@ -126,7 +126,13 @@ func (c *HTTPExternalShortLinkClient) requestPayload(ctx context.Context, method
 	return c.requestReader(ctx, method, path, bytes.NewReader(payload), true, out)
 }
 
-func (c *HTTPExternalShortLinkClient) requestReader(ctx context.Context, method, path string, reader io.Reader, hasJSONBody bool, out any) error {
+func (c *HTTPExternalShortLinkClient) requestReader(
+	ctx context.Context,
+	method, path string,
+	reader io.Reader,
+	hasJSONBody bool,
+	out any,
+) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.endpoint(path), reader)
 	if err != nil {
 		return err
@@ -203,7 +209,11 @@ func (c *HTTPExternalShortLinkClient) UploadMappings(ctx context.Context, links 
 			}
 		}
 		if len(encoded) > maxExternalMappingBodyBytes {
-			return uploadChunk{}, fmt.Errorf("external mapping at offset %d exceeds the %d-byte request limit", start, maxExternalMappingBodyBytes)
+			return uploadChunk{}, fmt.Errorf(
+				"external mapping at offset %d exceeds the %d-byte request limit",
+				start,
+				maxExternalMappingBodyBytes,
+			)
 		}
 		return uploadChunk{start: start, end: end, expected: len(payload.Links), encoded: encoded}, nil
 	}
@@ -216,7 +226,13 @@ func (c *HTTPExternalShortLinkClient) UploadMappings(ctx context.Context, links 
 			return fmt.Errorf("upload mapping chunk [%d,%d): %w", chunk.start, chunk.end, err)
 		}
 		if response.Persisted != chunk.expected {
-			return fmt.Errorf("upload mapping chunk [%d,%d): acknowledged %d of %d mappings", chunk.start, chunk.end, response.Persisted, chunk.expected)
+			return fmt.Errorf(
+				"upload mapping chunk [%d,%d): acknowledged %d of %d mappings",
+				chunk.start,
+				chunk.end,
+				response.Persisted,
+				chunk.expected,
+			)
 		}
 		return nil
 	}

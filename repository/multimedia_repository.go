@@ -60,7 +60,11 @@ func (r *MultimediaAssetRepositoryImpl) ExistsByUUID(ctx context.Context, uuidSt
 }
 
 // ByCustomerID retrieves multimedia assets for a customer.
-func (r *MultimediaAssetRepositoryImpl) ByCustomerID(ctx context.Context, customerID uint, limit, offset int) ([]*models.MultimediaAsset, error) {
+func (r *MultimediaAssetRepositoryImpl) ByCustomerID(
+	ctx context.Context,
+	customerID uint,
+	limit, offset int,
+) ([]*models.MultimediaAsset, error) {
 	return r.ByFilter(ctx, models.MultimediaAssetFilter{CustomerID: &customerID}, "id DESC", limit, offset)
 }
 
@@ -88,7 +92,12 @@ func (r *MultimediaAssetRepositoryImpl) applyFilter(query *gorm.DB, filter model
 }
 
 // ByFilter retrieves multimedia assets based on filter criteria.
-func (r *MultimediaAssetRepositoryImpl) ByFilter(ctx context.Context, filter models.MultimediaAssetFilter, orderBy string, limit, offset int) ([]*models.MultimediaAsset, error) {
+func (r *MultimediaAssetRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.MultimediaAssetFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.MultimediaAsset, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.MultimediaAsset{})
 

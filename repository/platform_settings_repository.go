@@ -83,7 +83,12 @@ func (r *PlatformSettingsRepositoryImpl) applyFilter(query *gorm.DB, filter mode
 }
 
 // ByFilter retrieves platform settings based on filter criteria.
-func (r *PlatformSettingsRepositoryImpl) ByFilter(ctx context.Context, filter models.PlatformSettingsFilter, orderBy string, limit, offset int) ([]*models.PlatformSettings, error) {
+func (r *PlatformSettingsRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.PlatformSettingsFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.PlatformSettings, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.PlatformSettings{})
 

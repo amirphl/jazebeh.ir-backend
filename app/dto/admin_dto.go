@@ -4,19 +4,19 @@ package dto
 import "time"
 
 type AdminDTO struct {
-	ID        uint   `json:"id" example:"1"`
-	UUID      string `json:"uuid" example:"f47ac10b-58cc-4372-a567-0e02b2c3d479"`
-	Username  string `json:"username" example:"admin"`
-	IsActive  *bool  `json:"is_active" example:"true"`
+	ID        uint   `json:"id"         example:"1"`
+	UUID      string `json:"uuid"       example:"f47ac10b-58cc-4372-a567-0e02b2c3d479"`
+	Username  string `json:"username"   example:"admin"`
+	IsActive  *bool  `json:"is_active"  example:"true"`
 	CreatedAt string `json:"created_at" example:"2024-01-15T10:30:00Z"`
 }
 
 type AdminSessionDTO struct {
-	AccessToken  string `json:"access_token" example:"jwt"`
+	AccessToken  string `json:"access_token"  example:"jwt"`
 	RefreshToken string `json:"refresh_token" example:"jwt"`
-	ExpiresIn    int    `json:"expires_in" example:"3600"`
-	TokenType    string `json:"token_type" example:"Bearer"`
-	CreatedAt    string `json:"created_at" example:"2024-01-15T10:30:00Z"`
+	ExpiresIn    int    `json:"expires_in"    example:"3600"`
+	TokenType    string `json:"token_type"    example:"Bearer"`
+	CreatedAt    string `json:"created_at"    example:"2024-01-15T10:30:00Z"`
 }
 
 type AdminCaptchaInitResponse struct {
@@ -27,9 +27,9 @@ type AdminCaptchaInitResponse struct {
 
 type AdminCaptchaVerifyRequest struct {
 	ChallengeID string  `json:"challenge_id" validate:"required"`
-	Username    string  `json:"username" validate:"required,min=3,max=255"`
-	Password    string  `json:"password" validate:"required,min=8,max=100"`
-	UserAngle   float64 `json:"user_angle" validate:"required"`
+	Username    string  `json:"username"     validate:"required,min=3,max=255"`
+	Password    string  `json:"password"     validate:"required,min=8,max=100"`
+	UserAngle   float64 `json:"user_angle"   validate:"required"`
 }
 
 type AdminLoginInitResponse struct {
@@ -46,7 +46,7 @@ type AdminLoginInitResponse struct {
 
 type AdminLoginVerifyOTPRequest struct {
 	ChallengeID string `json:"challenge_id" validate:"required"`
-	OTPCode     string `json:"otp_code" validate:"required,len=6,numeric"`
+	OTPCode     string `json:"otp_code"     validate:"required,len=6,numeric"`
 }
 
 type AdminLoginResponse struct {
@@ -89,5 +89,5 @@ type AdminDownloadShortLinksRequest struct {
 // scenario_to must be greater than scenario_from
 type AdminDownloadShortLinksRangeRequest struct {
 	ScenarioFrom uint `json:"scenario_from" validate:"required,gt=0"`
-	ScenarioTo   uint `json:"scenario_to" validate:"required,gt=0,gtfield=ScenarioFrom"`
+	ScenarioTo   uint `json:"scenario_to"   validate:"required,gt=0,gtfield=ScenarioFrom"`
 }

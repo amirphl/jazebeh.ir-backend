@@ -34,7 +34,17 @@ func (s *smartTargetingLineNumberRepositoryStub) ByValue(_ context.Context, valu
 	return s.line, nil
 }
 
-func (s *samplingSelectedTagRepositoryStub) ListAvailable(_ context.Context, _ uint, _ uint, _ string, capacity *int64, _ string, _ string, _ int, _ int) ([]*models.SmartTargetingTagRow, int64, error) {
+func (s *samplingSelectedTagRepositoryStub) ListAvailable(
+	_ context.Context,
+	_ uint,
+	_ uint,
+	_ string,
+	capacity *int64,
+	_ string,
+	_ string,
+	_ int,
+	_ int,
+) ([]*models.SmartTargetingTagRow, int64, error) {
 	s.capacity = capacity
 	return nil, 0, nil
 }
@@ -280,12 +290,18 @@ func TestUpdateBudgetValidationIgnoresClientDefaultsForSmartTargetingTest(t *tes
 		t.Fatalf("Smart Targeting Test zero budget error = %v, want nil", err)
 	}
 
-	if err := validateUpdateCampaignBudget(&zero, models.CampaignAudienceTargetingSmart, models.CampaignPhaseExecution); !errors.Is(err, ErrCampaignBudgetRequired) {
+	if err := validateUpdateCampaignBudget(&zero, models.CampaignAudienceTargetingSmart, models.CampaignPhaseExecution); !errors.Is(
+		err,
+		ErrCampaignBudgetRequired,
+	) {
 		t.Fatalf("Smart Targeting Execution zero budget error = %v, want ErrCampaignBudgetRequired", err)
 	}
 
 	tooSmall := minCampaignBudget - 1
-	if err := validateUpdateCampaignBudget(&tooSmall, models.CampaignAudienceTargetingStandard, models.CampaignPhaseTest); !errors.Is(err, ErrCampaignBudgetOutOfRange) {
+	if err := validateUpdateCampaignBudget(&tooSmall, models.CampaignAudienceTargetingStandard, models.CampaignPhaseTest); !errors.Is(
+		err,
+		ErrCampaignBudgetOutOfRange,
+	) {
 		t.Fatalf("standard out-of-range budget error = %v, want ErrCampaignBudgetOutOfRange", err)
 	}
 }
@@ -333,7 +349,10 @@ func TestCurrentSmartTargetingTestSamplingIntentValidatesOrderedSubset(t *testin
 	}
 
 	campaign.SmartTargetingTestSatisfiedTagIDs = pq.Int64Array{5, 9}
-	if _, err := currentSmartTargetingTestSamplingIntent(t.Context(), repo, nil, campaign, true); !errors.Is(err, ErrSmartTargetingTestPreviewRequired) {
+	if _, err := currentSmartTargetingTestSamplingIntent(t.Context(), repo, nil, campaign, true); !errors.Is(
+		err,
+		ErrSmartTargetingTestPreviewRequired,
+	) {
 		t.Fatalf("out-of-order intent error = %v, want preview required", err)
 	}
 }
@@ -407,26 +426,50 @@ func TestSmartTargetingTestSamplingConfigurationInvalidatesOnlyEffectiveChanges(
 	}
 
 	changedSampleSize := uint64(601)
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{SampleSizePerTag: &changedSampleSize})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(
+		t.Context(),
+		nil,
+		nil,
+		campaign,
+		&dto.UpdateCampaignRequest{SampleSizePerTag: &changedSampleSize},
+	)
 	if err != nil || !changed {
 		t.Fatalf("changed sample size = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	execution := string(models.CampaignPhaseExecution)
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{Phase: &execution})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(
+		t.Context(),
+		nil,
+		nil,
+		campaign,
+		&dto.UpdateCampaignRequest{Phase: &execution},
+	)
 	if err != nil || !changed {
 		t.Fatalf("changed phase = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	campaign.Spec.Platform = models.CampaignPlatformBale
 	sms := models.CampaignPlatformSMS
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{Platform: &sms})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(
+		t.Context(),
+		nil,
+		nil,
+		campaign,
+		&dto.UpdateCampaignRequest{Platform: &sms},
+	)
 	if err != nil || !changed {
 		t.Fatalf("enabled SMS color eligibility = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	rubika := models.CampaignPlatformRubika
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{Platform: &rubika})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(
+		t.Context(),
+		nil,
+		nil,
+		campaign,
+		&dto.UpdateCampaignRequest{Platform: &rubika},
+	)
 	if err != nil || changed {
 		t.Fatalf("unchanged non-SMS color eligibility = (%t, %v), want (false, nil)", changed, err)
 	}
@@ -439,7 +482,13 @@ func TestSmartTargetingTestSamplingConfigurationInvalidatesOnlyEffectiveChanges(
 		candooLine: {LineNumber: candooLine, Provider: models.SMSProviderCandoo},
 		payamLine:  {LineNumber: payamLine, Provider: models.SMSProviderPayamSMS},
 	}}
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, lineRepo, campaign, &dto.UpdateCampaignRequest{LineNumber: &payamLine})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(
+		t.Context(),
+		nil,
+		lineRepo,
+		campaign,
+		&dto.UpdateCampaignRequest{LineNumber: &payamLine},
+	)
 	if err != nil || !changed {
 		t.Fatalf("Candoo-to-Payam color eligibility = (%t, %v), want (true, nil)", changed, err)
 	}
@@ -459,13 +508,25 @@ func TestSmartTargetingTestSamplingConfigurationInvalidatesTagSelectionChanges(t
 		{CampaignID: campaign.ID, BundleID: bundleID, TagID: 2, SelectionOrder: 1},
 	}}
 
-	changed, err := smartTargetingTestSamplingConfigurationChanged(t.Context(), repo, nil, campaign, &dto.UpdateCampaignRequest{SelectedTagIDs: &selected})
+	changed, err := smartTargetingTestSamplingConfigurationChanged(
+		t.Context(),
+		repo,
+		nil,
+		campaign,
+		&dto.UpdateCampaignRequest{SelectedTagIDs: &selected},
+	)
 	if err != nil || changed {
 		t.Fatalf("unchanged tag selection = (%t, %v), want (false, nil)", changed, err)
 	}
 
 	reordered := []uint{2, 9}
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), repo, nil, campaign, &dto.UpdateCampaignRequest{SelectedTagIDs: &reordered})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(
+		t.Context(),
+		repo,
+		nil,
+		campaign,
+		&dto.UpdateCampaignRequest{SelectedTagIDs: &reordered},
+	)
 	if err != nil || !changed {
 		t.Fatalf("reordered tag selection = (%t, %v), want (true, nil)", changed, err)
 	}
@@ -513,11 +574,18 @@ func TestSmartTargetingTestSamplingCalculationDTOExposesOrderedCompletedResults(
 	if !got.IsCurrent || len(got.TagSamplingOrder) != 2 || got.TagSamplingOrder[0] != 9 || got.TagSamplingOrder[1] != 2 {
 		t.Fatalf("calculated DTO order/current = %#v", got)
 	}
-	if len(got.SatisfiedTags) != 1 || got.SatisfiedTags[0].TagID != 9 || got.SatisfiedTags[0].TagDisplayName == nil || *got.SatisfiedTags[0].TagDisplayName != firstDisplayName ||
-		len(got.UnsatisfiedTags) != 1 || got.UnsatisfiedTags[0].TagID != 2 || got.UnsatisfiedTags[0].TagDisplayName == nil || *got.UnsatisfiedTags[0].TagDisplayName != secondDisplayName {
+	if len(got.SatisfiedTags) != 1 || got.SatisfiedTags[0].TagID != 9 || got.SatisfiedTags[0].TagDisplayName == nil ||
+		*got.SatisfiedTags[0].TagDisplayName != firstDisplayName ||
+		len(got.UnsatisfiedTags) != 1 ||
+		got.UnsatisfiedTags[0].TagID != 2 ||
+		got.UnsatisfiedTags[0].TagDisplayName == nil ||
+		*got.UnsatisfiedTags[0].TagDisplayName != secondDisplayName {
 		t.Fatalf("calculated DTO results = %#v", got)
 	}
-	if got.SatisfiedTagCount == nil || *got.SatisfiedTagCount != 1 || got.EffectiveAudienceCount == nil || *got.EffectiveAudienceCount != 600 || got.CampaignCost == nil || *got.CampaignCost != 720_000 {
+	if got.SatisfiedTagCount == nil || *got.SatisfiedTagCount != 1 || got.EffectiveAudienceCount == nil ||
+		*got.EffectiveAudienceCount != 600 ||
+		got.CampaignCost == nil ||
+		*got.CampaignCost != 720_000 {
 		t.Fatalf("calculated DTO aggregates = %#v", got)
 	}
 }
@@ -609,7 +677,10 @@ func TestSamplingCalculationFreshnessIgnoresRevisionButRejectsChangedSamplingInp
 	if reusableActiveSmartTargetingTestSampling(t.Context(), nil, campaign, row, currentInput) {
 		t.Fatal("active calculation remained reusable after sample size changed")
 	}
-	if _, _, err := currentSmartTargetingTestSamplingCalculationInput(t.Context(), repo, nil, campaign, row); !errors.Is(err, ErrSmartTargetingTestPreviewRequired) {
+	if _, _, err := currentSmartTargetingTestSamplingCalculationInput(t.Context(), repo, nil, campaign, row); !errors.Is(
+		err,
+		ErrSmartTargetingTestPreviewRequired,
+	) {
 		t.Fatalf("changed campaign snapshot error = %v, want preview required", err)
 	}
 }

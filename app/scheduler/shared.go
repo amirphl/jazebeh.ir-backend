@@ -148,7 +148,12 @@ type deliveryStatusFinalRepository interface {
 // shouldPublishCurrentProcessedCampaignStatistics keeps the historical
 // positive-delivery behavior, but permits an explicit zero only when all
 // provider status checks for the elected processing attempt succeeded.
-func shouldPublishCurrentProcessedCampaignStatistics(ctx context.Context, jobRepo repository.CampaignStatusJobRepository, pc *models.ProcessedCampaign, stats map[string]any) (bool, error) {
+func shouldPublishCurrentProcessedCampaignStatistics(
+	ctx context.Context,
+	jobRepo repository.CampaignStatusJobRepository,
+	pc *models.ProcessedCampaign,
+	stats map[string]any,
+) (bool, error) {
 	if shouldPushCurrentProcessedCampaignStatistics(pc, stats) {
 		return true, nil
 	}
@@ -200,7 +205,12 @@ func recoverStaleCampaignRuns(ctx context.Context, db *gorm.DB, logger *log.Logg
 		campaignExecutionRecoveryTotal.WithLabelValues(schedulerName, "interrupted_delivery_recorded").Add(float64(result.Interrupted))
 	}
 	if (result.Requeued > 0 || result.Interrupted > 0) && logger != nil {
-		logger.Printf("%s scheduler: recovered stale campaign runs: requeued_undelivered=%d interrupted_delivery_recorded=%d", schedulerName, result.Requeued, result.Interrupted)
+		logger.Printf(
+			"%s scheduler: recovered stale campaign runs: requeued_undelivered=%d interrupted_delivery_recorded=%d",
+			schedulerName,
+			result.Requeued,
+			result.Interrupted,
+		)
 	}
 }
 
@@ -393,7 +403,11 @@ func requireAudienceMatch(campaignID uint, tagIDs pq.Int32Array, selected int) e
 type standardBundleAudienceSelector func(context.Context, map[int64]struct{}) ([]string, []int64, []string, error)
 type reservedBundleAudienceLoader func(context.Context, []int64) ([]string, []int64, []string, error)
 
-func loadReservedBundleAudience(ctx context.Context, repo repository.AudienceProfileRepository, reserved []int64) ([]string, []int64, []string, error) {
+func loadReservedBundleAudience(
+	ctx context.Context,
+	repo repository.AudienceProfileRepository,
+	reserved []int64,
+) ([]string, []int64, []string, error) {
 	rows, err := repo.ByIDs(ctx, reserved)
 	if err != nil {
 		return nil, nil, nil, err
@@ -424,11 +438,25 @@ func loadReservedBundleAudience(ctx context.Context, repo repository.AudiencePro
 
 // notifyAudienceShortfall is deliberately best-effort: alert delivery must
 // never prevent an otherwise valid partial campaign execution.
-func notifyAudienceShortfall(logger *log.Logger, notifier NotificationSender, adminCfg config.AdminConfig, platform string, campaignID uint, requested int64, eligible int) {
+func notifyAudienceShortfall(
+	logger *log.Logger,
+	notifier NotificationSender,
+	adminCfg config.AdminConfig,
+	platform string,
+	campaignID uint,
+	requested int64,
+	eligible int,
+) {
 	if requested <= 0 || int64(eligible) >= requested || notifier == nil {
 		return
 	}
-	message := fmt.Sprintf("WARNING: %s campaign id=%d requested %d audiences, but only %d eligible audiences were found; execution will continue.", platform, campaignID, requested, eligible)
+	message := fmt.Sprintf(
+		"WARNING: %s campaign id=%d requested %d audiences, but only %d eligible audiences were found; execution will continue.",
+		platform,
+		campaignID,
+		requested,
+		eligible,
+	)
 	for _, mobile := range adminCfg.ActiveMobiles() {
 		mobile := mobile
 		go func() {

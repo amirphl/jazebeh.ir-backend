@@ -17,7 +17,11 @@ import (
 
 // MultimediaAdminFlow defines admin operations for multimedia retrieval.
 type MultimediaAdminFlow interface {
-	UploadMultimediaByAdmin(ctx context.Context, req *dto.UploadMultimediaRequest, metadata *ClientMetadata) (*dto.UploadMultimediaResponse, error)
+	UploadMultimediaByAdmin(
+		ctx context.Context,
+		req *dto.UploadMultimediaRequest,
+		metadata *ClientMetadata,
+	) (*dto.UploadMultimediaResponse, error)
 	DownloadMultimediaByAdmin(ctx context.Context, mediaUUID string) (string, string, []byte, error)
 	PreviewMultimediaByAdmin(ctx context.Context, mediaUUID string) (string, string, []byte, error)
 }
@@ -29,14 +33,21 @@ type MultimediaAdminFlowImpl struct {
 }
 
 // NewMultimediaAdminFlow creates a new admin multimedia flow instance.
-func NewMultimediaAdminFlow(customerRepo repository.CustomerRepository, multimediaRepo repository.MultimediaAssetRepository) MultimediaAdminFlow {
+func NewMultimediaAdminFlow(
+	customerRepo repository.CustomerRepository,
+	multimediaRepo repository.MultimediaAssetRepository,
+) MultimediaAdminFlow {
 	return &MultimediaAdminFlowImpl{
 		customerRepo:   customerRepo,
 		multimediaRepo: multimediaRepo,
 	}
 }
 
-func (f *MultimediaAdminFlowImpl) UploadMultimediaByAdmin(ctx context.Context, req *dto.UploadMultimediaRequest, metadata *ClientMetadata) (*dto.UploadMultimediaResponse, error) {
+func (f *MultimediaAdminFlowImpl) UploadMultimediaByAdmin(
+	ctx context.Context,
+	req *dto.UploadMultimediaRequest,
+	metadata *ClientMetadata,
+) (*dto.UploadMultimediaResponse, error) {
 	if req == nil || req.File == nil {
 		return nil, NewBusinessError("INVALID_REQUEST", "file is required", nil)
 	}
@@ -56,7 +67,11 @@ func (f *MultimediaAdminFlowImpl) UploadMultimediaByAdmin(ctx context.Context, r
 	ext := strings.ToLower(filepath.Ext(req.OriginalFilename))
 	mediaType, ok := allowedMultimediaExts[ext]
 	if !ok {
-		return nil, NewBusinessError("INVALID_FILE_TYPE", fmt.Sprintf("allowed file types: %s", strings.Join(allowedMultimediaFormats, ", ")), nil)
+		return nil, NewBusinessError(
+			"INVALID_FILE_TYPE",
+			fmt.Sprintf("allowed file types: %s", strings.Join(allowedMultimediaFormats, ", ")),
+			nil,
+		)
 	}
 
 	storedPath, size, mimeType, err := saveMultimediaToDisk(req.File, ext, mediaType)

@@ -11,7 +11,12 @@ import (
 
 type BundleAudienceSelectionRepository interface {
 	ByCampaignID(ctx context.Context, campaignID uint) (*models.BundleAudienceSelection, error)
-	InsertForCampaign(ctx context.Context, customerID, bundleID, campaignID uint, correlationID string, ids []int64) (*models.BundleAudienceSelection, error)
+	InsertForCampaign(
+		ctx context.Context,
+		customerID, bundleID, campaignID uint,
+		correlationID string,
+		ids []int64,
+	) (*models.BundleAudienceSelection, error)
 }
 
 type BundleAudienceSelectionRepositoryImpl struct {
@@ -29,7 +34,10 @@ func (r *BundleAudienceSelectionRepositoryImpl) getDB(ctx context.Context) *gorm
 	return r.DB.WithContext(ctx)
 }
 
-func (r *BundleAudienceSelectionRepositoryImpl) ByCampaignID(ctx context.Context, campaignID uint) (*models.BundleAudienceSelection, error) {
+func (r *BundleAudienceSelectionRepositoryImpl) ByCampaignID(
+	ctx context.Context,
+	campaignID uint,
+) (*models.BundleAudienceSelection, error) {
 	return loadBundleAudienceSelectionByCampaign(r.getDB(ctx), campaignID)
 }
 
@@ -56,7 +64,12 @@ func loadBundleAudienceSelectionByCampaign(db *gorm.DB, campaignID uint) (*model
 // InsertForCampaign appends one immutable allocation and its normalized
 // members. The caller may already hold the bundle lock; otherwise this method
 // takes it. A retry returns the original campaign allocation unchanged.
-func (r *BundleAudienceSelectionRepositoryImpl) InsertForCampaign(ctx context.Context, customerID, bundleID, campaignID uint, correlationID string, ids []int64) (*models.BundleAudienceSelection, error) {
+func (r *BundleAudienceSelectionRepositoryImpl) InsertForCampaign(
+	ctx context.Context,
+	customerID, bundleID, campaignID uint,
+	correlationID string,
+	ids []int64,
+) (*models.BundleAudienceSelection, error) {
 	db := r.getDB(ctx)
 	var inserted models.BundleAudienceSelection
 
@@ -69,7 +82,8 @@ func (r *BundleAudienceSelectionRepositoryImpl) InsertForCampaign(ctx context.Co
 			return err
 		}
 		if existing != nil {
-			if existing.CustomerID != customerID || existing.BundleID != bundleID || existing.AudienceCount != int64(len(existing.SelectedAudienceIDs)) {
+			if existing.CustomerID != customerID || existing.BundleID != bundleID ||
+				existing.AudienceCount != int64(len(existing.SelectedAudienceIDs)) {
 				return errors.New("persisted bundle audience allocation does not match the campaign scope")
 			}
 			inserted = *existing

@@ -55,12 +55,22 @@ func (h *SegmentPriceFactorHandler) ListLatest(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid platform", "INVALID_PLATFORM", nil)
 		}
 		log.Println("List segment price factors failed:", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "List segment price factors failed", "SEGMENT_PRICE_FACTOR_LIST_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"List segment price factors failed",
+			"SEGMENT_PRICE_FACTOR_LIST_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Segment price factors retrieved", res)
 }
 
-func (h *SegmentPriceFactorHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *SegmentPriceFactorHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

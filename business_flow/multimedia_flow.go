@@ -69,7 +69,11 @@ var allowedMultimediaExts = map[string]string{
 	".pdf":  "pdf",
 }
 
-func (f *MultimediaFlowImpl) UploadMultimedia(ctx context.Context, req *dto.UploadMultimediaRequest, metadata *ClientMetadata) (*dto.UploadMultimediaResponse, error) {
+func (f *MultimediaFlowImpl) UploadMultimedia(
+	ctx context.Context,
+	req *dto.UploadMultimediaRequest,
+	metadata *ClientMetadata,
+) (*dto.UploadMultimediaResponse, error) {
 	if req == nil || req.File == nil {
 		return nil, NewBusinessError("INVALID_REQUEST", "file is required", nil)
 	}
@@ -90,7 +94,11 @@ func (f *MultimediaFlowImpl) UploadMultimedia(ctx context.Context, req *dto.Uplo
 	ext := strings.ToLower(filepath.Ext(req.OriginalFilename))
 	mediaType, ok := allowedMultimediaExts[ext]
 	if !ok {
-		return nil, NewBusinessError("INVALID_FILE_TYPE", fmt.Sprintf("allowed file types: %s", strings.Join(allowedMultimediaFormats, ", ")), nil)
+		return nil, NewBusinessError(
+			"INVALID_FILE_TYPE",
+			fmt.Sprintf("allowed file types: %s", strings.Join(allowedMultimediaFormats, ", ")),
+			nil,
+		)
 	}
 
 	storedPath, size, mimeType, err := saveMultimediaToDisk(req.File, ext, mediaType)

@@ -43,7 +43,14 @@ type CampaignAudienceReportJobFlow interface {
 	Cleanup(ctx context.Context) error
 }
 
-func (f *CampaignAudienceReportJobFlowImpl) auditEvent(ctx context.Context, customerID uint, action, description string, success bool, errorMessage *string, metadata *ClientMetadata) {
+func (f *CampaignAudienceReportJobFlowImpl) auditEvent(
+	ctx context.Context,
+	customerID uint,
+	action, description string,
+	success bool,
+	errorMessage *string,
+	metadata *ClientMetadata,
+) {
 	if f.audit == nil {
 		return
 	}
@@ -51,7 +58,18 @@ func (f *CampaignAudienceReportJobFlowImpl) auditEvent(ctx context.Context, cust
 	if metadata != nil {
 		ipAddress, userAgent = metadata.IPAddress, metadata.UserAgent
 	}
-	_ = f.audit.Save(ctx, &models.AuditLog{CustomerID: &customerID, Action: action, Description: &description, Success: utils.ToPtr(success), IPAddress: &ipAddress, UserAgent: &userAgent, ErrorMessage: errorMessage})
+	_ = f.audit.Save(
+		ctx,
+		&models.AuditLog{
+			CustomerID:   &customerID,
+			Action:       action,
+			Description:  &description,
+			Success:      utils.ToPtr(success),
+			IPAddress:    &ipAddress,
+			UserAgent:    &userAgent,
+			ErrorMessage: errorMessage,
+		},
+	)
 }
 
 type CampaignAudienceReportJobFlowImpl struct {
@@ -66,7 +84,15 @@ type CampaignAudienceReportJobFlowImpl struct {
 	maxJobsPerCustomer int64
 }
 
-func NewCampaignAudienceReportJobFlow(j repository.CampaignAudienceReportJobRepository, c repository.CampaignRepository, customers repository.CustomerRepository, audit repository.AuditLogRepository, db *gorm.DB, root string, maxRows, maxBytes, maxJobsPerCustomer int64) *CampaignAudienceReportJobFlowImpl {
+func NewCampaignAudienceReportJobFlow(
+	j repository.CampaignAudienceReportJobRepository,
+	c repository.CampaignRepository,
+	customers repository.CustomerRepository,
+	audit repository.AuditLogRepository,
+	db *gorm.DB,
+	root string,
+	maxRows, maxBytes, maxJobsPerCustomer int64,
+) *CampaignAudienceReportJobFlowImpl {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		root = defaultCampaignAudienceReportStorageRoot
@@ -80,7 +106,17 @@ func NewCampaignAudienceReportJobFlow(j repository.CampaignAudienceReportJobRepo
 	if maxJobsPerCustomer <= 0 {
 		maxJobsPerCustomer = defaultMaxCampaignAudienceReportJobsPerCustomer
 	}
-	return &CampaignAudienceReportJobFlowImpl{jobs: j, campaigns: c, customers: customers, audit: audit, db: db, storageRoot: root, maxRows: maxRows, maxBytes: maxBytes, maxJobsPerCustomer: maxJobsPerCustomer}
+	return &CampaignAudienceReportJobFlowImpl{
+		jobs:               j,
+		campaigns:          c,
+		customers:          customers,
+		audit:              audit,
+		db:                 db,
+		storageRoot:        root,
+		maxRows:            maxRows,
+		maxBytes:           maxBytes,
+		maxJobsPerCustomer: maxJobsPerCustomer,
+	}
 }
 
 func mapCampaignAudienceReportJob(j *models.CampaignAudienceReportJob) *dto.CampaignAudienceReportJobResponse {
@@ -88,7 +124,20 @@ func mapCampaignAudienceReportJob(j *models.CampaignAudienceReportJob) *dto.Camp
 	for i, id := range j.CampaignIDs {
 		ids[i] = uint(id)
 	}
-	return &dto.CampaignAudienceReportJobResponse{ID: j.ID, Status: j.Status, CampaignIDs: ids, RowCount: j.RowCount, SheetCount: j.SheetCount, ByteSize: j.ByteSize, ErrorCode: j.ErrorCode, ErrorMessage: j.ErrorMessage, CreatedAt: j.CreatedAt, StartedAt: j.StartedAt, CompletedAt: j.CompletedAt, ExpiresAt: j.ExpiresAt}
+	return &dto.CampaignAudienceReportJobResponse{
+		ID:           j.ID,
+		Status:       j.Status,
+		CampaignIDs:  ids,
+		RowCount:     j.RowCount,
+		SheetCount:   j.SheetCount,
+		ByteSize:     j.ByteSize,
+		ErrorCode:    j.ErrorCode,
+		ErrorMessage: j.ErrorMessage,
+		CreatedAt:    j.CreatedAt,
+		StartedAt:    j.StartedAt,
+		CompletedAt:  j.CompletedAt,
+		ExpiresAt:    j.ExpiresAt,
+	}
 }
 func reportCustomerID(ctx context.Context) (uint, error) {
 	id, ok := ctx.Value(utils.CustomerIDKey).(uint)
@@ -119,7 +168,10 @@ func validateReportCampaignIDs(ids []uint) error {
 
 // ensureJobCampaignsAreStillOwned prevents a queued job from exporting a
 // campaign that was transferred after the job was created.
-func (f *CampaignAudienceReportJobFlowImpl) ensureJobCampaignsAreStillOwned(ctx context.Context, j *models.CampaignAudienceReportJob) error {
+func (f *CampaignAudienceReportJobFlowImpl) ensureJobCampaignsAreStillOwned(
+	ctx context.Context,
+	j *models.CampaignAudienceReportJob,
+) error {
 	ids := make([]uint, len(j.CampaignIDs))
 	for i, id := range j.CampaignIDs {
 		if id <= 0 || uint64(id) > uint64(^uint(0)) {
@@ -137,7 +189,11 @@ func (f *CampaignAudienceReportJobFlowImpl) ensureJobCampaignsAreStillOwned(ctx 
 	return nil
 }
 
-func (f *CampaignAudienceReportJobFlowImpl) Create(ctx context.Context, ids []uint, metadata *ClientMetadata) (*dto.CampaignAudienceReportJobResponse, error) {
+func (f *CampaignAudienceReportJobFlowImpl) Create(
+	ctx context.Context,
+	ids []uint,
+	metadata *ClientMetadata,
+) (*dto.CampaignAudienceReportJobResponse, error) {
 	if err := validateReportCampaignIDs(ids); err != nil {
 		return nil, err
 	}
@@ -156,18 +212,39 @@ func (f *CampaignAudienceReportJobFlowImpl) Create(ctx context.Context, ids []ui
 	for i, id := range ids {
 		pids[i] = int64(id)
 	}
-	j := &models.CampaignAudienceReportJob{ID: uuid.NewString(), CustomerID: customerID, CampaignIDs: pids, Status: models.CampaignAudienceReportJobPending}
+	j := &models.CampaignAudienceReportJob{
+		ID:          uuid.NewString(),
+		CustomerID:  customerID,
+		CampaignIDs: pids,
+		Status:      models.CampaignAudienceReportJobPending,
+	}
 	created, err := f.jobs.CreateWithinCustomerLimit(ctx, j, f.maxJobsPerCustomer)
 	if err != nil {
 		return nil, NewBusinessError("CAMPAIGN_REPORT_JOB_CREATE_FAILED", "failed to create audience report job", err)
 	}
 	if !created {
-		return nil, NewBusinessError("CAMPAIGN_REPORT_JOB_LIMIT_EXCEEDED", "too many campaign audience report jobs are retained; try again after a job fails or expires", nil)
+		return nil, NewBusinessError(
+			"CAMPAIGN_REPORT_JOB_LIMIT_EXCEEDED",
+			"too many campaign audience report jobs are retained; try again after a job fails or expires",
+			nil,
+		)
 	}
-	f.auditEvent(ctx, customerID, models.AuditActionCampaignAudienceClickReportExported, fmt.Sprintf("Campaign audience report job queued for %d campaigns", len(ids)), true, nil, metadata)
+	f.auditEvent(
+		ctx,
+		customerID,
+		models.AuditActionCampaignAudienceClickReportExported,
+		fmt.Sprintf("Campaign audience report job queued for %d campaigns", len(ids)),
+		true,
+		nil,
+		metadata,
+	)
 	return mapCampaignAudienceReportJob(j), nil
 }
-func (f *CampaignAudienceReportJobFlowImpl) Get(ctx context.Context, id string) (*dto.CampaignAudienceReportJobResponse, *models.CampaignAudienceReportJob, error) {
+
+func (f *CampaignAudienceReportJobFlowImpl) Get(
+	ctx context.Context,
+	id string,
+) (*dto.CampaignAudienceReportJobResponse, *models.CampaignAudienceReportJob, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, nil, NewBusinessError("CAMPAIGN_REPORT_JOB_NOT_FOUND", "audience report job not found", nil)
 	}
@@ -188,9 +265,21 @@ func (f *CampaignAudienceReportJobFlowImpl) Get(ctx context.Context, id string) 
 	return mapCampaignAudienceReportJob(j), j, nil
 }
 
-func (f *CampaignAudienceReportJobFlowImpl) RecordDownload(ctx context.Context, job *models.CampaignAudienceReportJob, metadata *ClientMetadata) {
+func (f *CampaignAudienceReportJobFlowImpl) RecordDownload(
+	ctx context.Context,
+	job *models.CampaignAudienceReportJob,
+	metadata *ClientMetadata,
+) {
 	if job != nil {
-		f.auditEvent(ctx, job.CustomerID, models.AuditActionCampaignAudienceClickReportExported, "Campaign audience report downloaded", true, nil, metadata)
+		f.auditEvent(
+			ctx,
+			job.CustomerID,
+			models.AuditActionCampaignAudienceClickReportExported,
+			"Campaign audience report downloaded",
+			true,
+			nil,
+			metadata,
+		)
 	}
 }
 
@@ -216,7 +305,11 @@ func (campaignAudienceReportStageRow) TableName() string { return "campaign_audi
 // an ON CONFLICT DO UPDATE statement when the same conflict key occurs twice
 // in that statement, while the durable JSONL input deliberately permits later
 // records to replace an earlier UID-to-code mapping.
-func appendStageRow(batch []campaignAudienceReportStageRow, indexes map[string]int, row campaignAudienceReportStageRow) []campaignAudienceReportStageRow {
+func appendStageRow(
+	batch []campaignAudienceReportStageRow,
+	indexes map[string]int,
+	row campaignAudienceReportStageRow,
+) []campaignAudienceReportStageRow {
 	if index, ok := indexes[row.AudienceUID]; ok {
 		batch[index].ShortCode = row.ShortCode
 		return batch
@@ -299,7 +392,17 @@ func (f *CampaignAudienceReportJobFlowImpl) stage(ctx context.Context, j *models
 		}
 		err := visitCampaignAudienceUIDs(id, func(record campaignAudienceUIDRecord) error {
 			seen = true
-			batch = appendStageRow(batch, batchIndexes, campaignAudienceReportStageRow{JobID: j.ID, LeaseToken: *j.LeaseToken, CampaignID: id, AudienceUID: record.UID, ShortCode: record.Code})
+			batch = appendStageRow(
+				batch,
+				batchIndexes,
+				campaignAudienceReportStageRow{
+					JobID:       j.ID,
+					LeaseToken:  *j.LeaseToken,
+					CampaignID:  id,
+					AudienceUID: record.UID,
+					ShortCode:   record.Code,
+				},
+			)
 			if len(batch) == cap(batch) {
 				return flush()
 			}
@@ -334,7 +437,11 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 func reportOutputPath(root, id, leaseToken string) string {
 	return filepath.Join(root, id+"-"+leaseToken+".xlsx")
 }
-func (f *CampaignAudienceReportJobFlowImpl) write(ctx context.Context, j *models.CampaignAudienceReportJob) (int64, int, int64, string, error) {
+
+func (f *CampaignAudienceReportJobFlowImpl) write(
+	ctx context.Context,
+	j *models.CampaignAudienceReportJob,
+) (int64, int, int64, string, error) {
 	if j.LeaseToken == nil || *j.LeaseToken == "" {
 		return 0, 0, 0, "", fmt.Errorf("report job is missing a lease token")
 	}
@@ -386,7 +493,8 @@ func (f *CampaignAudienceReportJobFlowImpl) write(ctx context.Context, j *models
 			return 0, 0, 0, "", err
 		}
 		var rows []reportJobPageRow
-		q := f.db.WithContext(ctx).Raw(`SELECT r.campaign_id, c.uuid AS campaign_uuid, c.bundle_id, r.audience_uid, r.short_code FROM campaign_audience_report_job_rows r JOIN campaigns c ON c.id=r.campaign_id AND c.customer_id=? WHERE r.job_id=? AND r.lease_token=? AND (r.campaign_id>? OR (r.campaign_id=? AND r.audience_uid>?)) ORDER BY r.campaign_id,r.audience_uid LIMIT ?`, j.CustomerID, j.ID, *j.LeaseToken, afterCampaign, afterCampaign, afterUID, campaignAudienceReportPageSize)
+		q := f.db.WithContext(ctx).
+			Raw(`SELECT r.campaign_id, c.uuid AS campaign_uuid, c.bundle_id, r.audience_uid, r.short_code FROM campaign_audience_report_job_rows r JOIN campaigns c ON c.id=r.campaign_id AND c.customer_id=? WHERE r.job_id=? AND r.lease_token=? AND (r.campaign_id>? OR (r.campaign_id=? AND r.audience_uid>?)) ORDER BY r.campaign_id,r.audience_uid LIMIT ?`, j.CustomerID, j.ID, *j.LeaseToken, afterCampaign, afterCampaign, afterUID, campaignAudienceReportPageSize)
 		if err := q.Scan(&rows).Error; err != nil {
 			return 0, 0, 0, "", err
 		}
@@ -406,7 +514,14 @@ func (f *CampaignAudienceReportJobFlowImpl) write(ctx context.Context, j *models
 					return 0, 0, 0, "", err
 				}
 			}
-			record := []interface{}{fmt.Sprint(r.CampaignID), excelSafeString(r.CampaignUUID), excelSafeString(r.AudienceUID), "unknown", strconv.FormatBool(clicked[r.CampaignID][r.ShortCode]), actionReportValue(actions[r.CampaignID][r.AudienceUID])}
+			record := []interface{}{
+				fmt.Sprint(r.CampaignID),
+				excelSafeString(r.CampaignUUID),
+				excelSafeString(r.AudienceUID),
+				"unknown",
+				strconv.FormatBool(clicked[r.CampaignID][r.ShortCode]),
+				actionReportValue(actions[r.CampaignID][r.AudienceUID]),
+			}
 			if err := stream.SetRow(fmt.Sprintf("A%d", rowNo+2), record); err != nil {
 				return 0, 0, 0, "", err
 			}
@@ -431,7 +546,11 @@ func (f *CampaignAudienceReportJobFlowImpl) write(ctx context.Context, j *models
 	}
 	return total, sheetNo, lw.n, final, nil
 }
-func (f *CampaignAudienceReportJobFlowImpl) liveStates(ctx context.Context, rows []reportJobPageRow) (map[uint]map[string]bool, map[uint]map[string]bool, error) {
+
+func (f *CampaignAudienceReportJobFlowImpl) liveStates(
+	ctx context.Context,
+	rows []reportJobPageRow,
+) (map[uint]map[string]bool, map[uint]map[string]bool, error) {
 	clicked, actions := make(map[uint]map[string]bool), make(map[uint]map[string]bool)
 	groups := make(map[uint][]reportJobPageRow)
 	for _, row := range rows {
@@ -475,7 +594,10 @@ func (f *CampaignAudienceReportJobFlowImpl) ExecuteNext(ctx context.Context, lea
 	// attempt's staging rows until this worker has finished with them.
 	_ = f.db.WithContext(ctx).Where("job_id=? AND lease_token<>?", job.ID, *job.LeaseToken).Delete(&campaignAudienceReportStageRow{}).Error
 	defer func() {
-		_ = f.db.WithContext(context.Background()).Where("job_id=? AND lease_token=?", job.ID, *job.LeaseToken).Delete(&campaignAudienceReportStageRow{}).Error
+		_ = f.db.WithContext(context.Background()).
+			Where("job_id=? AND lease_token=?", job.ID, *job.LeaseToken).
+			Delete(&campaignAudienceReportStageRow{}).
+			Error
 	}()
 	if err := f.stage(ctx, job); err != nil {
 		return f.fail(ctx, job, campaignAudienceReportFailureCode(err, "CAMPAIGN_REPORT_SOURCE_FAILED"), err)
@@ -487,7 +609,14 @@ func (f *CampaignAudienceReportJobFlowImpl) ExecuteNext(ctx context.Context, lea
 	return f.complete(ctx, job, rows, sheets, bytes, path)
 }
 
-func (f *CampaignAudienceReportJobFlowImpl) complete(ctx context.Context, job *models.CampaignAudienceReportJob, rows int64, sheets int, bytes int64, path string) error {
+func (f *CampaignAudienceReportJobFlowImpl) complete(
+	ctx context.Context,
+	job *models.CampaignAudienceReportJob,
+	rows int64,
+	sheets int,
+	bytes int64,
+	path string,
+) error {
 	now, expiry := utils.UTCNow(), utils.UTCNow().Add(24*time.Hour)
 	job.Status, job.RowCount, job.SheetCount, job.ByteSize, job.OutputPath, job.CompletedAt, job.ExpiresAt = models.CampaignAudienceReportJobCompleted, rows, sheets, bytes, &path, &now, &expiry
 	job.ErrorCode, job.ErrorMessage = nil, nil
@@ -499,7 +628,15 @@ func (f *CampaignAudienceReportJobFlowImpl) complete(ctx context.Context, job *m
 		return err
 	}
 	if updated {
-		f.auditEvent(ctx, job.CustomerID, models.AuditActionCampaignAudienceClickReportExported, "Campaign audience report job completed", true, nil, nil)
+		f.auditEvent(
+			ctx,
+			job.CustomerID,
+			models.AuditActionCampaignAudienceClickReportExported,
+			"Campaign audience report job completed",
+			true,
+			nil,
+			nil,
+		)
 		return nil
 	}
 	if err := removeCampaignAudienceReportOutput(path); err != nil {
@@ -526,7 +663,12 @@ func campaignAudienceReportFailureCode(cause error, fallback string) string {
 	}
 }
 
-func (f *CampaignAudienceReportJobFlowImpl) fail(ctx context.Context, job *models.CampaignAudienceReportJob, code string, cause error) error {
+func (f *CampaignAudienceReportJobFlowImpl) fail(
+	ctx context.Context,
+	job *models.CampaignAudienceReportJob,
+	code string,
+	cause error,
+) error {
 	if job.LeaseToken != nil {
 		_ = os.Remove(reportOutputPath(f.storageRoot, job.ID, *job.LeaseToken) + ".partial")
 	}
@@ -550,7 +692,15 @@ func (f *CampaignAudienceReportJobFlowImpl) fail(ctx context.Context, job *model
 	if !updated {
 		return fmt.Errorf("campaign audience report job lease was lost while recording failure")
 	}
-	f.auditEvent(persistCtx, job.CustomerID, models.AuditActionCampaignAudienceClickReportExportFailed, "Campaign audience report job failed", false, &message, nil)
+	f.auditEvent(
+		persistCtx,
+		job.CustomerID,
+		models.AuditActionCampaignAudienceClickReportExportFailed,
+		"Campaign audience report job failed",
+		false,
+		&message,
+		nil,
+	)
 	return cause
 }
 func (f *CampaignAudienceReportJobFlowImpl) Cleanup(ctx context.Context) error {

@@ -66,7 +66,8 @@ func NewAuthHandler(signupFlow businessflow.SignupFlow, loginFlow businessflow.L
 
 // Signup handles the user registration process
 // @Summary User Registration
-// @Description Register a new user account with mobile verification. National ID is required for individual, independent_company, and marketing_agency account types.
+// @Description Register a new user account with mobile verification. National ID is required for individual, independent_company, and
+// marketing_agency account types.
 // @Tags Authentication
 // @Accept json
 // @Produce json
@@ -116,7 +117,13 @@ func (h *AuthHandler) Signup(c fiber.Ctx) error {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Account type not found", "ACCOUNT_TYPE_NOT_FOUND", nil)
 		}
 		if businessflow.IsCompanyFieldsRequired(err) {
-			return h.ErrorResponse(c, fiber.StatusBadRequest, "Company fields are required for business accounts", "COMPANY_FIELDS_REQUIRED", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusBadRequest,
+				"Company fields are required for business accounts",
+				"COMPANY_FIELDS_REQUIRED",
+				nil,
+			)
 		}
 		if businessflow.IsReferrerAgencyNotFound(err) {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Referrer agency not found", "REFERRER_AGENCY_NOT_FOUND", nil)
@@ -154,7 +161,9 @@ func (h *AuthHandler) Signup(c fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param request body dto.OTPVerificationRequest true "OTP verification data"
-// @Success 200 {object} dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,customer=dto.AuthCustomerDTO}} "OTP verified successfully"
+// @Success 200 {object}
+// dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,customer=dto.AuthCustomerDTO}} "OTP
+// verified successfully"
 // @Failure 400 {object} dto.APIResponse "Invalid OTP or request"
 // @Failure 404 {object} dto.APIResponse "User not found"
 // @Failure 500 {object} dto.APIResponse "Internal server error"
@@ -292,7 +301,9 @@ func (h *AuthHandler) ResendOTP(c fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param request body dto.LoginRequest true "Login credentials"
-// @Success 200 {object} dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,customer=dto.AuthCustomerDTO}} "Login successful with tokens"
+// @Success 200 {object}
+// dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,customer=dto.AuthCustomerDTO}}
+// "Login successful with tokens"
 // @Failure 400 {object} dto.APIResponse "Invalid credentials"
 // @Failure 401 {object} dto.APIResponse "Authentication failed"
 // @Failure 500 {object} dto.APIResponse "Internal server error"
@@ -470,7 +481,9 @@ func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param request body dto.ResetPasswordRequest true "Password reset data"
-// @Success 200 {object} dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,customer=dto.AuthCustomerDTO,password_changed_at=string}} "Password reset successful with tokens"
+// @Success 200 {object}
+// dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,customer=dto.AuthCustomerDTO,password_changed_at=string}}
+// "Password reset successful with tokens"
 // @Failure 400 {object} dto.APIResponse "Invalid request or OTP"
 // @Failure 404 {object} dto.APIResponse "User not found"
 // @Failure 500 {object} dto.APIResponse "Internal server error"
@@ -557,7 +570,11 @@ func (h *AuthHandler) Health(c fiber.Ctx) error {
 }
 
 // createRequestContextWithTimeout creates a context with custom timeout and request-scoped values
-func (h *AuthHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *AuthHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	// Create context with custom timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 

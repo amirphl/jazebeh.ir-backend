@@ -18,7 +18,10 @@ type expiredAudienceReportJobFlow struct {
 	job *models.CampaignAudienceReportJob
 }
 
-func (f *expiredAudienceReportJobFlow) Get(context.Context, string) (*dto.CampaignAudienceReportJobResponse, *models.CampaignAudienceReportJob, error) {
+func (f *expiredAudienceReportJobFlow) Get(
+	context.Context,
+	string,
+) (*dto.CampaignAudienceReportJobResponse, *models.CampaignAudienceReportJob, error) {
 	return &dto.CampaignAudienceReportJobResponse{ID: f.job.ID, Status: f.job.Status, ExpiresAt: f.job.ExpiresAt}, f.job, nil
 }
 

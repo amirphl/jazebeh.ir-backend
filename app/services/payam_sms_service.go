@@ -157,7 +157,12 @@ func (s *PayamSMSSMSService) SendBulk(ctx context.Context, recipients []string, 
 }
 
 func (s *PayamSMSSMSService) sendBulkWithToken(ctx context.Context, token string, requestBody []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.payamsms.com/panel/webservice/sendMultipleWithSrc", bytes.NewReader(requestBody))
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"https://www.payamsms.com/panel/webservice/sendMultipleWithSrc",
+		bytes.NewReader(requestBody),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create PayamSMS request: %w", err)
 	}

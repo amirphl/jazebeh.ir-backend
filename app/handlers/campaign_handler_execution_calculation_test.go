@@ -18,7 +18,11 @@ type currentExecutionCalculationFlow struct {
 	campaignID string
 }
 
-func (f *currentExecutionCalculationFlow) GetCurrentSmartTargetingExecutionCalculation(_ context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingExecutionCalculationResponse, error) {
+func (f *currentExecutionCalculationFlow) GetCurrentSmartTargetingExecutionCalculation(
+	_ context.Context,
+	customerID uint,
+	campaignUUID string,
+) (*dto.SmartTargetingExecutionCalculationResponse, error) {
 	f.called, f.customerID, f.campaignID = true, customerID, campaignUUID
 	return &dto.SmartTargetingExecutionCalculationResponse{CalculationID: 91, CampaignID: 44, BundleID: 7, Status: "pending"}, nil
 }
@@ -51,7 +55,9 @@ func TestGetCurrentSmartTargetingExecutionCalculationHandlerRequiresCustomer(t *
 	app := fiber.New()
 	app.Get("/campaigns/:uuid/smart-targeting/execution-audience-calculations", handler.GetCurrentSmartTargetingExecutionCalculation)
 
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/campaigns/campaign-uuid/smart-targeting/execution-audience-calculations", nil))
+	response, err := app.Test(
+		httptest.NewRequest(http.MethodGet, "/campaigns/campaign-uuid/smart-targeting/execution-audience-calculations", nil),
+	)
 	if err != nil {
 		t.Fatalf("request without customer: %v", err)
 	}

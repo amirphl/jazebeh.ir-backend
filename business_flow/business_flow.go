@@ -239,7 +239,12 @@ func getCustomer(ctx context.Context, customerRepo repository.CustomerRepository
 	return *customer, nil
 }
 
-func getSystemUser(ctx context.Context, customerRepo repository.CustomerRepository, walletRepo repository.WalletRepository, sysCfg config.SystemConfig) (models.Customer, error) {
+func getSystemUser(
+	ctx context.Context,
+	customerRepo repository.CustomerRepository,
+	walletRepo repository.WalletRepository,
+	sysCfg config.SystemConfig,
+) (models.Customer, error) {
 	wallet, err := getSystemWallet(ctx, walletRepo, sysCfg)
 	if err != nil {
 		return models.Customer{}, err
@@ -277,7 +282,12 @@ func getAgency(ctx context.Context, customerRepo repository.CustomerRepository, 
 	return *agency, nil
 }
 
-func getCampaign(ctx context.Context, campaignRepo repository.CampaignRepository, campaignUUID string, customerID uint) (models.Campaign, error) {
+func getCampaign(
+	ctx context.Context,
+	campaignRepo repository.CampaignRepository,
+	campaignUUID string,
+	customerID uint,
+) (models.Campaign, error) {
 	// Get existing campaign
 	campaign, err := campaignRepo.ByUUID(ctx, campaignUUID)
 	if err != nil {
@@ -295,7 +305,12 @@ func getCampaign(ctx context.Context, campaignRepo repository.CampaignRepository
 	return *campaign, nil
 }
 
-func getCampaignByID(ctx context.Context, campaignRepo repository.CampaignRepository, campaignID uint, customerID uint) (models.Campaign, error) {
+func getCampaignByID(
+	ctx context.Context,
+	campaignRepo repository.CampaignRepository,
+	campaignID uint,
+	customerID uint,
+) (models.Campaign, error) {
 	campaign, err := campaignRepo.ByID(ctx, campaignID)
 	if err != nil {
 		return models.Campaign{}, err
@@ -313,7 +328,8 @@ func getCampaignByID(ctx context.Context, campaignRepo repository.CampaignReposi
 // canUpdateCampaign checks if a campaign can be updated based on its current status
 func canUpdateCampaign(status models.CampaignStatus) bool {
 	// Only campaigns with 'initiated' or 'in-progress' status can be updated
-	// Campaigns with 'waiting-for-approval', 'approved', 'rejected', 'running', 'executed', 'canceled', or 'cancelled-by-admin' status cannot be updated
+	// Campaigns with 'waiting-for-approval', 'approved', 'rejected', 'running', 'executed', 'canceled', or 'cancelled-by-admin' status
+	// cannot be updated
 	return status == models.CampaignStatusInitiated || status == models.CampaignStatusInProgress
 }
 
@@ -370,7 +386,11 @@ func getLatestBalanceSnapshot(ctx context.Context, walletRepo repository.WalletR
 	return *latestBalance, nil
 }
 
-func getLatestTaxWalletBalanceSnapshot(ctx context.Context, walletRepo repository.WalletRepository, walletID uint) (models.BalanceSnapshot, error) {
+func getLatestTaxWalletBalanceSnapshot(
+	ctx context.Context,
+	walletRepo repository.WalletRepository,
+	walletID uint,
+) (models.BalanceSnapshot, error) {
 	taxBalance, err := walletRepo.GetCurrentBalance(ctx, walletID)
 	if err != nil {
 		return models.BalanceSnapshot{}, err
@@ -382,7 +402,11 @@ func getLatestTaxWalletBalanceSnapshot(ctx context.Context, walletRepo repositor
 	return *taxBalance, nil
 }
 
-func getLatestSystemWalletBalanceSnapshot(ctx context.Context, walletRepo repository.WalletRepository, walletID uint) (models.BalanceSnapshot, error) {
+func getLatestSystemWalletBalanceSnapshot(
+	ctx context.Context,
+	walletRepo repository.WalletRepository,
+	walletID uint,
+) (models.BalanceSnapshot, error) {
 	systemBalance, err := walletRepo.GetCurrentBalance(ctx, walletID)
 	if err != nil {
 		return models.BalanceSnapshot{}, err

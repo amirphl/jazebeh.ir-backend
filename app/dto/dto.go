@@ -4,7 +4,7 @@ package dto
 type APIResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
-	Data    any    `json:"data,omitempty" validate:"omitempty"`
+	Data    any    `json:"data,omitempty"  validate:"omitempty"`
 	Error   any    `json:"error,omitempty" validate:"omitempty"`
 }
 

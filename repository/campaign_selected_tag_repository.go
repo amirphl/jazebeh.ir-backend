@@ -158,7 +158,12 @@ func availableSmartTagsQuery(db *gorm.DB, bundleID uint) *gorm.DB {
 	) AS available_tags`, bundleID, bundleID)
 }
 
-func (r *CampaignSelectedTagRepositoryImpl) baseAvailableQuery(ctx context.Context, bundleID uint, search string, capacity *int64) *gorm.DB {
+func (r *CampaignSelectedTagRepositoryImpl) baseAvailableQuery(
+	ctx context.Context,
+	bundleID uint,
+	search string,
+	capacity *int64,
+) *gorm.DB {
 	query := availableSmartTagsQuery(r.getDB(ctx), bundleID).
 		Joins(`LEFT JOIN tag_test_phase_performance_summaries AS tag_test_summary
                  ON tag_test_summary.bundle_id = ?
@@ -208,7 +213,14 @@ const usedInBundleExpression = `EXISTS (
       AND attributed_campaign.status IN ('running', 'interrupted', 'executed', 'expired')
 ) AS used_in_bundle`
 
-func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(ctx context.Context, bundleID, campaignID uint, search string, capacity *int64, sortBy, sortDirection string, limit, offset int) ([]*models.SmartTargetingTagRow, int64, error) {
+func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(
+	ctx context.Context,
+	bundleID, campaignID uint,
+	search string,
+	capacity *int64,
+	sortBy, sortDirection string,
+	limit, offset int,
+) ([]*models.SmartTargetingTagRow, int64, error) {
 	order, err := smartTagOrder(sortBy, sortDirection)
 	if err != nil {
 		return nil, 0, err
@@ -237,7 +249,13 @@ func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(ctx context.Context, b
 // listAvailableRowsQuery contains the projection shared by production reads
 // and SQL-shape tests. It intentionally does not add pagination so callers
 // can apply a limit and offset without changing the selected fields.
-func (r *CampaignSelectedTagRepositoryImpl) listAvailableRowsQuery(ctx context.Context, bundleID, campaignID uint, search string, capacity *int64, order string) *gorm.DB {
+func (r *CampaignSelectedTagRepositoryImpl) listAvailableRowsQuery(
+	ctx context.Context,
+	bundleID, campaignID uint,
+	search string,
+	capacity *int64,
+	order string,
+) *gorm.DB {
 	query := r.baseAvailableQuery(ctx, bundleID, search, capacity).
 		Select(`available_tags.tag_id,
                  available_tags.tag_name,
@@ -275,7 +293,12 @@ func (r *CampaignSelectedTagRepositoryImpl) listAvailableRowsQuery(ctx context.C
 	return query
 }
 
-func (r *CampaignSelectedTagRepositoryImpl) ListAvailableTagIDs(ctx context.Context, bundleID uint, search, sortBy, sortDirection string, limit int) ([]uint, error) {
+func (r *CampaignSelectedTagRepositoryImpl) ListAvailableTagIDs(
+	ctx context.Context,
+	bundleID uint,
+	search, sortBy, sortDirection string,
+	limit int,
+) ([]uint, error) {
 	order, err := smartTagOrder(sortBy, sortDirection)
 	if err != nil {
 		return nil, err
@@ -333,7 +356,11 @@ func (r *CampaignSelectedTagRepositoryImpl) Validate(ctx context.Context, campai
 	return nil
 }
 
-func (r *CampaignSelectedTagRepositoryImpl) Replace(ctx context.Context, campaignID, bundleID, selectedByCustomerID uint, tagIDs []uint) error {
+func (r *CampaignSelectedTagRepositoryImpl) Replace(
+	ctx context.Context,
+	campaignID, bundleID, selectedByCustomerID uint,
+	tagIDs []uint,
+) error {
 	db := r.getDB(ctx)
 	var campaign models.Campaign
 	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "bundle_id", "status", "spec").First(&campaign, campaignID).Error; err != nil {

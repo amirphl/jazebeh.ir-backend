@@ -48,7 +48,12 @@ func permanentUpload(err error) error        { return permanentUploadError{err: 
 // Domain should include scheme (https://) if desired by the caller
 // If not provided with a scheme, https:// will be prefixed automatically
 type AdminShortLinkFlow interface {
-	CreateShortLinksFromCSV(ctx context.Context, csvReader io.Reader, shortLinkDomain string, scenarioName string) (*dto.AdminCreateShortLinksResponse, error)
+	CreateShortLinksFromCSV(
+		ctx context.Context,
+		csvReader io.Reader,
+		shortLinkDomain string,
+		scenarioName string,
+	) (*dto.AdminCreateShortLinksResponse, error)
 	UploadJob(ctx context.Context, id string) (*dto.AdminShortLinkUploadJobDTO, error)
 	ProcessPendingUploadJobs(ctx context.Context) error
 	DownloadShortLinksCSV(ctx context.Context, scenarioID uint) (string, []byte, error)
@@ -66,7 +71,14 @@ type AdminShortLinkFlowImpl struct {
 	db        *gorm.DB
 }
 
-func NewAdminShortLinkFlow(repo repository.ShortLinkRepository, clickRepo repository.ShortLinkClickRepository, auditRepo repository.AuditLogRepository, jobRepo repository.AdminShortLinkUploadJobRepository, db *gorm.DB, publishers ...ShortLinkMappingPublisher) AdminShortLinkFlow {
+func NewAdminShortLinkFlow(
+	repo repository.ShortLinkRepository,
+	clickRepo repository.ShortLinkClickRepository,
+	auditRepo repository.AuditLogRepository,
+	jobRepo repository.AdminShortLinkUploadJobRepository,
+	db *gorm.DB,
+	publishers ...ShortLinkMappingPublisher,
+) AdminShortLinkFlow {
 	var publisher ShortLinkMappingPublisher
 	if len(publishers) > 0 {
 		publisher = publishers[0]
@@ -74,7 +86,12 @@ func NewAdminShortLinkFlow(repo repository.ShortLinkRepository, clickRepo reposi
 	return &AdminShortLinkFlowImpl{repo: repo, clickRepo: clickRepo, auditRepo: auditRepo, publisher: publisher, jobRepo: jobRepo, db: db}
 }
 
-func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(ctx context.Context, csvReader io.Reader, shortLinkDomain string, scenarioName string) (*dto.AdminCreateShortLinksResponse, error) {
+func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(
+	ctx context.Context,
+	csvReader io.Reader,
+	shortLinkDomain string,
+	scenarioName string,
+) (*dto.AdminCreateShortLinksResponse, error) {
 	if csvReader == nil {
 		return nil, NewBusinessError("VALIDATION_ERROR", "CSV file is required", nil)
 	}
@@ -100,7 +117,15 @@ func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(ctx context.Context, cs
 		return nil, NewBusinessError("RESERVE_SCENARIO_ID_FAILED", "Failed to reserve scenario id", err)
 	}
 	keyRaw := sha256.Sum256([]byte(uuid.NewString()))
-	job := &models.AdminShortLinkUploadJob{ID: uuid.NewString(), AllocationKey: hex.EncodeToString(keyRaw[:]), ScenarioID: scenarioID, ScenarioName: scenarioName, Domain: shortLinkDomain, CSVData: buf.Bytes(), Status: "pending"}
+	job := &models.AdminShortLinkUploadJob{
+		ID:            uuid.NewString(),
+		AllocationKey: hex.EncodeToString(keyRaw[:]),
+		ScenarioID:    scenarioID,
+		ScenarioName:  scenarioName,
+		Domain:        shortLinkDomain,
+		CSVData:       buf.Bytes(),
+		Status:        "pending",
+	}
 	if err := f.jobRepo.Save(ctx, job); err != nil {
 		return nil, NewBusinessError("CREATE_UPLOAD_JOB_FAILED", "Failed to create upload job", err)
 	}
@@ -109,7 +134,14 @@ func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(ctx context.Context, cs
 	if current == nil {
 		current = job
 	}
-	resp := &dto.AdminCreateShortLinksResponse{Message: "Upload processing", TotalRows: current.TotalRows, Created: current.Created, Skipped: current.Skipped, ScenarioID: current.ScenarioID, Job: mapAdminUploadJob(current)}
+	resp := &dto.AdminCreateShortLinksResponse{
+		Message:    "Upload processing",
+		TotalRows:  current.TotalRows,
+		Created:    current.Created,
+		Skipped:    current.Skipped,
+		ScenarioID: current.ScenarioID,
+		Job:        mapAdminUploadJob(current),
+	}
 	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminCreateShortLinks, "Admin upload short link CSV", true, nil, map[string]any{
 		"scenario_id":   current.ScenarioID,
 		"scenario_name": scenarioName,
@@ -132,14 +164,26 @@ func normalizeDomain(domain string) string {
 	}
 	host := strings.ToLower(u.Hostname())
 	allowedHost := host == "jzbe.ir" || host == "jo1n.ir" || host == "j0in.ir"
-	if u.Scheme != "https" || !allowedHost || u.User != nil || u.Port() != "" || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" {
+	if u.Scheme != "https" || !allowedHost || u.User != nil || u.Port() != "" || u.Path != "" && u.Path != "/" || u.RawQuery != "" ||
+		u.Fragment != "" {
 		return ""
 	}
 	return "https://" + host
 }
 
 func mapAdminUploadJob(j *models.AdminShortLinkUploadJob) dto.AdminShortLinkUploadJobDTO {
-	return dto.AdminShortLinkUploadJobDTO{ID: j.ID, ScenarioID: j.ScenarioID, Status: j.Status, TotalRows: j.TotalRows, Created: j.Created, Skipped: j.Skipped, Published: j.Published, Attempts: j.Attempts, NextAttemptAt: j.NextAttemptAt, LastError: j.LastError}
+	return dto.AdminShortLinkUploadJobDTO{
+		ID:            j.ID,
+		ScenarioID:    j.ScenarioID,
+		Status:        j.Status,
+		TotalRows:     j.TotalRows,
+		Created:       j.Created,
+		Skipped:       j.Skipped,
+		Published:     j.Published,
+		Attempts:      j.Attempts,
+		NextAttemptAt: j.NextAttemptAt,
+		LastError:     j.LastError,
+	}
 }
 func (f *AdminShortLinkFlowImpl) UploadJob(ctx context.Context, id string) (*dto.AdminShortLinkUploadJobDTO, error) {
 	j, err := f.jobRepo.ByID(ctx, id)
@@ -227,7 +271,11 @@ func (f *AdminShortLinkFlowImpl) processJob(ctx context.Context, id string) (*mo
 	expectedLinks := totalRows - skipped
 	allocationProgressPersisted := false
 	if len(links) > 0 && len(links) != expectedLinks {
-		return f.failJob(ctx, job, permanentUpload(fmt.Errorf("short-link allocation is incomplete: got %d rows, expected %d", len(links), expectedLinks)))
+		return f.failJob(
+			ctx,
+			job,
+			permanentUpload(fmt.Errorf("short-link allocation is incomplete: got %d rows, expected %d", len(links), expectedLinks)),
+		)
 	}
 	if len(links) == 0 {
 		if f.db == nil {
@@ -251,7 +299,11 @@ func (f *AdminShortLinkFlowImpl) processJob(ctx context.Context, id string) (*mo
 			longLinks = append(longLinks, strings.TrimSpace(rec[longIdx]))
 		}
 		if len(longLinks) != expectedLinks {
-			return f.failJob(ctx, job, permanentUpload(fmt.Errorf("short-link allocation input changed: got %d rows, expected %d", len(longLinks), expectedLinks)))
+			return f.failJob(
+				ctx,
+				job,
+				permanentUpload(fmt.Errorf("short-link allocation input changed: got %d rows, expected %d", len(longLinks), expectedLinks)),
+			)
 		}
 		allocationErr := repository.WithTransaction(ctx, f.db, func(txCtx context.Context) error {
 			codes, err := f.repo.ReserveSequentialUIDs(txCtx, len(longLinks))
@@ -263,7 +315,18 @@ func (f *AdminShortLinkFlowImpl) processJob(ctx context.Context, id string) (*mo
 				scenarioID := job.ScenarioID
 				scenarioName := job.ScenarioName
 				allocationPosition := position
-				batch = append(batch, &models.ShortLink{UID: codes[position], ScenarioID: &scenarioID, ScenarioName: &scenarioName, LongLink: longLink, ShortLink: job.Domain + "/" + codes[position], AllocationKey: &job.AllocationKey, AllocationPosition: &allocationPosition})
+				batch = append(
+					batch,
+					&models.ShortLink{
+						UID:                codes[position],
+						ScenarioID:         &scenarioID,
+						ScenarioName:       &scenarioName,
+						LongLink:           longLink,
+						ShortLink:          job.Domain + "/" + codes[position],
+						AllocationKey:      &job.AllocationKey,
+						AllocationPosition: &allocationPosition,
+					},
+				)
 			}
 			job.Created = len(batch)
 			return f.jobRepo.PersistAllocation(txCtx, job, batch)
@@ -321,7 +384,12 @@ func (f *AdminShortLinkFlowImpl) processJob(ctx context.Context, id string) (*mo
 	_, err = f.jobRepo.UpdateClaimed(ctx, job)
 	return job, err
 }
-func (f *AdminShortLinkFlowImpl) failJob(ctx context.Context, j *models.AdminShortLinkUploadJob, err error) (*models.AdminShortLinkUploadJob, error) {
+
+func (f *AdminShortLinkFlowImpl) failJob(
+	ctx context.Context,
+	j *models.AdminShortLinkUploadJob,
+	err error,
+) (*models.AdminShortLinkUploadJob, error) {
 	msg := err.Error()
 	var permanent permanentUploadError
 	if j.Attempts >= adminUploadMaxAttempts || errors.As(err, &permanent) {
@@ -459,10 +527,19 @@ func (f *AdminShortLinkFlowImpl) DownloadShortLinksCSV(ctx context.Context, scen
 		w.Flush()
 		alreadyFlushed = true
 	}
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminDownloadShortLinks, "Admin downloaded short links CSV", true, nil, map[string]any{
-		"scenario_id": scenarioID,
-		"rows":        len(rows),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminDownloadShortLinks,
+		"Admin downloaded short links CSV",
+		true,
+		nil,
+		map[string]any{
+			"scenario_id": scenarioID,
+			"rows":        len(rows),
+		},
+		nil,
+	)
 	return filename, buf.Bytes(), nil
 }
 
@@ -518,14 +595,26 @@ func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksCSV(ctx context.Con
 		w.Flush()
 		alreadyFlushed = true
 	}
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminDownloadShortLinksWithClicks, "Admin downloaded short links with clicks CSV", true, nil, map[string]any{
-		"scenario_id": scenarioID,
-		"rows":        len(records),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminDownloadShortLinksWithClicks,
+		"Admin downloaded short links with clicks CSV",
+		true,
+		nil,
+		map[string]any{
+			"scenario_id": scenarioID,
+			"rows":        len(records),
+		},
+		nil,
+	)
 	return filename, buf.Bytes(), nil
 }
 
-func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksCSVRange(ctx context.Context, scenarioFrom, scenarioTo uint) (string, []byte, error) {
+func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksCSVRange(
+	ctx context.Context,
+	scenarioFrom, scenarioTo uint,
+) (string, []byte, error) {
 	if scenarioFrom == 0 || scenarioTo == 0 {
 		return "", nil, NewBusinessError("VALIDATION_ERROR", "scenario_from and scenario_to must be greater than 0", nil)
 	}
@@ -579,15 +668,27 @@ func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksCSVRange(ctx contex
 		w.Flush()
 		alreadyFlushed = true
 	}
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminDownloadShortLinksRange, "Admin downloaded short links with clicks by range", true, nil, map[string]any{
-		"scenario_from": scenarioFrom,
-		"scenario_to":   scenarioTo,
-		"rows":          len(records),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminDownloadShortLinksRange,
+		"Admin downloaded short links with clicks by range",
+		true,
+		nil,
+		map[string]any{
+			"scenario_from": scenarioFrom,
+			"scenario_to":   scenarioTo,
+			"rows":          len(records),
+		},
+		nil,
+	)
 	return filename, buf.Bytes(), nil
 }
 
-func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksExcelByScenarioNameRegex(ctx context.Context, scenarioNameRegex string) (string, []byte, error) {
+func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksExcelByScenarioNameRegex(
+	ctx context.Context,
+	scenarioNameRegex string,
+) (string, []byte, error) {
 	pattern := strings.TrimSpace(scenarioNameRegex)
 	if pattern == "" {
 		return "", nil, NewBusinessError("VALIDATION_ERROR", "scenario_name_regex must not be empty", nil)
@@ -647,7 +748,21 @@ func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksExcelByScenarioName
 			_, _ = xl.NewSheet(name)
 		}
 
-		header := []string{"id", "uid", "campaign_id", "client_id", "scenario_id", "scenario_name", "phone_number", "long_link", "short_link", "created_at", "updated_at", "user_agent", "ip"}
+		header := []string{
+			"id",
+			"uid",
+			"campaign_id",
+			"client_id",
+			"scenario_id",
+			"scenario_name",
+			"phone_number",
+			"long_link",
+			"short_link",
+			"created_at",
+			"updated_at",
+			"user_agent",
+			"ip",
+		}
 		_ = xl.SetSheetRow(name, "A1", &header)
 
 		rowsForScenario := byScenario[sid]
@@ -665,10 +780,19 @@ func (f *AdminShortLinkFlowImpl) DownloadShortLinksWithClicksExcelByScenarioName
 		return "", nil, NewBusinessError("EXCEL_WRITE_ERROR", "Failed to write Excel file", err)
 	}
 	filename := "short_links_with_clicks_by_scenario_name.xlsx"
-	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminDownloadShortLinksByScenarioName, "Admin downloaded short links with clicks by scenario name regex", true, nil, map[string]any{
-		"scenario_name_regex": pattern,
-		"scenarios":           len(order),
-	}, nil)
+	logAdminAction(
+		ctx,
+		f.auditRepo,
+		models.AuditActionAdminDownloadShortLinksByScenarioName,
+		"Admin downloaded short links with clicks by scenario name regex",
+		true,
+		nil,
+		map[string]any{
+			"scenario_name_regex": pattern,
+			"scenarios":           len(order),
+		},
+		nil,
+	)
 	return filename, buf.Bytes(), nil
 }
 

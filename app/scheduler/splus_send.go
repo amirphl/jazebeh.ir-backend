@@ -41,7 +41,10 @@ func (s *SplusCampaignScheduler) sendWithRetry(ctx context.Context, botID string
 	return resp, err
 }
 
-func (s *SplusCampaignScheduler) resolveSendResult(resp *SplusResponse, sendErr error) (models.SplusSendStatus, int, *string, *string, *string) {
+func (s *SplusCampaignScheduler) resolveSendResult(
+	resp *SplusResponse,
+	sendErr error,
+) (models.SplusSendStatus, int, *string, *string, *string) {
 	if sendErr != nil {
 		code := "SEND_FAILED"
 		desc := sendErr.Error()

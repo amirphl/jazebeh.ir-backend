@@ -12,9 +12,17 @@ import (
 
 // PlatformSettingsAdminFlow defines admin operations for platform settings.
 type PlatformSettingsAdminFlow interface {
-	ChangePlatformSettingsStatusByAdmin(ctx context.Context, req *dto.AdminChangePlatformSettingsStatusRequest, metadata *ClientMetadata) (*dto.AdminChangePlatformSettingsStatusResponse, error)
+	ChangePlatformSettingsStatusByAdmin(
+		ctx context.Context,
+		req *dto.AdminChangePlatformSettingsStatusRequest,
+		metadata *ClientMetadata,
+	) (*dto.AdminChangePlatformSettingsStatusResponse, error)
 	ListPlatformSettingsByAdmin(ctx context.Context) (*dto.AdminListPlatformSettingsResponse, error)
-	AddMetadataByAdmin(ctx context.Context, req *dto.AdminAddPlatformSettingsMetadataRequest, metadata *ClientMetadata) (*dto.AdminAddPlatformSettingsMetadataResponse, error)
+	AddMetadataByAdmin(
+		ctx context.Context,
+		req *dto.AdminAddPlatformSettingsMetadataRequest,
+		metadata *ClientMetadata,
+	) (*dto.AdminAddPlatformSettingsMetadataResponse, error)
 }
 
 type PlatformSettingsAdminFlowImpl struct {
@@ -32,7 +40,11 @@ func NewPlatformSettingsAdminFlow(
 	}
 }
 
-func (f *PlatformSettingsAdminFlowImpl) ChangePlatformSettingsStatusByAdmin(ctx context.Context, req *dto.AdminChangePlatformSettingsStatusRequest, metadata *ClientMetadata) (*dto.AdminChangePlatformSettingsStatusResponse, error) {
+func (f *PlatformSettingsAdminFlowImpl) ChangePlatformSettingsStatusByAdmin(
+	ctx context.Context,
+	req *dto.AdminChangePlatformSettingsStatusRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminChangePlatformSettingsStatusResponse, error) {
 	_ = metadata
 	if req == nil {
 		return nil, NewBusinessError("INVALID_REQUEST", "request is required", nil)
@@ -122,7 +134,11 @@ func (f *PlatformSettingsAdminFlowImpl) ListPlatformSettingsByAdmin(ctx context.
 	}, nil
 }
 
-func (f *PlatformSettingsAdminFlowImpl) AddMetadataByAdmin(ctx context.Context, req *dto.AdminAddPlatformSettingsMetadataRequest, metadata *ClientMetadata) (*dto.AdminAddPlatformSettingsMetadataResponse, error) {
+func (f *PlatformSettingsAdminFlowImpl) AddMetadataByAdmin(
+	ctx context.Context,
+	req *dto.AdminAddPlatformSettingsMetadataRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminAddPlatformSettingsMetadataResponse, error) {
 	_ = metadata
 	if req == nil {
 		return nil, NewBusinessError("INVALID_REQUEST", "request is required", nil)

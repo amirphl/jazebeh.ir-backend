@@ -397,7 +397,8 @@ func (h *TicketHandler) DownloadAttachment(c fiber.Ctx) error {
 }
 
 // AdminCreateResponse Create Admin Response Ticket
-// @Description Admin creates a response to an existing ticket; new ticket shares correlation ID with the original. Supports multipart or JSON.
+// @Description Admin creates a response to an existing ticket; new ticket shares correlation ID with the original. Supports multipart or
+// JSON.
 // @Tags Tickets
 // @Accept mpfd
 // @Accept json
@@ -558,7 +559,11 @@ func (h *TicketHandler) AdminList(c fiber.Ctx) error {
 	return h.SuccessResponse(c, fiber.StatusOK, "Admin tickets retrieved successfully", result)
 }
 
-func (h *TicketHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *TicketHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

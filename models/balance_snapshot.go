@@ -11,9 +11,9 @@ import (
 // BalanceSnapshot represents an immutable snapshot of wallet balances at a point in time
 // This is the source of truth for wallet balance state - immutable and never updated
 type BalanceSnapshot struct {
-	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID            uint      `gorm:"primaryKey;autoIncrement"                                 json:"id"`
 	UUID          uuid.UUID `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()" json:"uuid"`
-	CorrelationID uuid.UUID `gorm:"type:uuid;index;not null" json:"correlation_id"` // Links to transaction
+	CorrelationID uuid.UUID `gorm:"type:uuid;index;not null"                                 json:"correlation_id"` // Links to transaction
 
 	// Wallet information
 	WalletID   uint `gorm:"not null;index" json:"wallet_id"`
@@ -30,16 +30,16 @@ type BalanceSnapshot struct {
 
 	// Snapshot metadata
 	Reason      string          `gorm:"type:varchar(100);not null" json:"reason"` // e.g., "transaction_created", "daily_snapshot"
-	Description string          `gorm:"type:text" json:"description"`
-	Metadata    json.RawMessage `gorm:"type:jsonb;default:'{}'" json:"metadata"`
+	Description string          `gorm:"type:text"                  json:"description"`
+	Metadata    json.RawMessage `gorm:"type:jsonb;default:'{}'"    json:"metadata"`
 
 	// Audit fields
 	CreatedAt time.Time      `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time      `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	DeletedAt gorm.DeletedAt `gorm:"index"                              json:"deleted_at,omitempty"`
 
 	// Relationships
-	Wallet   Wallet   `gorm:"foreignKey:WalletID;constraint:OnDelete:CASCADE" json:"wallet,omitempty"`
+	Wallet   Wallet   `gorm:"foreignKey:WalletID;constraint:OnDelete:CASCADE"   json:"wallet,omitempty"`
 	Customer Customer `gorm:"foreignKey:CustomerID;constraint:OnDelete:CASCADE" json:"customer,omitempty"`
 }
 

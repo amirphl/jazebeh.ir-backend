@@ -46,7 +46,8 @@ func (h *LineNumberAdminHandler) SuccessResponse(c fiber.Ctx, status int, messag
 
 // CreateLineNumber creates a new line number or updates an existing one (admin only)
 // @Summary Create Line Number (Admin)
-// @Description Create a line number with name (optional), unique value, price factor, priority (optional), and is_active (optional). If the line number already exists, its mutable fields are updated.
+// @Description Create a line number with name (optional), unique value, price factor, priority (optional), and is_active (optional). If the
+// line number already exists, its mutable fields are updated.
 // @Tags Admin Line Numbers
 // @Accept json
 // @Produce json
@@ -186,7 +187,13 @@ func (h *LineNumberAdminHandler) UpdateLineNumberPriceFactor(c fiber.Ctx) error 
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Line number not found", "LINE_NUMBER_NOT_FOUND", nil)
 		}
 		log.Println("Update line number price factor failed:", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Update line number price factor failed", "LINE_NUMBER_PRICE_FACTOR_UPDATE_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Update line number price factor failed",
+			"LINE_NUMBER_PRICE_FACTOR_UPDATE_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Line number price factor updated", res)
 }
@@ -211,7 +218,11 @@ func (h *LineNumberAdminHandler) GetLineNumbersReport(c fiber.Ctx) error {
 	return h.SuccessResponse(c, fiber.StatusOK, "Line numbers report", items)
 }
 
-func (h *LineNumberAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *LineNumberAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

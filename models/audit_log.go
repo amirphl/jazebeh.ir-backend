@@ -7,17 +7,17 @@ import (
 )
 
 type AuditLog struct {
-	ID           uint            `gorm:"primaryKey" json:"id"`
-	CustomerID   *uint           `gorm:"index:idx_audit_customer_id" json:"customer_id,omitempty"`
-	Customer     *Customer       `gorm:"foreignKey:CustomerID;references:ID" json:"customer,omitempty"`
-	Action       string          `gorm:"type:audit_action_enum;not null;index:idx_audit_action" json:"action"`
-	Description  *string         `gorm:"type:text" json:"description,omitempty"`
-	IPAddress    *string         `gorm:"type:inet;index:idx_audit_ip_address" json:"ip_address,omitempty"`
-	UserAgent    *string         `gorm:"type:text" json:"user_agent,omitempty"`
-	RequestID    *string         `gorm:"size:255;index:idx_audit_request_id" json:"request_id,omitempty"`
-	Metadata     json.RawMessage `gorm:"type:jsonb;index:idx_audit_metadata,type:gin" json:"metadata,omitempty"`
-	Success      *bool           `gorm:"default:true;index:idx_audit_success" json:"success"`
-	ErrorMessage *string         `gorm:"type:text" json:"error_message,omitempty"`
+	ID           uint            `gorm:"primaryKey"                                                                json:"id"`
+	CustomerID   *uint           `gorm:"index:idx_audit_customer_id"                                               json:"customer_id,omitempty"`
+	Customer     *Customer       `gorm:"foreignKey:CustomerID;references:ID"                                       json:"customer,omitempty"`
+	Action       string          `gorm:"type:audit_action_enum;not null;index:idx_audit_action"                    json:"action"`
+	Description  *string         `gorm:"type:text"                                                                 json:"description,omitempty"`
+	IPAddress    *string         `gorm:"type:inet;index:idx_audit_ip_address"                                      json:"ip_address,omitempty"`
+	UserAgent    *string         `gorm:"type:text"                                                                 json:"user_agent,omitempty"`
+	RequestID    *string         `gorm:"size:255;index:idx_audit_request_id"                                       json:"request_id,omitempty"`
+	Metadata     json.RawMessage `gorm:"type:jsonb;index:idx_audit_metadata,type:gin"                              json:"metadata,omitempty"`
+	Success      *bool           `gorm:"default:true;index:idx_audit_success"                                      json:"success"`
+	ErrorMessage *string         `gorm:"type:text"                                                                 json:"error_message,omitempty"`
 	CreatedAt    time.Time       `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC');index:idx_audit_created_at" json:"created_at"`
 }
 

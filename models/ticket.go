@@ -18,14 +18,14 @@ import (
 // Content stored as TEXT
 // Files stored as TEXT[]
 type Ticket struct {
-	ID             uint           `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID             uint           `gorm:"primaryKey;autoIncrement"                                 json:"id"`
 	UUID           uuid.UUID      `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()" json:"uuid"`
-	CorrelationID  uuid.UUID      `gorm:"type:uuid;index;not null" json:"correlation_id"`
-	CustomerID     uint           `gorm:"not null;index" json:"customer_id"`
-	Title          string         `gorm:"type:varchar(255);not null" json:"title"`
-	Content        string         `gorm:"type:text;not null" json:"content"`
-	Files          pq.StringArray `gorm:"type:text[];not null;default:'{}'" json:"files"`
-	RepliedByAdmin *bool          `gorm:"default:false;index" json:"replied_by_admin,omitempty"`
+	CorrelationID  uuid.UUID      `gorm:"type:uuid;index;not null"                                 json:"correlation_id"`
+	CustomerID     uint           `gorm:"not null;index"                                           json:"customer_id"`
+	Title          string         `gorm:"type:varchar(255);not null"                               json:"title"`
+	Content        string         `gorm:"type:text;not null"                                       json:"content"`
+	Files          pq.StringArray `gorm:"type:text[];not null;default:'{}'"                        json:"files"`
+	RepliedByAdmin *bool          `gorm:"default:false;index"                                      json:"replied_by_admin,omitempty"`
 
 	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`

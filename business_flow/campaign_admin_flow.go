@@ -58,7 +58,11 @@ type AdminCampaignFlowImpl struct {
 // currentOrFrozenSmartTargetingTestSamplingIntent shares the campaign flow's
 // immutable Test-selection validation with the approval flow without widening
 // the admin flow's dependency surface.
-func (s *AdminCampaignFlowImpl) currentOrFrozenSmartTargetingTestSamplingIntent(ctx context.Context, campaign *models.Campaign, requireSatisfied bool) (*smartTargetingTestSamplingIntent, error) {
+func (s *AdminCampaignFlowImpl) currentOrFrozenSmartTargetingTestSamplingIntent(
+	ctx context.Context,
+	campaign *models.Campaign,
+	requireSatisfied bool,
+) (*smartTargetingTestSamplingIntent, error) {
 	resolver := &CampaignFlowImpl{
 		db:                      s.db,
 		selectedTagRepo:         s.selectedTagRepo,
@@ -119,7 +123,10 @@ func NewAdminCampaignFlow(
 }
 
 // ListCampaigns retrieves campaigns for admin using optional filters.
-func (s *AdminCampaignFlowImpl) ListCampaigns(ctx context.Context, filter dto.AdminListCampaignsFilter) (*dto.AdminListCampaignsResponse, error) {
+func (s *AdminCampaignFlowImpl) ListCampaigns(
+	ctx context.Context,
+	filter dto.AdminListCampaignsFilter,
+) (*dto.AdminListCampaignsResponse, error) {
 	page := max(1, filter.Page)
 	limit := filter.Limit
 	if limit <= 0 {
@@ -409,7 +416,11 @@ func (s *AdminCampaignFlowImpl) GetCampaign(ctx context.Context, id uint) (*dto.
 	return resp, nil
 }
 
-func (s *AdminCampaignFlowImpl) resolvePlatformBasePriceForAdminList(ctx context.Context, platform string, cache map[string]*uint64) (*uint64, error) {
+func (s *AdminCampaignFlowImpl) resolvePlatformBasePriceForAdminList(
+	ctx context.Context,
+	platform string,
+	cache map[string]*uint64,
+) (*uint64, error) {
 	if value, ok := cache[platform]; ok {
 		return value, nil
 	}
@@ -458,7 +469,10 @@ func formatCampaignAgencyFullName(customer *models.Customer) *string {
 	return formatCampaignPartyFullName(customer.ReferrerAgency)
 }
 
-func (s *AdminCampaignFlowImpl) readCampaignPriceFactorsFromMetadata(ctx context.Context, campaignID uint) (*uint64, *float64, *float64, error) {
+func (s *AdminCampaignFlowImpl) readCampaignPriceFactorsFromMetadata(
+	ctx context.Context,
+	campaignID uint,
+) (*uint64, *float64, *float64, error) {
 	source := "campaign_update"
 	operation := "reserve_budget"
 	txs, err := s.transactionRepo.ByFilter(ctx, models.TransactionFilter{
@@ -503,7 +517,10 @@ func parseMetadataFloat(value any) *float64 {
 }
 
 // ApproveCampaign approves a campaign: ensure schedule_at > now, change status to approved, and reduce frozen to locked spend
-func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.AdminApproveCampaignRequest) (*dto.AdminApproveCampaignResponse, error) {
+func (s *AdminCampaignFlowImpl) ApproveCampaign(
+	ctx context.Context,
+	req *dto.AdminApproveCampaignRequest,
+) (*dto.AdminApproveCampaignResponse, error) {
 	if req == nil || req.CampaignID == 0 {
 		return nil, NewBusinessError("ADMIN_APPROVE_CAMPAIGN_FAILED", "campaign_id is required", nil)
 	}
@@ -838,7 +855,10 @@ func parseStringMetadata(metadata map[string]any, key string) (string, error) {
 }
 
 // RejectCampaign rejects a campaign: change status to rejected and refund frozen to free
-func (s *AdminCampaignFlowImpl) RejectCampaign(ctx context.Context, req *dto.AdminRejectCampaignRequest) (*dto.AdminRejectCampaignResponse, error) {
+func (s *AdminCampaignFlowImpl) RejectCampaign(
+	ctx context.Context,
+	req *dto.AdminRejectCampaignRequest,
+) (*dto.AdminRejectCampaignResponse, error) {
 	if req == nil || req.CampaignID == 0 || strings.TrimSpace(req.Comment) == "" {
 		return nil, NewBusinessError("ADMIN_REJECT_CAMPAIGN_FAILED", "campaign_id and comment are required", nil)
 	}
@@ -935,7 +955,8 @@ func (s *AdminCampaignFlowImpl) RejectCampaign(ctx context.Context, req *dto.Adm
 			CreditBalance:      newCredit,
 			SpentOnCampaign:    latestBalance.SpentOnCampaign,
 			AgencyShareWithTax: latestBalance.AgencyShareWithTax,
-			// TotalBalance:       newFree + newFrozen + latestBalance.LockedBalance + newCredit + latestBalance.SpentOnCampaign + latestBalance.AgencyShareWithTax,
+			// TotalBalance:       newFree + newFrozen + latestBalance.LockedBalance + newCredit + latestBalance.SpentOnCampaign +
+			// latestBalance.AgencyShareWithTax,
 			TotalBalance: latestBalance.FreeBalance + newFrozen + latestBalance.LockedBalance + newCredit + latestBalance.SpentOnCampaign + latestBalance.AgencyShareWithTax,
 			Reason:       "campaign_rejected_budget_refund",
 			Description:  fmt.Sprintf("Refund reserved budget for rejected campaign %d", campaign.ID),
@@ -1028,7 +1049,10 @@ func (s *AdminCampaignFlowImpl) RejectCampaign(ctx context.Context, req *dto.Adm
 }
 
 // RescheduleCampaign updates the scheduled time for eligible campaigns (admin action).
-func (s *AdminCampaignFlowImpl) RescheduleCampaign(ctx context.Context, req *dto.AdminRescheduleCampaignRequest) (*dto.AdminRescheduleCampaignResponse, error) {
+func (s *AdminCampaignFlowImpl) RescheduleCampaign(
+	ctx context.Context,
+	req *dto.AdminRescheduleCampaignRequest,
+) (*dto.AdminRescheduleCampaignResponse, error) {
 	if req == nil || req.CampaignID == 0 {
 		return nil, NewBusinessError("ADMIN_RESCHEDULE_CAMPAIGN_FAILED", "campaign_id is required", ErrCampaignNotFound)
 	}
@@ -1060,39 +1084,69 @@ func (s *AdminCampaignFlowImpl) RescheduleCampaign(ctx context.Context, req *dto
 	}
 	// Preserve the lead-time guard for active schedules, but allow recovery of
 	// missed waiting-for-approval campaigns whose schedule has already passed.
-	if campaign.Spec.ScheduleAt != nil && !isMissedPendingApproval && campaign.Spec.ScheduleAt.UTC().Sub(nowUTC) < adminRescheduleMinLeadTime {
-		return nil, NewBusinessError("SCHEDULE_TIME_TOO_CLOSE_TO_CURRENT", "current schedule is too close to reschedule", ErrScheduleTimeTooCloseToCurrent)
+	if campaign.Spec.ScheduleAt != nil && !isMissedPendingApproval &&
+		campaign.Spec.ScheduleAt.UTC().Sub(nowUTC) < adminRescheduleMinLeadTime {
+		return nil, NewBusinessError(
+			"SCHEDULE_TIME_TOO_CLOSE_TO_CURRENT",
+			"current schedule is too close to reschedule",
+			ErrScheduleTimeTooCloseToCurrent,
+		)
 	}
 	if scheduleUTC.Before(minAllowedUTC) {
 		return nil, ErrScheduleTimeTooSoon
 	}
 	tehranTime := scheduleUTC.In(tehranLocation())
 	if !isWithinRescheduleWindow(tehranTime) {
-		return nil, NewBusinessError("SCHEDULE_TIME_OUTSIDE_WINDOW", "Schedule time must be between 08:00 and 21:00 Asia/Tehran", ErrScheduleTimeOutsideWindow)
+		return nil, NewBusinessError(
+			"SCHEDULE_TIME_OUTSIDE_WINDOW",
+			"Schedule time must be between 08:00 and 21:00 Asia/Tehran",
+			ErrScheduleTimeOutsideWindow,
+		)
 	}
 
 	campaign.Spec.ScheduleAt = utils.ToPtr(scheduleUTC)
 	campaign.UpdatedAt = utils.ToPtr(utils.UTCNow())
 
 	if err := s.campaignRepo.Update(ctx, *campaign); err != nil {
-		logAdminAction(ctx, s.auditRepo, models.AuditActionAdminCampaignRescheduled, "Admin rescheduled campaign", false, &campaign.CustomerID, map[string]any{
-			"campaign_id": req.CampaignID,
-			"schedule_at": scheduleUTC,
-		}, err)
+		logAdminAction(
+			ctx,
+			s.auditRepo,
+			models.AuditActionAdminCampaignRescheduled,
+			"Admin rescheduled campaign",
+			false,
+			&campaign.CustomerID,
+			map[string]any{
+				"campaign_id": req.CampaignID,
+				"schedule_at": scheduleUTC,
+			},
+			err,
+		)
 		return nil, NewBusinessError("ADMIN_RESCHEDULE_CAMPAIGN_FAILED", "Failed to reschedule campaign", err)
 	}
 
-	logAdminAction(ctx, s.auditRepo, models.AuditActionAdminCampaignRescheduled, "Admin rescheduled campaign", true, &campaign.CustomerID, map[string]any{
-		"campaign_id": req.CampaignID,
-		"schedule_at": scheduleUTC,
-	}, nil)
+	logAdminAction(
+		ctx,
+		s.auditRepo,
+		models.AuditActionAdminCampaignRescheduled,
+		"Admin rescheduled campaign",
+		true,
+		&campaign.CustomerID,
+		map[string]any{
+			"campaign_id": req.CampaignID,
+			"schedule_at": scheduleUTC,
+		},
+		nil,
+	)
 	return &dto.AdminRescheduleCampaignResponse{
 		Message: "Campaign rescheduled successfully",
 	}, nil
 }
 
 // CancelCampaign cancels an approved campaign or a missed waiting-for-approval campaign.
-func (s *AdminCampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.AdminCancelCampaignRequest) (*dto.AdminCancelCampaignResponse, error) {
+func (s *AdminCampaignFlowImpl) CancelCampaign(
+	ctx context.Context,
+	req *dto.AdminCancelCampaignRequest,
+) (*dto.AdminCancelCampaignResponse, error) {
 	if req == nil || req.CampaignID == 0 || strings.TrimSpace(req.Comment) == "" {
 		return nil, NewBusinessError("ADMIN_CANCEL_CAMPAIGN_FAILED", "campaign_id and comment are required", nil)
 	}
@@ -1121,7 +1175,11 @@ func (s *AdminCampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.Adm
 			return ErrScheduleTimeNotPresent
 		}
 		if campaign.Status == models.CampaignStatusApproved && campaign.Spec.ScheduleAt.UTC().Sub(nowUTC) < adminCancelMinLeadTime {
-			return NewBusinessError("SCHEDULE_TIME_TOO_CLOSE_TO_CANCEL", "current schedule is too close to cancel", ErrScheduleTimeTooCloseToCancel)
+			return NewBusinessError(
+				"SCHEDULE_TIME_TOO_CLOSE_TO_CANCEL",
+				"current schedule is too close to cancel",
+				ErrScheduleTimeTooCloseToCancel,
+			)
 		}
 
 		customer, err = getCustomer(txCtx, s.customerRepo, campaign.CustomerID)
@@ -1350,16 +1408,28 @@ func (s *AdminCampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.Adm
 		}
 	}
 
-	logAdminAction(ctx, s.auditRepo, models.AuditActionAdminCampaignCancelled, "Admin cancelled campaign", true, &customer.ID, map[string]any{
-		"campaign_id": campaign.ID,
-		"comment":     req.Comment,
-	}, nil)
+	logAdminAction(
+		ctx,
+		s.auditRepo,
+		models.AuditActionAdminCampaignCancelled,
+		"Admin cancelled campaign",
+		true,
+		&customer.ID,
+		map[string]any{
+			"campaign_id": campaign.ID,
+			"comment":     req.Comment,
+		},
+		nil,
+	)
 	return &dto.AdminCancelCampaignResponse{
 		Message: "Campaign cancelled and budget refunded successfully",
 	}, nil
 }
 
-func (s *AdminCampaignFlowImpl) UpdatePagePrice(ctx context.Context, req *dto.AdminUpdatePagePriceRequest) (*dto.AdminUpdatePagePriceResponse, error) {
+func (s *AdminCampaignFlowImpl) UpdatePagePrice(
+	ctx context.Context,
+	req *dto.AdminUpdatePagePriceRequest,
+) (*dto.AdminUpdatePagePriceResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("INVALID_REQUEST", "request is required", nil)
 	}
@@ -1431,7 +1501,10 @@ func (s *AdminCampaignFlowImpl) GetPagePrices(ctx context.Context) (*dto.AdminGe
 
 func isAdminReschedulable(status models.CampaignStatus) bool {
 	switch status {
-	case models.CampaignStatusInitiated, models.CampaignStatusInProgress, models.CampaignStatusWaitingForApproval, models.CampaignStatusApproved:
+	case models.CampaignStatusInitiated,
+		models.CampaignStatusInProgress,
+		models.CampaignStatusWaitingForApproval,
+		models.CampaignStatusApproved:
 		return true
 	default:
 		return false

@@ -103,7 +103,12 @@ func (r *AdminRepositoryImpl) applyFilter(query *gorm.DB, filter models.AdminFil
 }
 
 // ByFilter retrieves admins based on filter criteria
-func (r *AdminRepositoryImpl) ByFilter(ctx context.Context, filter models.AdminFilter, orderBy string, limit, offset int) ([]*models.Admin, error) {
+func (r *AdminRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.AdminFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Admin, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.Admin{})
 

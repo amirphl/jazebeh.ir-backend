@@ -62,7 +62,12 @@ func (r *ProcessedCampaignRepositoryImpl) applyFilter(db *gorm.DB, f models.Proc
 	return db
 }
 
-func (r *ProcessedCampaignRepositoryImpl) ByFilter(ctx context.Context, filter models.ProcessedCampaignFilter, orderBy string, limit, offset int) ([]*models.ProcessedCampaign, error) {
+func (r *ProcessedCampaignRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.ProcessedCampaignFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.ProcessedCampaign, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.ProcessedCampaign{}), filter)
 	if orderBy != "" {

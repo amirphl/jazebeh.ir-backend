@@ -47,15 +47,15 @@ const (
 
 // Transaction represents an immutable financial transaction in the system
 type Transaction struct {
-	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID            uint      `gorm:"primaryKey;autoIncrement"                                 json:"id"`
 	UUID          uuid.UUID `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()" json:"uuid"`
-	CorrelationID uuid.UUID `gorm:"type:uuid;index;not null" json:"correlation_id"` // Links related transactions
+	CorrelationID uuid.UUID `gorm:"type:uuid;index;not null"                                 json:"correlation_id"` // Links related transactions
 
 	// Transaction details
-	Type     TransactionType   `gorm:"type:varchar(20);not null;index" json:"type"`
+	Type     TransactionType   `gorm:"type:varchar(20);not null;index"                   json:"type"`
 	Status   TransactionStatus `gorm:"type:varchar(20);not null;default:'pending';index" json:"status"`
-	Amount   uint64            `gorm:"not null" json:"amount"` // Amount in Tomans
-	Currency string            `gorm:"type:varchar(3);not null;default:'TMN'" json:"currency"`
+	Amount   uint64            `gorm:"not null"                                          json:"amount"` // Amount in Tomans
+	Currency string            `gorm:"type:varchar(3);not null;default:'TMN'"            json:"currency"`
 
 	// Wallet and customer information
 	WalletID   uint `gorm:"not null;index" json:"wallet_id"`
@@ -66,22 +66,22 @@ type Transaction struct {
 	BalanceAfter  json.RawMessage `gorm:"type:jsonb;not null" json:"balance_after"`  // Free, Frozen, Locked after
 
 	// External payment information (for Atipay transactions)
-	ExternalReference string `gorm:"type:varchar(255);index" json:"external_reference"` // Atipay referenceNumber
-	ExternalTrace     string `gorm:"type:varchar(255)" json:"external_trace"`           // Atipay traceNumber
-	ExternalRRN       string `gorm:"type:varchar(255)" json:"external_rrn"`             // Atipay RRN
-	ExternalMaskedPAN string `gorm:"type:varchar(255)" json:"external_masked_pan"`      // Masked card number
+	ExternalReference string `gorm:"type:varchar(255);index" json:"external_reference"`  // Atipay referenceNumber
+	ExternalTrace     string `gorm:"type:varchar(255)"       json:"external_trace"`      // Atipay traceNumber
+	ExternalRRN       string `gorm:"type:varchar(255)"       json:"external_rrn"`        // Atipay RRN
+	ExternalMaskedPAN string `gorm:"type:varchar(255)"       json:"external_masked_pan"` // Masked card number
 
 	// Transaction metadata
-	Description string          `gorm:"type:text" json:"description"`
+	Description string          `gorm:"type:text"               json:"description"`
 	Metadata    json.RawMessage `gorm:"type:jsonb;default:'{}'" json:"metadata"`
 
 	// Audit fields
 	CreatedAt time.Time      `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time      `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	DeletedAt gorm.DeletedAt `gorm:"index"                              json:"deleted_at,omitempty"`
 
 	// Relationships
-	Wallet   Wallet   `gorm:"foreignKey:WalletID;constraint:OnDelete:CASCADE" json:"wallet,omitempty"`
+	Wallet   Wallet   `gorm:"foreignKey:WalletID;constraint:OnDelete:CASCADE"   json:"wallet,omitempty"`
 	Customer Customer `gorm:"foreignKey:CustomerID;constraint:OnDelete:CASCADE" json:"customer,omitempty"`
 }
 

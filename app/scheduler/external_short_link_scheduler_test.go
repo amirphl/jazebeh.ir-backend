@@ -251,7 +251,9 @@ func TestExternalClickSchedulerDoesNotAcknowledgeFailedImport(t *testing.T) {
 	events := []string{}
 	repo := &fakeExternalSyncRepository{events: &events, importErr: errors.New("database down")}
 	client := &fakeExternalShortLinkAPI{events: &events, pages: []*ExternalShortLinkClickPage{{
-		Clicks:      []models.ExternalShortLinkClick{{ClickID: 10, ShortCode: "abc1", LongURL: "https://example.com", ClickedAt: time.Now().UTC()}},
+		Clicks: []models.ExternalShortLinkClick{
+			{ClickID: 10, ShortCode: "abc1", LongURL: "https://example.com", ClickedAt: time.Now().UTC()},
+		},
 		NextAfterID: 10,
 	}}}
 	scheduler := NewExternalShortLinkClickScheduler(repo, client, log.New(io.Discard, "", 0), time.Minute, 100, 10)

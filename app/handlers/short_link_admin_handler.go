@@ -38,7 +38,11 @@ type ShortLinkAdminHandler struct {
 	validator   *validator.Validate
 }
 
-func NewShortLinkAdminHandler(uploadFlow businessflow.AdminShortLinkFlow, downloadAll businessflow.AdminShortLinkFlow, downloadHit businessflow.AdminShortLinkFlow) ShortLinkAdminHandlerInterface {
+func NewShortLinkAdminHandler(
+	uploadFlow businessflow.AdminShortLinkFlow,
+	downloadAll businessflow.AdminShortLinkFlow,
+	downloadHit businessflow.AdminShortLinkFlow,
+) ShortLinkAdminHandlerInterface {
 	return &ShortLinkAdminHandler{
 		uploadFlow:  uploadFlow,
 		downloadAll: downloadAll,
@@ -48,7 +52,8 @@ func NewShortLinkAdminHandler(uploadFlow businessflow.AdminShortLinkFlow, downlo
 }
 
 func (h *ShortLinkAdminHandler) ErrorResponse(c fiber.Ctx, statusCode int, message, code string, details any) error {
-	return c.Status(statusCode).JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: code, Details: details}})
+	return c.Status(statusCode).
+		JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: code, Details: details}})
 }
 
 // UploadCSV accepts a multipart/form-data with file (CSV), short_link_domain, and scenario_name fields
@@ -218,7 +223,11 @@ func (h *ShortLinkAdminHandler) DownloadWithClicksByScenarioNameExcel(c fiber.Ct
 	if err := h.validator.Struct(&req); err != nil {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Validation failed", "VALIDATION_ERROR", err.Error())
 	}
-	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/admin/short-links/download-with-clicks-by-scenario-name", shortLinkDownloadTimeout)
+	ctx, cancel := h.createRequestContextWithTimeout(
+		c,
+		"/api/v1/admin/short-links/download-with-clicks-by-scenario-name",
+		shortLinkDownloadTimeout,
+	)
 	defer cancel()
 	filename, data, err := h.downloadHit.DownloadShortLinksWithClicksExcelByScenarioNameRegex(ctx, req.ScenarioNameRegex)
 	if err != nil {
@@ -234,7 +243,11 @@ func openFormFile(fh *multipart.FileHeader) (multipart.File, error) {
 	return fh.Open()
 }
 
-func (h *ShortLinkAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *ShortLinkAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

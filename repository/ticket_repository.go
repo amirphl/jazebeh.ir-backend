@@ -89,7 +89,12 @@ func (r *TicketRepositoryImpl) applyFilter(query *gorm.DB, filter models.TicketF
 }
 
 // ByFilter retrieves tickets based on filter criteria
-func (r *TicketRepositoryImpl) ByFilter(ctx context.Context, filter models.TicketFilter, orderBy string, limit, offset int) ([]*models.Ticket, error) {
+func (r *TicketRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.TicketFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Ticket, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.Ticket{})
 

@@ -28,7 +28,13 @@ type SmartTargetingExecutionCalculationScheduler struct {
 	inFlight        map[int64]struct{}
 }
 
-func NewSmartTargetingExecutionCalculationScheduler(executor SmartTargetingExecutionCalculationExecutor, repo repository.CampaignTargetingExecutionCalculationRepository, logger *log.Logger, poll time.Duration, maxRuns int) *SmartTargetingExecutionCalculationScheduler {
+func NewSmartTargetingExecutionCalculationScheduler(
+	executor SmartTargetingExecutionCalculationExecutor,
+	repo repository.CampaignTargetingExecutionCalculationRepository,
+	logger *log.Logger,
+	poll time.Duration,
+	maxRuns int,
+) *SmartTargetingExecutionCalculationScheduler {
 	if poll <= 0 {
 		poll = 5 * time.Second
 	}
@@ -38,7 +44,14 @@ func NewSmartTargetingExecutionCalculationScheduler(executor SmartTargetingExecu
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &SmartTargetingExecutionCalculationScheduler{executor: executor, repo: repo, logger: logger, pollInterval: poll, maxParallelRuns: maxRuns, inFlight: make(map[int64]struct{})}
+	return &SmartTargetingExecutionCalculationScheduler{
+		executor:        executor,
+		repo:            repo,
+		logger:          logger,
+		pollInterval:    poll,
+		maxParallelRuns: maxRuns,
+		inFlight:        make(map[int64]struct{}),
+	}
 }
 func (s *SmartTargetingExecutionCalculationScheduler) Start(parent context.Context) func() {
 	ctx, cancel := context.WithCancel(parent)
@@ -91,7 +104,11 @@ func (s *SmartTargetingExecutionCalculationScheduler) runOnce(parent context.Con
 					failCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
 					if err := s.repo.Finish(failCtx, id, lease, models.CampaignTargetingExecutionCalculationFailed, "EXECUTION_AUDIENCE_CALCULATION_PANICKED", "Execution audience calculation worker panicked", utils.UTCNow()); err != nil {
-						s.logger.Printf("smart targeting execution calculation scheduler: could not fail panicked calculation %d: %v", id, err)
+						s.logger.Printf(
+							"smart targeting execution calculation scheduler: could not fail panicked calculation %d: %v",
+							id,
+							err,
+						)
 					}
 				}
 			}()

@@ -26,7 +26,11 @@ import (
 const campaignTestCooldown = 30 * time.Second
 const asyncCampaignTestSendTimeout = 60 * time.Second
 
-func (s *CampaignFlowImpl) SendCampaignTestMessage(ctx context.Context, req *dto.SendCampaignTestMessageRequest, metadata *ClientMetadata) (*dto.SendCampaignTestMessageResponse, error) {
+func (s *CampaignFlowImpl) SendCampaignTestMessage(
+	ctx context.Context,
+	req *dto.SendCampaignTestMessageRequest,
+	metadata *ClientMetadata,
+) (*dto.SendCampaignTestMessageResponse, error) {
 	if req == nil {
 		return nil, NewBusinessError("CAMPAIGN_TEST_SEND_INVALID_REQUEST", "request is required", ErrInvalidState)
 	}
@@ -38,7 +42,11 @@ func (s *CampaignFlowImpl) SendCampaignTestMessage(ctx context.Context, req *dto
 	}
 	recipient := strings.TrimSpace(req.TargetPhoneNumber)
 	if recipient == "" {
-		return nil, NewBusinessError("CAMPAIGN_TEST_SEND_RECIPIENT_MISSING", "target phone number is missing", ErrCampaignTestRecipientMissing)
+		return nil, NewBusinessError(
+			"CAMPAIGN_TEST_SEND_RECIPIENT_MISSING",
+			"target phone number is missing",
+			ErrCampaignTestRecipientMissing,
+		)
 	}
 
 	customer, err := getCustomer(ctx, s.customerRepo, req.CustomerID)
@@ -50,7 +58,11 @@ func (s *CampaignFlowImpl) SendCampaignTestMessage(ctx context.Context, req *dto
 		return nil, NewBusinessError("CAMPAIGN_TEST_SEND_CAMPAIGN_LOOKUP_FAILED", "failed to lookup campaign", err)
 	}
 	if !canTestSendCampaign(campaign.Status) {
-		return nil, NewBusinessError("CAMPAIGN_TEST_SEND_STATE_NOT_ALLOWED", "campaign state does not allow test sending", ErrCampaignTestStateNotAllowed)
+		return nil, NewBusinessError(
+			"CAMPAIGN_TEST_SEND_STATE_NOT_ALLOWED",
+			"campaign state does not allow test sending",
+			ErrCampaignTestStateNotAllowed,
+		)
 	}
 
 	platform, err := sanitizeCampaignPlatform(utils.ToPtr(campaign.Spec.Platform))
@@ -68,14 +80,23 @@ func (s *CampaignFlowImpl) SendCampaignTestMessage(ctx context.Context, req *dto
 
 	ok, ttl, err := s.tryAcquireCampaignTestCooldown(ctx, customer.ID, campaignTestCooldown)
 	if err != nil {
-		return nil, NewBusinessError("CAMPAIGN_TEST_SEND_COOLDOWN_UNAVAILABLE", "failed to enforce campaign test cooldown", ErrCampaignTestCooldownUnavailable)
+		return nil, NewBusinessError(
+			"CAMPAIGN_TEST_SEND_COOLDOWN_UNAVAILABLE",
+			"failed to enforce campaign test cooldown",
+			ErrCampaignTestCooldownUnavailable,
+		)
 	}
 	if !ok {
 		secs := int(math.Ceil(ttl.Seconds()))
 		if secs <= 0 {
 			secs = int(campaignTestCooldown.Seconds())
 		}
-		return nil, NewBusinessErrorf("CAMPAIGN_TEST_SEND_RATE_LIMITED", "Please wait %d seconds before sending another test message", ErrCampaignTestRateLimited, secs)
+		return nil, NewBusinessErrorf(
+			"CAMPAIGN_TEST_SEND_RATE_LIMITED",
+			"Please wait %d seconds before sending another test message",
+			ErrCampaignTestRateLimited,
+			secs,
+		)
 	}
 
 	fakeUID := buildFakeAudienceUID()
@@ -133,7 +154,11 @@ func canTestSendCampaign(status models.CampaignStatus) bool {
 	return status == models.CampaignStatusInitiated || status == models.CampaignStatusInProgress
 }
 
-func (s *CampaignFlowImpl) tryAcquireCampaignTestCooldown(ctx context.Context, customerID uint, ttl time.Duration) (bool, time.Duration, error) {
+func (s *CampaignFlowImpl) tryAcquireCampaignTestCooldown(
+	ctx context.Context,
+	customerID uint,
+	ttl time.Duration,
+) (bool, time.Duration, error) {
 	if s.rc == nil {
 		return false, 0, ErrCampaignTestCooldownUnavailable
 	}
@@ -365,7 +390,11 @@ func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
 					ProviderCustomerID: &customerID,
 				}})
 				if err == nil && len(resp.Items) > 0 {
-					log.Printf("sendCampaignTestMessageBestEffort: Candoo response for campaign test send (line number: %s): %+v", lineNumber, resp.Items)
+					log.Printf(
+						"sendCampaignTestMessageBestEffort: Candoo response for campaign test send (line number: %s): %+v",
+						lineNumber,
+						resp.Items,
+					)
 				}
 				return err
 			})
@@ -384,7 +413,11 @@ func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
 				TrackingID: buildProviderTestID("test-sms", campaign.CustomerID),
 			}})
 			if err == nil && len(resp.Items) > 0 {
-				log.Printf("sendCampaignTestMessageBestEffort: PayamSMS response for campaign test send (line number: %s): %s", lineNumber, formatPayamSMSResponseItems(resp.Items))
+				log.Printf(
+					"sendCampaignTestMessageBestEffort: PayamSMS response for campaign test send (line number: %s): %s",
+					lineNumber,
+					formatPayamSMSResponseItems(resp.Items),
+				)
 			}
 			return err
 		})
@@ -654,7 +687,12 @@ func (s *CampaignFlowImpl) runAsyncCampaignTestSend(
 
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				log.Printf("sendCampaignTestMessageBestEffort: panic during async %s test send to %s: %v", platform, maskPhoneNumber(recipient), recovered)
+				log.Printf(
+					"sendCampaignTestMessageBestEffort: panic during async %s test send to %s: %v",
+					platform,
+					maskPhoneNumber(recipient),
+					recovered,
+				)
 			}
 		}()
 
@@ -691,7 +729,11 @@ func (s *CampaignFlowImpl) resolveCampaignMediaPath(ctx context.Context, campaig
 	return filepath.Clean(path), nil
 }
 
-func (s *CampaignFlowImpl) requireActivePlatformSettings(ctx context.Context, campaign models.Campaign, platform string) (*models.PlatformSettings, error) {
+func (s *CampaignFlowImpl) requireActivePlatformSettings(
+	ctx context.Context,
+	campaign models.Campaign,
+	platform string,
+) (*models.PlatformSettings, error) {
 	if campaign.Spec.PlatformSettingsID == nil || *campaign.Spec.PlatformSettingsID == 0 {
 		return nil, ErrCampaignPlatformSettingRequired
 	}

@@ -93,7 +93,10 @@ func TestExecutionReservationBusinessErrorsRemainDistinct(t *testing.T) {
 		err  error
 		code string
 	}{
-		{repository.ErrSmartTargetingExecutionReservationInsufficientCapacity, "SMART_TARGETING_EXECUTION_RESERVATION_INSUFFICIENT_CAPACITY"},
+		{
+			repository.ErrSmartTargetingExecutionReservationInsufficientCapacity,
+			"SMART_TARGETING_EXECUTION_RESERVATION_INSUFFICIENT_CAPACITY",
+		},
 		{repository.ErrSmartTargetingExecutionReservationConflict, "SMART_TARGETING_EXECUTION_RESERVATION_CONFLICT"},
 		{repository.ErrSmartTargetingExecutionReservationConcurrency, "SMART_TARGETING_EXECUTION_RESERVATION_CONCURRENT_CHANGE"},
 		{repository.ErrSmartTargetingExecutionReservationStale, "SMART_TARGETING_EXECUTION_RESERVATION_STALE"},

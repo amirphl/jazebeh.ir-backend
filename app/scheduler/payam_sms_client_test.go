@@ -425,12 +425,15 @@ func TestPayamFetchBalanceRefreshesUnauthorizedTokenAndRetriesTransientFailure(t
 func TestPayamFetchBalanceRejectsMalformedResponse(t *testing.T) {
 	t.Parallel()
 
-	client := newHTTPPayamSMSClientWithClient(config.PayamSMSConfig{TokenURL: "https://payam.example/token", BalanceURL: "https://payam.example/balance"}, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.Path == "/token" {
-			return payamTestResponse(req, http.StatusOK, `{"access_token":"token"}`), nil
-		}
-		return payamTestResponse(req, http.StatusOK, `{"balance":100}`), nil
-	})})
+	client := newHTTPPayamSMSClientWithClient(
+		config.PayamSMSConfig{TokenURL: "https://payam.example/token", BalanceURL: "https://payam.example/balance"},
+		&http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/token" {
+				return payamTestResponse(req, http.StatusOK, `{"access_token":"token"}`), nil
+			}
+			return payamTestResponse(req, http.StatusOK, `{"balance":100}`), nil
+		})},
+	)
 	if _, err := client.FetchBalance(context.Background()); err == nil {
 		t.Fatal("FetchBalance() unexpectedly accepted malformed balance")
 	}

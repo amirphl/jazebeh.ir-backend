@@ -24,9 +24,17 @@ import (
 // TicketFlow defines operations for creating and listing tickets
 type TicketFlow interface {
 	CreateTicket(ctx context.Context, req *dto.CreateTicketRequest, metadata *ClientMetadata) (*dto.CreateTicketResponse, error)
-	CreateResponseTicket(ctx context.Context, req *dto.CreateResponseTicketRequest, metadata *ClientMetadata) (*dto.CreateResponseTicketResponse, error)
+	CreateResponseTicket(
+		ctx context.Context,
+		req *dto.CreateResponseTicketRequest,
+		metadata *ClientMetadata,
+	) (*dto.CreateResponseTicketResponse, error)
 	ListTickets(ctx context.Context, req *dto.ListTicketsRequest, metadata *ClientMetadata) (*dto.ListTicketsResponse, error)
-	AdminCreateResponseTicket(ctx context.Context, req *dto.AdminCreateResponseTicketRequest, metadata *ClientMetadata) (*dto.AdminCreateResponseTicketResponse, error)
+	AdminCreateResponseTicket(
+		ctx context.Context,
+		req *dto.AdminCreateResponseTicketRequest,
+		metadata *ClientMetadata,
+	) (*dto.AdminCreateResponseTicketResponse, error)
 	AdminListTickets(ctx context.Context, req *dto.AdminListTicketsRequest, metadata *ClientMetadata) (*dto.AdminListTicketsResponse, error)
 	DownloadTicketAttachment(ctx context.Context, customerID, ticketID uint, fileIndex int) (string, string, []byte, error)
 }
@@ -39,7 +47,12 @@ type TicketFlowImpl struct {
 	adminCfg     config.AdminConfig
 }
 
-func NewTicketFlow(customerRepo repository.CustomerRepository, ticketRepo repository.TicketRepository, notifier services.NotificationService, adminCfg config.AdminConfig) TicketFlow {
+func NewTicketFlow(
+	customerRepo repository.CustomerRepository,
+	ticketRepo repository.TicketRepository,
+	notifier services.NotificationService,
+	adminCfg config.AdminConfig,
+) TicketFlow {
 	return &TicketFlowImpl{customerRepo: customerRepo, ticketRepo: ticketRepo, notifier: notifier, adminCfg: adminCfg}
 }
 
@@ -58,7 +71,11 @@ var allowedExts = map[string]struct{}{
 	".zip":  {},
 }
 
-func (f *TicketFlowImpl) CreateTicket(ctx context.Context, req *dto.CreateTicketRequest, metadata *ClientMetadata) (*dto.CreateTicketResponse, error) {
+func (f *TicketFlowImpl) CreateTicket(
+	ctx context.Context,
+	req *dto.CreateTicketRequest,
+	metadata *ClientMetadata,
+) (*dto.CreateTicketResponse, error) {
 	// Validate customer
 	customer, err := getCustomer(ctx, f.customerRepo, req.CustomerID)
 	if err != nil {
@@ -119,7 +136,11 @@ func (f *TicketFlowImpl) CreateTicket(ctx context.Context, req *dto.CreateTicket
 	}, nil
 }
 
-func (f *TicketFlowImpl) CreateResponseTicket(ctx context.Context, req *dto.CreateResponseTicketRequest, metadata *ClientMetadata) (*dto.CreateResponseTicketResponse, error) {
+func (f *TicketFlowImpl) CreateResponseTicket(
+	ctx context.Context,
+	req *dto.CreateResponseTicketRequest,
+	metadata *ClientMetadata,
+) (*dto.CreateResponseTicketResponse, error) {
 	// Validate customer
 	customer, err := getCustomer(ctx, f.customerRepo, req.CustomerID)
 	if err != nil {
@@ -201,7 +222,11 @@ func (f *TicketFlowImpl) CreateResponseTicket(ctx context.Context, req *dto.Crea
 	}, nil
 }
 
-func (f *TicketFlowImpl) ListTickets(ctx context.Context, req *dto.ListTicketsRequest, metadata *ClientMetadata) (*dto.ListTicketsResponse, error) {
+func (f *TicketFlowImpl) ListTickets(
+	ctx context.Context,
+	req *dto.ListTicketsRequest,
+	metadata *ClientMetadata,
+) (*dto.ListTicketsResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -284,7 +309,11 @@ func (f *TicketFlowImpl) ListTickets(ctx context.Context, req *dto.ListTicketsRe
 	}, nil
 }
 
-func (f *TicketFlowImpl) AdminCreateResponseTicket(ctx context.Context, req *dto.AdminCreateResponseTicketRequest, metadata *ClientMetadata) (*dto.AdminCreateResponseTicketResponse, error) {
+func (f *TicketFlowImpl) AdminCreateResponseTicket(
+	ctx context.Context,
+	req *dto.AdminCreateResponseTicketRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminCreateResponseTicketResponse, error) {
 	// Fetch original ticket
 	orig, err := f.ticketRepo.ByID(ctx, req.TicketID)
 	if err != nil {
@@ -337,7 +366,11 @@ func (f *TicketFlowImpl) AdminCreateResponseTicket(ctx context.Context, req *dto
 	}, nil
 }
 
-func (f *TicketFlowImpl) AdminListTickets(ctx context.Context, req *dto.AdminListTicketsRequest, metadata *ClientMetadata) (*dto.AdminListTicketsResponse, error) {
+func (f *TicketFlowImpl) AdminListTickets(
+	ctx context.Context,
+	req *dto.AdminListTicketsRequest,
+	metadata *ClientMetadata,
+) (*dto.AdminListTicketsResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -459,7 +492,11 @@ func (f *TicketFlowImpl) AdminListTickets(ctx context.Context, req *dto.AdminLis
 }
 
 // DownloadTicketAttachment returns a ticket attachment for the owning customer.
-func (f *TicketFlowImpl) DownloadTicketAttachment(ctx context.Context, customerID, ticketID uint, fileIndex int) (string, string, []byte, error) {
+func (f *TicketFlowImpl) DownloadTicketAttachment(
+	ctx context.Context,
+	customerID, ticketID uint,
+	fileIndex int,
+) (string, string, []byte, error) {
 	if fileIndex < 0 {
 		return "", "", nil, NewBusinessError("ATTACHMENT_NOT_FOUND", "attachment not found", nil)
 	}
@@ -545,7 +582,11 @@ func (f *TicketFlowImpl) saveFileToDisk(ctx context.Context, urlStr string, orig
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", NewBusinessError("FILE_DOWNLOAD_FAILED", fmt.Sprintf("failed to download file: status %d", resp.StatusCode), errors.New(resp.Status))
+		return "", NewBusinessError(
+			"FILE_DOWNLOAD_FAILED",
+			fmt.Sprintf("failed to download file: status %d", resp.StatusCode),
+			errors.New(resp.Status),
+		)
 	}
 
 	// Limit to maxFileSize

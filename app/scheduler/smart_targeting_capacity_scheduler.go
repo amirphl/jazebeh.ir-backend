@@ -30,7 +30,13 @@ type SmartTargetingCapacityScheduler struct {
 	inFlight map[int64]struct{}
 }
 
-func NewSmartTargetingCapacityScheduler(executor SmartTargetingCapacityExecutor, repo repository.CampaignTargetingCapacityRepository, logger *log.Logger, pollInterval time.Duration, maxParallelRuns int) *SmartTargetingCapacityScheduler {
+func NewSmartTargetingCapacityScheduler(
+	executor SmartTargetingCapacityExecutor,
+	repo repository.CampaignTargetingCapacityRepository,
+	logger *log.Logger,
+	pollInterval time.Duration,
+	maxParallelRuns int,
+) *SmartTargetingCapacityScheduler {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}

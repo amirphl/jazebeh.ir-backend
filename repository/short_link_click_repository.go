@@ -30,7 +30,12 @@ func (r *ShortLinkClickRepositoryImpl) ByID(ctx context.Context, id uint) (*mode
 }
 
 // ByFilter: since no filter is defined, return with order/limit/offset only
-func (r *ShortLinkClickRepositoryImpl) ByFilter(ctx context.Context, _ any, orderBy string, limit, offset int) ([]*models.ShortLinkClick, error) {
+func (r *ShortLinkClickRepositoryImpl) ByFilter(
+	ctx context.Context,
+	_ any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.ShortLinkClick, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.ShortLinkClick{})
 	if orderBy != "" {
@@ -76,7 +81,10 @@ func (r *ShortLinkClickRepositoryImpl) DistinctShortLinkUIDsByCampaignID(ctx con
 	return uids, err
 }
 
-func (r *ShortLinkClickRepositoryImpl) DistinctShortLinkUIDsByCampaignIDs(ctx context.Context, campaignIDs []uint) (map[uint][]string, error) {
+func (r *ShortLinkClickRepositoryImpl) DistinctShortLinkUIDsByCampaignIDs(
+	ctx context.Context,
+	campaignIDs []uint,
+) (map[uint][]string, error) {
 	result := make(map[uint][]string)
 	if len(campaignIDs) == 0 {
 		return result, nil

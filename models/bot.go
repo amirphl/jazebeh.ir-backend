@@ -11,15 +11,15 @@ import (
 // and are authenticated using a username and password hash
 // The table name is `bots`
 type Bot struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	UUID         uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:uk_bots_uuid;index:idx_bots_uuid" json:"uuid"`
+	ID           uint      `gorm:"primaryKey"                                                             json:"id"`
+	UUID         uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:uk_bots_uuid;index:idx_bots_uuid"        json:"uuid"`
 	Username     string    `gorm:"size:255;not null;uniqueIndex:uk_bots_username;index:idx_bots_username" json:"username"`
-	PasswordHash string    `gorm:"size:255;not null" json:"-"`
+	PasswordHash string    `gorm:"size:255;not null"                                                      json:"-"`
 
-	IsActive    *bool      `gorm:"default:true;index:idx_bots_is_active" json:"is_active"`
+	IsActive    *bool      `gorm:"default:true;index:idx_bots_is_active"                                    json:"is_active"`
 	CreatedAt   time.Time  `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC');index:idx_bots_created_at" json:"created_at"`
-	UpdatedAt   time.Time  `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"updated_at"`
-	LastLoginAt *time.Time `gorm:"index:idx_bots_last_login_at" json:"last_login_at,omitempty"`
+	UpdatedAt   time.Time  `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"                           json:"updated_at"`
+	LastLoginAt *time.Time `gorm:"index:idx_bots_last_login_at"                                             json:"last_login_at,omitempty"`
 }
 
 func (Bot) TableName() string {

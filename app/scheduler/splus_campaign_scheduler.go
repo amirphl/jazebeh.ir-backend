@@ -259,7 +259,11 @@ func (s *SplusCampaignScheduler) dispatchPendingSplusCampaigns(
 	}
 }
 
-func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzAccessToken string, c dto.BotGetCampaignResponse) (err error) {
+func (s *SplusCampaignScheduler) processSplusCampaign(
+	ctx context.Context,
+	jazzAccessToken string,
+	c dto.BotGetCampaignResponse,
+) (err error) {
 	botID, err := extractSplusBotID(c)
 	if err != nil {
 		return fmt.Errorf("resolve Splus bot id for campaign id=%d: %w", c.ID, err)
@@ -305,7 +309,16 @@ func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzA
 		if c.ShortLinkDomain != nil {
 			excelShortLinkDomain = *c.ShortLinkDomain
 		}
-		audienceResult, err := fetchAudiencePhonesByUIDs(ctx, s.logger, s.audRepo, s.botClient, c, jazzAccessToken, fileUIDs, excelShortLinkDomain)
+		audienceResult, err := fetchAudiencePhonesByUIDs(
+			ctx,
+			s.logger,
+			s.audRepo,
+			s.botClient,
+			c,
+			jazzAccessToken,
+			fileUIDs,
+			excelShortLinkDomain,
+		)
 		if err != nil {
 			return fmt.Errorf("fetch audience phones by UIDs for campaign id=%d: %w", c.ID, err)
 		}
@@ -394,10 +407,22 @@ func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzA
 	}); err != nil {
 		return fmt.Errorf("persist campaign data for campaign id=%d: %w", c.ID, err)
 	}
-	s.logger.Printf("Splus scheduler: persisted processed campaign id=%d num_phones=%d, num_ids=%d, num_codes=%d, num_unmatched=%d", pc.ID, len(phones), len(ids), len(codes), len(unmatchedUID))
+	s.logger.Printf(
+		"Splus scheduler: persisted processed campaign id=%d num_phones=%d, num_ids=%d, num_codes=%d, num_unmatched=%d",
+		pc.ID,
+		len(phones),
+		len(ids),
+		len(codes),
+		len(unmatchedUID),
+	)
 
 	if len(unmatchedUID) > 0 {
-		s.logger.Printf("Splus scheduler: campaign id=%d creating %d unmatched sent rows for processed_campaign_id=%d", c.ID, len(unmatchedUID), pc.ID)
+		s.logger.Printf(
+			"Splus scheduler: campaign id=%d creating %d unmatched sent rows for processed_campaign_id=%d",
+			c.ID,
+			len(unmatchedUID),
+			pc.ID,
+		)
 		if err := s.createUnmatchedSentSplusRows(ctx, pc.ID, unmatchedUID); err != nil {
 			return fmt.Errorf("create unmatched sent rows for campaign id=%d: %w", c.ID, err)
 		}
@@ -491,7 +516,11 @@ func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzA
 
 		if len(sendUpdates) > 0 {
 			if updateErr := s.sentRepo.UpdateSendResultByTrackingIDs(ctx, sendUpdates); updateErr != nil {
-				s.logger.Printf("Splus scheduler: failed to batch update sent_splus provider fields for campaign id=%d: %v", c.ID, updateErr)
+				s.logger.Printf(
+					"Splus scheduler: failed to batch update sent_splus provider fields for campaign id=%d: %v",
+					c.ID,
+					updateErr,
+				)
 				// NOTE: Error silent here; not returning to avoid blocking further processing.
 			}
 		}
@@ -563,7 +592,11 @@ func (s *SplusCampaignScheduler) validateSplusCampaign(c dto.BotGetCampaignRespo
 	return nil
 }
 
-func (s *SplusCampaignScheduler) uploadCampaignMedia(ctx context.Context, jazzAccessToken, botID string, c dto.BotGetCampaignResponse) (*string, error) {
+func (s *SplusCampaignScheduler) uploadCampaignMedia(
+	ctx context.Context,
+	jazzAccessToken, botID string,
+	c dto.BotGetCampaignResponse,
+) (*string, error) {
 	if c.MediaUUID == nil || *c.MediaUUID == uuid.Nil {
 		return nil, nil
 	}
@@ -622,7 +655,10 @@ func buildSplusStatusResultMetadata(item SplusStatusResponse, normalizedStatus m
 	return data
 }
 
-func (s *SplusCampaignScheduler) resolveScoreConstraint(ctx context.Context, c dto.BotGetCampaignResponse) (*models.NormalizedScoreConstraint, error) {
+func (s *SplusCampaignScheduler) resolveScoreConstraint(
+	ctx context.Context,
+	c dto.BotGetCampaignResponse,
+) (*models.NormalizedScoreConstraint, error) {
 	if usesSmartAudienceTargeting(c) {
 		return nil, nil
 	}
@@ -630,7 +666,11 @@ func (s *SplusCampaignScheduler) resolveScoreConstraint(ctx context.Context, c d
 		return nil, nil
 	}
 	if s.statsRepo == nil {
-		return nil, fmt.Errorf("audience score statistics repository is unavailable for campaign id=%d with grades=%v", c.ID, c.AudienceGrades)
+		return nil, fmt.Errorf(
+			"audience score statistics repository is unavailable for campaign id=%d with grades=%v",
+			c.ID,
+			c.AudienceGrades,
+		)
 	}
 	percentiles, err := s.statsRepo.FetchPercentiles(ctx, c.Level1, c.Level2s, c.Level3s)
 	if err != nil {
@@ -639,7 +679,13 @@ func (s *SplusCampaignScheduler) resolveScoreConstraint(ctx context.Context, c d
 	if percentiles == nil {
 		return nil, fmt.Errorf("audience score statistics are missing for campaign id=%d levels and grades=%v", c.ID, c.AudienceGrades)
 	}
-	s.logger.Printf("resolveScoreConstraint: campaign id=%d grades=%v p33=%.4f p66=%.4f", c.ID, c.AudienceGrades, percentiles.P33, percentiles.P66)
+	s.logger.Printf(
+		"resolveScoreConstraint: campaign id=%d grades=%v p33=%.4f p66=%.4f",
+		c.ID,
+		c.AudienceGrades,
+		percentiles.P33,
+		percentiles.P66,
+	)
 	return gradesToScoreConstraint(c.AudienceGrades, percentiles.P33, percentiles.P66), nil
 }
 
@@ -678,7 +724,13 @@ func (s *SplusCampaignScheduler) selectSplusTagAudiences(
 		s.logger.Printf("selectSplusTagAudiences fetch candidates failed: campaign_id=%d err=%v", campaignID, err)
 		return nil, nil, nil, err
 	}
-	s.logger.Printf("selectSplusTagAudiences candidates: campaign_id=%d count=%d limit=%d excluded=%d", campaignID, len(candidates), limit, len(excludeIDs))
+	s.logger.Printf(
+		"selectSplusTagAudiences candidates: campaign_id=%d count=%d limit=%d excluded=%d",
+		campaignID,
+		len(candidates),
+		limit,
+		len(excludeIDs),
+	)
 
 	for _, ap := range candidates {
 		if ap == nil || ap.PhoneNumber == nil || strings.TrimSpace(*ap.PhoneNumber) == "" {
@@ -716,7 +768,12 @@ func (s *SplusCampaignScheduler) fetchSplusAudiencePhonesByBundle(
 		s.logger.Printf("fetchSplusAudiencePhonesByBundle tags resolution failed: campaign_id=%d err=%v", c.ID, err)
 		return nil, err
 	}
-	s.logger.Printf("fetchSplusAudiencePhonesByBundle tags resolved: campaign_id=%d requested=%d resolved=%d", c.ID, len(executionTags), len(tagIDs))
+	s.logger.Printf(
+		"fetchSplusAudiencePhonesByBundle tags resolved: campaign_id=%d requested=%d resolved=%d",
+		c.ID,
+		len(executionTags),
+		len(tagIDs),
+	)
 
 	scoreConstraint, err := s.resolveScoreConstraint(ctx, c)
 	if err != nil {
@@ -801,11 +858,22 @@ func (s *SplusCampaignScheduler) fetchSplusAudiencePhonesByBundle(
 		ShortLinkDomain: *c.ShortLinkDomain,
 	})
 	if err != nil {
-		s.logger.Printf("fetchSplusAudiencePhonesByBundle allocate short links failed: campaign_id=%d bundle_id=%d err=%v", c.ID, bundleID, err)
+		s.logger.Printf(
+			"fetchSplusAudiencePhonesByBundle allocate short links failed: campaign_id=%d bundle_id=%d err=%v",
+			c.ID,
+			bundleID,
+			err,
+		)
 		return nil, err
 	}
 	if len(codes) != len(phones) {
-		return nil, fmt.Errorf("allocate short links length mismatch for campaign id=%d bundle_id=%d: phones=%d codes=%d", c.ID, bundleID, len(phones), len(codes))
+		return nil, fmt.Errorf(
+			"allocate short links length mismatch for campaign id=%d bundle_id=%d: phones=%d codes=%d",
+			c.ID,
+			bundleID,
+			len(phones),
+			len(codes),
+		)
 	}
 	s.logger.Printf("fetchSplusAudiencePhonesByBundle success: campaign_id=%d bundle_id=%d selected=%d codes=%d selection_id=%d",
 		c.ID, bundleID, len(phones), len(codes), selectionID)
@@ -932,7 +1000,14 @@ func (s *SplusCampaignScheduler) startStatusJobWorker(parent context.Context) {
 				if err != nil {
 					s.logger.Printf("Splus scheduler: handle status job id=%d failed: %v", job.ID, err)
 					if job.RetryCount >= statusJobMaxRetry {
-						s.notifyAdmin(fmt.Sprintf("Splus scheduler: status job id=%d has failed %d times with error: %v", job.ID, job.RetryCount, err))
+						s.notifyAdmin(
+							fmt.Sprintf(
+								"Splus scheduler: status job id=%d has failed %d times with error: %v",
+								job.ID,
+								job.RetryCount,
+								err,
+							),
+						)
 					}
 				} else {
 					s.logger.Printf("Splus scheduler: handle status job id=%d succeeded", job.ID)
@@ -1004,12 +1079,21 @@ func (s *SplusCampaignScheduler) handleStatusJob(ctx context.Context, job *model
 		for _, item := range statusItems {
 			serverID := strings.TrimSpace(item.MessageID)
 			if serverID == "" {
-				s.logger.Printf("handleStatusJob: skipping status item with empty server_id for job_id=%d processed_campaign_id=%d", job.ID, job.ProcessedCampaignID)
+				s.logger.Printf(
+					"handleStatusJob: skipping status item with empty server_id for job_id=%d processed_campaign_id=%d",
+					job.ID,
+					job.ProcessedCampaignID,
+				)
 				continue
 			}
 			row := rowByServerID[serverID]
 			if row == nil {
-				s.logger.Printf("handleStatusJob: no sent row found for server_id=%s job_id=%d processed_campaign_id=%d", serverID, job.ID, job.ProcessedCampaignID)
+				s.logger.Printf(
+					"handleStatusJob: no sent row found for server_id=%s job_id=%d processed_campaign_id=%d",
+					serverID,
+					job.ID,
+					job.ProcessedCampaignID,
+				)
 				continue
 			}
 
@@ -1059,7 +1143,11 @@ func (s *SplusCampaignScheduler) handleStatusJob(ctx context.Context, job *model
 			})
 		}
 		if len(sendUpdates) == 0 {
-			s.logger.Printf("handleStatusJob: all status items filtered out (no valid server_id or matched row) for job_id=%d processed_campaign_id=%d", job.ID, job.ProcessedCampaignID)
+			s.logger.Printf(
+				"handleStatusJob: all status items filtered out (no valid server_id or matched row) for job_id=%d processed_campaign_id=%d",
+				job.ID,
+				job.ProcessedCampaignID,
+			)
 		}
 		if err := s.sentRepo.UpdateSendResultByTrackingIDs(txCtx, sendUpdates); err != nil {
 			return err
@@ -1111,7 +1199,9 @@ func (s *SplusCampaignScheduler) markStatusJobExecuted(ctx context.Context, job 
 	return s.jobRepo.Update(ctx, job)
 }
 
-func mapSplusProviderStatus(statusCode int) (totalParts int64, deliveredParts int64, undeliveredParts int64, unknownParts int64, status models.SplusSendStatus) {
+func mapSplusProviderStatus(
+	statusCode int,
+) (totalParts int64, deliveredParts int64, undeliveredParts int64, unknownParts int64, status models.SplusSendStatus) {
 	switch statusCode {
 	case 200, 202:
 		return 1, 1, 0, 0, models.SplusSendStatusSuccessful
@@ -1144,7 +1234,10 @@ func (s *SplusCampaignScheduler) updateProcessedCampaignStats(ctx context.Contex
 	// Fallback before any status jobs land.
 	// if agg.AggregatedTotalRecords == 0 && len(trackingResults) == 0 {
 	if agg.AggregatedTotalRecords == 0 {
-		s.logger.Printf("updateProcessedCampaignStats: no status results yet for processed_campaign_id=%d, falling back to sent rows", processedCampaignID)
+		s.logger.Printf(
+			"updateProcessedCampaignStats: no status results yet for processed_campaign_id=%d, falling back to sent rows",
+			processedCampaignID,
+		)
 		return s.updateProcessedCampaignStatsFromSentRows(ctx, pc)
 		// return nil, nil
 	}
@@ -1171,7 +1264,10 @@ func (s *SplusCampaignScheduler) updateProcessedCampaignStats(ctx context.Contex
 	return stats, nil
 }
 
-func (s *SplusCampaignScheduler) updateProcessedCampaignStatsFromSentRows(ctx context.Context, pc *models.ProcessedCampaign) (map[string]any, error) {
+func (s *SplusCampaignScheduler) updateProcessedCampaignStatsFromSentRows(
+	ctx context.Context,
+	pc *models.ProcessedCampaign,
+) (map[string]any, error) {
 	s.logger.Printf("updateProcessedCampaignStatsFromSentRows: computing stats from sent rows for processed_campaign_id=%d", pc.ID)
 	type row struct {
 		Total      int64

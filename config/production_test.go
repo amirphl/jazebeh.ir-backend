@@ -13,10 +13,12 @@ import (
 )
 
 var (
-	productionConfigEnvCallPattern = regexp.MustCompile(`get(?:Optional)?Env(?:StringSlice|StringMap|Float64|Duration|String|Bool|Int)\("([A-Z0-9_]+)"`)
-	composeEnvironmentKeyPattern   = regexp.MustCompile(`^      ([A-Z][A-Z0-9_]*)\s*:`)
-	schedulerOmitPattern           = regexp.MustCompile(`omit\["([A-Z0-9_]+)"\]`)
-	schedulerOverridePattern       = regexp.MustCompile(`override\["([A-Z0-9_]+)"\]`)
+	productionConfigEnvCallPattern = regexp.MustCompile(
+		`get(?:Optional)?Env(?:StringSlice|StringMap|Float64|Duration|String|Bool|Int)\("([A-Z0-9_]+)"`,
+	)
+	composeEnvironmentKeyPattern = regexp.MustCompile(`^      ([A-Z][A-Z0-9_]*)\s*:`)
+	schedulerOmitPattern         = regexp.MustCompile(`omit\["([A-Z0-9_]+)"\]`)
+	schedulerOverridePattern     = regexp.MustCompile(`override\["([A-Z0-9_]+)"\]`)
 
 	schedulerIntentionalProductionConfigOmissions = map[string]struct{}{
 		"ADMIN_2FA_MOBILES":              {},
@@ -101,7 +103,10 @@ func TestSchedulerDeploymentInheritsProductionConfigEnvironmentVariables(t *test
 	if !strings.Contains(string(schedulerDeployment), "[[ -n \"$expected\" && \"$expected\" != \\#* ]] || continue") {
 		t.Fatal("scheduler deployment must ignore comments while verifying its Docker env file")
 	}
-	if !strings.Contains(string(schedulerDeployment), "MAIN_REFUND_SETTING=\"$(source_env_value CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED)\"") ||
+	if !strings.Contains(
+		string(schedulerDeployment),
+		"MAIN_REFUND_SETTING=\"$(source_env_value CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED)\"",
+	) ||
 		!strings.Contains(string(schedulerDeployment), "\"${MAIN_REFUND_SETTING,,}\" == \"true\"") ||
 		!strings.Contains(string(schedulerDeployment), "CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED=false\n") {
 		t.Fatal("scheduler deployment must keep refund reconciliation in the API container")
@@ -222,7 +227,15 @@ func TestLoadSchedulerConfigReadsCampaignRefundReconciliationSettings(t *testing
 	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_RETRY_MAX", "19m")
 
 	cfg := loadSchedulerConfig()
-	if !cfg.CampaignRefundReconciliationSchedulerEnabled || cfg.CampaignRefundReconciliationPollInterval != 17*time.Second || cfg.CampaignRefundReconciliationEligibilityDelay != 73*time.Hour || cfg.CampaignRefundReconciliationJobTimeout != 21*time.Second || cfg.CampaignRefundReconciliationLeaseDuration != 2*time.Minute || cfg.CampaignRefundReconciliationDiscoveryBatchSize != 123 || cfg.CampaignRefundReconciliationMaxParallelRuns != 2 || cfg.CampaignRefundReconciliationMaxAttempts != 5 || cfg.CampaignRefundReconciliationRetryBase != 3*time.Minute || cfg.CampaignRefundReconciliationRetryMax != 19*time.Minute {
+	if !cfg.CampaignRefundReconciliationSchedulerEnabled || cfg.CampaignRefundReconciliationPollInterval != 17*time.Second ||
+		cfg.CampaignRefundReconciliationEligibilityDelay != 73*time.Hour ||
+		cfg.CampaignRefundReconciliationJobTimeout != 21*time.Second ||
+		cfg.CampaignRefundReconciliationLeaseDuration != 2*time.Minute ||
+		cfg.CampaignRefundReconciliationDiscoveryBatchSize != 123 ||
+		cfg.CampaignRefundReconciliationMaxParallelRuns != 2 ||
+		cfg.CampaignRefundReconciliationMaxAttempts != 5 ||
+		cfg.CampaignRefundReconciliationRetryBase != 3*time.Minute ||
+		cfg.CampaignRefundReconciliationRetryMax != 19*time.Minute {
 		t.Fatalf("campaign refund scheduler config = %+v", cfg)
 	}
 }
@@ -360,7 +373,11 @@ func TestLoadSchedulerConfigReadsIndependentSmartTargetingTestSamplingSchedulerF
 		t.Setenv("SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED", "true")
 		cfg := loadSchedulerConfig()
 		if cfg.SmartTargetingCapacitySchedulerEnabled || !cfg.SmartTargetingTestSamplingSchedulerEnabled {
-			t.Fatalf("scheduler flags = capacity:%t sampling:%t, want false/true", cfg.SmartTargetingCapacitySchedulerEnabled, cfg.SmartTargetingTestSamplingSchedulerEnabled)
+			t.Fatalf(
+				"scheduler flags = capacity:%t sampling:%t, want false/true",
+				cfg.SmartTargetingCapacitySchedulerEnabled,
+				cfg.SmartTargetingTestSamplingSchedulerEnabled,
+			)
 		}
 	})
 
@@ -369,7 +386,11 @@ func TestLoadSchedulerConfigReadsIndependentSmartTargetingTestSamplingSchedulerF
 		t.Setenv("SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED", "false")
 		cfg := loadSchedulerConfig()
 		if !cfg.SmartTargetingCapacitySchedulerEnabled || cfg.SmartTargetingTestSamplingSchedulerEnabled {
-			t.Fatalf("scheduler flags = capacity:%t sampling:%t, want true/false", cfg.SmartTargetingCapacitySchedulerEnabled, cfg.SmartTargetingTestSamplingSchedulerEnabled)
+			t.Fatalf(
+				"scheduler flags = capacity:%t sampling:%t, want true/false",
+				cfg.SmartTargetingCapacitySchedulerEnabled,
+				cfg.SmartTargetingTestSamplingSchedulerEnabled,
+			)
 		}
 	})
 }
@@ -400,7 +421,9 @@ func TestLoadProductionConfigReadsCandooSMSSettings(t *testing.T) {
 	t.Setenv("CANDOO_SMS_STATUS_MAP", "-1:pending,100:successful,200:unsuccessful")
 
 	cfg := loadCandooSMSConfig()
-	if !cfg.Enabled || cfg.APIKey != "candoo-key" || cfg.MessageType != 2 || cfg.RetryCount != 4 || cfg.ValidityPeriod != 300 || cfg.MaxRequestsPerSecond != 7 || cfg.StatusCodeMap["100"] != "successful" {
+	if !cfg.Enabled || cfg.APIKey != "candoo-key" || cfg.MessageType != 2 || cfg.RetryCount != 4 || cfg.ValidityPeriod != 300 ||
+		cfg.MaxRequestsPerSecond != 7 ||
+		cfg.StatusCodeMap["100"] != "successful" {
 		t.Fatalf("Candoo config = %+v", cfg)
 	}
 }

@@ -24,9 +24,21 @@ import (
 
 // CryptoPaymentFlow defines crypto payment operations
 type CryptoPaymentFlow interface {
-	CreateRequest(ctx context.Context, req *dto.CreateCryptoPaymentRequest, metadata *ClientMetadata) (*dto.CreateCryptoPaymentResponse, error)
-	GetStatus(ctx context.Context, req *dto.GetCryptoPaymentStatusRequest, metadata *ClientMetadata) (*dto.GetCryptoPaymentStatusResponse, error)
-	ManualVerify(ctx context.Context, req *dto.ManualVerifyCryptoDepositRequest, metadata *ClientMetadata) (*dto.ManualVerifyCryptoDepositResponse, error)
+	CreateRequest(
+		ctx context.Context,
+		req *dto.CreateCryptoPaymentRequest,
+		metadata *ClientMetadata,
+	) (*dto.CreateCryptoPaymentResponse, error)
+	GetStatus(
+		ctx context.Context,
+		req *dto.GetCryptoPaymentStatusRequest,
+		metadata *ClientMetadata,
+	) (*dto.GetCryptoPaymentStatusResponse, error)
+	ManualVerify(
+		ctx context.Context,
+		req *dto.ManualVerifyCryptoDepositRequest,
+		metadata *ClientMetadata,
+	) (*dto.ManualVerifyCryptoDepositResponse, error)
 	CancelRequest(ctx context.Context, req *dto.CancelCryptoPaymentRequest, metadata *ClientMetadata) error
 	HandleOxapayWebhook(ctx context.Context, raw []byte, hmacHeader string, secret string, metadata *ClientMetadata) error
 }
@@ -77,7 +89,11 @@ func NewCryptoPaymentFlow(
 	}
 }
 
-func (f *CryptoPaymentFlowImpl) CreateRequest(ctx context.Context, req *dto.CreateCryptoPaymentRequest, metadata *ClientMetadata) (*dto.CreateCryptoPaymentResponse, error) {
+func (f *CryptoPaymentFlowImpl) CreateRequest(
+	ctx context.Context,
+	req *dto.CreateCryptoPaymentRequest,
+	metadata *ClientMetadata,
+) (*dto.CreateCryptoPaymentResponse, error) {
 	if req.AmountWithTax < 1000 {
 		return nil, ErrAmountTooLow
 	}
@@ -176,7 +192,11 @@ func (f *CryptoPaymentFlowImpl) CreateRequest(ctx context.Context, req *dto.Crea
 		if err != nil {
 			return NewBusinessError("CRYPTO_PROVIDER_QUOTE_FAILED", "Failed to get quote from provider", fmt.Errorf("%w", err))
 		}
-		callbackURL := fmt.Sprintf("https://%s/api/v1/crypto/providers/%s/callback", f.deploymentCfg.APIDomain, strings.ToLower(string(cpr.Platform)))
+		callbackURL := fmt.Sprintf(
+			"https://%s/api/v1/crypto/providers/%s/callback",
+			f.deploymentCfg.APIDomain,
+			strings.ToLower(string(cpr.Platform)),
+		)
 		prov, err := provider.ProvisionDeposit(txCtx, services.ProvisionInput{
 			QuoteInput: services.QuoteInput{
 				FiatAmountToman: req.AmountWithTax,
@@ -296,7 +316,11 @@ func (f *CryptoPaymentFlowImpl) CreateRequest(ctx context.Context, req *dto.Crea
 	return resp, nil
 }
 
-func (f *CryptoPaymentFlowImpl) GetStatus(ctx context.Context, req *dto.GetCryptoPaymentStatusRequest, metadata *ClientMetadata) (*dto.GetCryptoPaymentStatusResponse, error) {
+func (f *CryptoPaymentFlowImpl) GetStatus(
+	ctx context.Context,
+	req *dto.GetCryptoPaymentStatusRequest,
+	metadata *ClientMetadata,
+) (*dto.GetCryptoPaymentStatusResponse, error) {
 	if req.UUID == "" {
 		return nil, NewBusinessError("CRYPTO_STATUS_VALIDATION_FAILED", "uuid is required", nil)
 	}
@@ -407,7 +431,13 @@ func (f *CryptoPaymentFlowImpl) GetStatus(ctx context.Context, req *dto.GetCrypt
 							// credit on invoice paid
 							if strings.EqualFold(info.Status, "paid") || strings.EqualFold(info.Status, "manual_accept") {
 								// fetch current deposits for this request
-								ds, _ := f.cdRepo.ByFilter(txCtx, models.CryptoDepositFilter{CryptoPaymentRequestID: &cpr.ID}, "id ASC", 100, 0)
+								ds, _ := f.cdRepo.ByFilter(
+									txCtx,
+									models.CryptoDepositFilter{CryptoPaymentRequestID: &cpr.ID},
+									"id ASC",
+									100,
+									0,
+								)
 								for _, d := range ds {
 									if d.CreditedAt == nil && d.ConfirmedAt != nil {
 										if err := f.creditOnConfirmed(txCtx, cpr, d, metadata); err != nil {
@@ -525,7 +555,11 @@ func (f *CryptoPaymentFlowImpl) GetStatus(ctx context.Context, req *dto.GetCrypt
 }
 
 // TODO: Test
-func (f *CryptoPaymentFlowImpl) ManualVerify(ctx context.Context, req *dto.ManualVerifyCryptoDepositRequest, metadata *ClientMetadata) (*dto.ManualVerifyCryptoDepositResponse, error) {
+func (f *CryptoPaymentFlowImpl) ManualVerify(
+	ctx context.Context,
+	req *dto.ManualVerifyCryptoDepositRequest,
+	metadata *ClientMetadata,
+) (*dto.ManualVerifyCryptoDepositResponse, error) {
 	if req.RequestUUID == "" || req.TxHash == "" {
 		return nil, NewBusinessError("CRYPTO_VERIFY_VALIDATION_FAILED", "request_uuid and tx_hash are required", nil)
 	}
@@ -673,7 +707,8 @@ func (f *CryptoPaymentFlowImpl) CancelRequest(ctx context.Context, req *dto.Canc
 }
 
 // calculateShares mirrors payment_flow.calculateScatteredSettlementItems minimally for metadata preparation
-// func (f *CryptoPaymentFlowImpl) calculateShares(ctx context.Context, customer models.Customer, amountWithTax uint64) ([]ScatteredSettlementItem, error) {
+// func (f *CryptoPaymentFlowImpl) calculateShares(ctx context.Context, customer models.Customer, amountWithTax uint64)
+// ([]ScatteredSettlementItem, error) {
 // 	var systemShareWithTax uint64
 // 	var agencyShareWithTax uint64
 
@@ -691,7 +726,13 @@ func (f *CryptoPaymentFlowImpl) CancelRequest(ctx context.Context, req *dto.Canc
 // 	return items, nil
 // }
 
-func (f *CryptoPaymentFlowImpl) HandleOxapayWebhook(ctx context.Context, raw []byte, hmacHeader string, secret string, metadata *ClientMetadata) error {
+func (f *CryptoPaymentFlowImpl) HandleOxapayWebhook(
+	ctx context.Context,
+	raw []byte,
+	hmacHeader string,
+	secret string,
+	metadata *ClientMetadata,
+) error {
 	if len(raw) == 0 || hmacHeader == "" {
 		return NewBusinessError("CRYPTO_WEBHOOK_INVALID", "missing body or HMAC header", nil)
 	}
@@ -854,7 +895,12 @@ func (f *CryptoPaymentFlowImpl) getAgencyDiscountRate(ctx context.Context, custo
 	return discountRate, sheba, nil
 }
 
-func (f *CryptoPaymentFlowImpl) creditOnConfirmed(ctx context.Context, cpr *models.CryptoPaymentRequest, dep *models.CryptoDeposit, metadata *ClientMetadata) error {
+func (f *CryptoPaymentFlowImpl) creditOnConfirmed(
+	ctx context.Context,
+	cpr *models.CryptoPaymentRequest,
+	dep *models.CryptoDeposit,
+	metadata *ClientMetadata,
+) error {
 	// decode metadata
 	var m map[string]any
 	if err := json.Unmarshal(cpr.Metadata, &m); err != nil {

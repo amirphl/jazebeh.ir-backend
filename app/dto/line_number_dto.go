@@ -4,11 +4,11 @@ package dto
 // AdminCreateLineNumberRequest represents the payload to create a new line number
 // Admin-only endpoint
 type AdminCreateLineNumberRequest struct {
-	Name        *string `json:"name,omitempty" validate:"omitempty,max=255"`
-	LineNumber  string  `json:"line_number" validate:"required,min=3,max=50"`
-	Provider    string  `json:"provider,omitempty" validate:"omitempty,oneof=payamsms candoo"`
-	PriceFactor float64 `json:"price_factor" validate:"required,gt=0"`
-	Priority    *int    `json:"priority,omitempty" validate:"omitempty"`
+	Name        *string `json:"name,omitempty"      validate:"omitempty,max=255"`
+	LineNumber  string  `json:"line_number"         validate:"required,min=3,max=50"`
+	Provider    string  `json:"provider,omitempty"  validate:"omitempty,oneof=payamsms candoo"`
+	PriceFactor float64 `json:"price_factor"        validate:"required,gt=0"`
+	Priority    *int    `json:"priority,omitempty"  validate:"omitempty"`
 	IsActive    *bool   `json:"is_active,omitempty" validate:"omitempty"`
 }
 
@@ -29,9 +29,9 @@ type AdminLineNumberDTO struct {
 // AdminUpdateLineNumberItem represents one update operation for a line number
 // All IDs must exist; price_factor must be > 0; other fields optional
 type AdminUpdateLineNumberItem struct {
-	ID       uint    `json:"id" validate:"required"`
-	Provider *string `json:"provider,omitempty" validate:"omitempty,oneof=payamsms candoo"`
-	Priority *int    `json:"priority,omitempty" validate:"omitempty"`
+	ID       uint    `json:"id"                  validate:"required"`
+	Provider *string `json:"provider,omitempty"  validate:"omitempty,oneof=payamsms candoo"`
+	Priority *int    `json:"priority,omitempty"  validate:"omitempty"`
 	IsActive *bool   `json:"is_active,omitempty" validate:"omitempty"`
 }
 
@@ -41,7 +41,7 @@ type AdminUpdateLineNumbersRequest struct {
 
 // AdminUpdateLineNumberPriceFactorRequest updates the price factor of an existing line number.
 type AdminUpdateLineNumberPriceFactorRequest struct {
-	LineNumber  string  `json:"line_number" validate:"required,min=3,max=50"`
+	LineNumber  string  `json:"line_number"  validate:"required,min=3,max=50"`
 	PriceFactor float64 `json:"price_factor" validate:"required,gt=0"`
 }
 

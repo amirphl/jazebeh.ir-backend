@@ -2,7 +2,7 @@ package dto
 
 type AdminUpdatePlatformBasePriceRequest struct {
 	Platform string `json:"platform" validate:"required,oneof=sms rubika bale splus"`
-	Price    uint64 `json:"price" validate:"required,gt=0"`
+	Price    uint64 `json:"price"    validate:"required,gt=0"`
 }
 
 type AdminUpdatePlatformBasePriceResponse struct {

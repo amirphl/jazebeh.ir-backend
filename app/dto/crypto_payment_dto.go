@@ -6,9 +6,9 @@ import "time"
 type CreateCryptoPaymentRequest struct {
 	CustomerID    uint   `json:"-"` // injected from auth
 	AmountWithTax uint64 `json:"amount_with_tax" validate:"required,min=1000"`
-	Coin          string `json:"coin" validate:"required,oneof=ETH DOGE XRP BNB"`
-	Network       string `json:"network" validate:"required"`
-	Platform      string `json:"platform" validate:"required"`
+	Coin          string `json:"coin"            validate:"required,oneof=ETH DOGE XRP BNB"`
+	Network       string `json:"network"         validate:"required"`
+	Platform      string `json:"platform"        validate:"required"`
 }
 
 // CreateCryptoPaymentResponse returns the quote and deposit address
@@ -71,7 +71,7 @@ type SupportedPlatform struct {
 type ManualVerifyCryptoDepositRequest struct {
 	CustomerID  uint   `json:"-"`
 	RequestUUID string `json:"request_uuid" validate:"required"`
-	TxHash      string `json:"tx_hash" validate:"required"`
+	TxHash      string `json:"tx_hash"      validate:"required"`
 }
 
 // ManualVerifyCryptoDepositResponse returns updated status

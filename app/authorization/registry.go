@@ -29,7 +29,12 @@ var RoutePermissionRegistry = []RoutePermission{
 	{"POST", "/api/v1/admin/payments/charge-wallet/preview", PermissionPaymentChargeWallet, "Preview wallet charge impact (admin)"},
 	{"GET", "/api/v1/admin/payments/transactions", PermissionPaymentRead, "List filtered transactions"},
 	{"GET", "/api/v1/admin/payments/deposit-receipts", PermissionPaymentReceiptReview, "List deposit receipts"},
-	{"GET", "/api/v1/admin/payments/deposit-receipts/", PermissionPaymentReceiptReview, "Get deposit receipt file"}, // path prefix covers /deposit-receipts/:uuid/file
+	{
+		"GET",
+		"/api/v1/admin/payments/deposit-receipts/",
+		PermissionPaymentReceiptReview,
+		"Get deposit receipt file",
+	}, // path prefix covers /deposit-receipts/:uuid/file
 	{"POST", "/api/v1/admin/payments/deposit-receipts/status", PermissionPaymentReceiptReview, "Review deposit receipt"},
 	{"POST", "/api/v1/admin/payments/transactions/invoice", PermissionPaymentInvoiceAttach, "Attach invoice to transaction"},
 
@@ -44,7 +49,12 @@ var RoutePermissionRegistry = []RoutePermission{
 	{"POST", "/api/v1/admin/short-links/download", PermissionShortLinkManage, "Export short-links"},
 	{"POST", "/api/v1/admin/short-links/download-with-clicks", PermissionShortLinkManage, "Export short-links with clicks"},
 	{"POST", "/api/v1/admin/short-links/download-with-clicks-range", PermissionShortLinkManage, "Export short-links with clicks range"},
-	{"POST", "/api/v1/admin/short-links/download-with-clicks-by-scenario-name", PermissionShortLinkManage, "Export short-links by scenario"},
+	{
+		"POST",
+		"/api/v1/admin/short-links/download-with-clicks-by-scenario-name",
+		PermissionShortLinkManage,
+		"Export short-links by scenario",
+	},
 
 	// Line numbers
 	{"GET", "/api/v1/admin/line-numbers/report", PermissionLineNumberReport, "Line number report/export"},
@@ -73,7 +83,12 @@ var RoutePermissionRegistry = []RoutePermission{
 
 	// Access control (maker-checker)
 	{"POST", "/api/v1/admin/access-control/requests", PermissionACLManage, "Create ACL change request"},
-	{"POST", "/api/v1/admin/access-control/requests/", PermissionACLApprove, "Approve/reject ACL change request"}, // path prefix covers /requests/:uuid/decision
+	{
+		"POST",
+		"/api/v1/admin/access-control/requests/",
+		PermissionACLApprove,
+		"Approve/reject ACL change request",
+	}, // path prefix covers /requests/:uuid/decision
 }
 
 // PermissionForRoute returns the permission bucket for the given method/path if any.

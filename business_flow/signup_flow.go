@@ -157,7 +157,11 @@ func (s *SignupFlowImpl) Signup(ctx context.Context, req *dto.SignupRequest, met
 }
 
 // VerifyOTP handles OTP verification and completes signup
-func (s *SignupFlowImpl) VerifyOTP(ctx context.Context, req *dto.OTPVerificationRequest, metadata *ClientMetadata) (*dto.OTPVerificationResponse, error) {
+func (s *SignupFlowImpl) VerifyOTP(
+	ctx context.Context,
+	req *dto.OTPVerificationRequest,
+	metadata *ClientMetadata,
+) (*dto.OTPVerificationResponse, error) {
 	// Validate business rules
 	if err := s.validateOTPVerificationRequest(ctx, req); err != nil {
 		return nil, NewBusinessError("OTP_VERIFICATION_VALIDATION_FAILED", "OTP verification validation failed", err)
@@ -249,7 +253,11 @@ func (s *SignupFlowImpl) VerifyOTP(ctx context.Context, req *dto.OTPVerification
 }
 
 // ResendOTP generates and sends a new OTP
-func (s *SignupFlowImpl) ResendOTP(ctx context.Context, req *dto.OTPResendRequest, metadata *ClientMetadata) (*dto.OTPResendResponse, error) {
+func (s *SignupFlowImpl) ResendOTP(
+	ctx context.Context,
+	req *dto.OTPResendRequest,
+	metadata *ClientMetadata,
+) (*dto.OTPResendResponse, error) {
 	// Validate business rules
 	if err := s.validateOTPResendRequest(ctx, req); err != nil {
 		return nil, NewBusinessError("OTP_RESEND_VALIDATION_FAILED", "OTP resend validation failed", err)
@@ -546,7 +554,12 @@ func (s *SignupFlowImpl) completeSignup(ctx context.Context, customer *models.Cu
 	return s.customerRepo.UpdateVerificationStatus(ctx, customer.ID, isMobileVerified, isEmailVerified, mobileVerifiedAt, emailVerifiedAt)
 }
 
-func (s *SignupFlowImpl) createSession(ctx context.Context, customerID uint, accessToken, refreshToken string, metadata *ClientMetadata) error {
+func (s *SignupFlowImpl) createSession(
+	ctx context.Context,
+	customerID uint,
+	accessToken, refreshToken string,
+	metadata *ClientMetadata,
+) error {
 	ipAddress := ""
 	userAgent := ""
 	if metadata != nil {
@@ -599,7 +612,14 @@ func (s *SignupFlowImpl) createDefaultDiscount(ctx context.Context, customer *mo
 	return nil
 }
 
-func (s *SignupFlowImpl) createAuditLog(ctx context.Context, customer *models.Customer, action, description string, success bool, errorMsg *string, metadata *ClientMetadata) error {
+func (s *SignupFlowImpl) createAuditLog(
+	ctx context.Context,
+	customer *models.Customer,
+	action, description string,
+	success bool,
+	errorMsg *string,
+	metadata *ClientMetadata,
+) error {
 	var customerID *uint
 	if customer != nil {
 		customerID = &customer.ID
@@ -794,7 +814,11 @@ func (s *SignupFlowImpl) deleteSignupOTPState(ctx context.Context, customerID ui
 	return s.rc.Del(ctx, s.signupOTPKey(customerID, otpType)).Err()
 }
 
-func (s *SignupFlowImpl) getSignupOTPState(ctx context.Context, customerID uint, otpType string) (*otpChallengeState, time.Duration, error) {
+func (s *SignupFlowImpl) getSignupOTPState(
+	ctx context.Context,
+	customerID uint,
+	otpType string,
+) (*otpChallengeState, time.Duration, error) {
 	key := s.signupOTPKey(customerID, otpType)
 	raw, err := s.rc.Get(ctx, key).Result()
 	if err != nil {

@@ -31,12 +31,20 @@ func (r *SentRubikaMessageRepositoryImpl) ByID(ctx context.Context, id uint) (*m
 	return &row, nil
 }
 
-func (r *SentRubikaMessageRepositoryImpl) ListByProcessedCampaign(ctx context.Context, processedCampaignID uint, limit, offset int) ([]*models.SentRubikaMessage, error) {
+func (r *SentRubikaMessageRepositoryImpl) ListByProcessedCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+	limit, offset int,
+) ([]*models.SentRubikaMessage, error) {
 	filter := models.SentRubikaMessageFilter{ProcessedCampaignID: &processedCampaignID}
 	return r.ByFilter(ctx, filter, "id ASC", limit, offset)
 }
 
-func (r *SentRubikaMessageRepositoryImpl) ListByTrackingIDs(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentRubikaMessage, error) {
+func (r *SentRubikaMessageRepositoryImpl) ListByTrackingIDs(
+	ctx context.Context,
+	processedCampaignID uint,
+	trackingIDs []string,
+) ([]*models.SentRubikaMessage, error) {
 	if len(trackingIDs) == 0 {
 		return nil, nil
 	}
@@ -67,7 +75,10 @@ func (r *SentRubikaMessageRepositoryImpl) ListByTrackingIDs(ctx context.Context,
 	return rows, nil
 }
 
-func (r *SentRubikaMessageRepositoryImpl) TrackingResultsFromSentRows(ctx context.Context, processedCampaignID uint) ([]RubikaTrackingResult, error) {
+func (r *SentRubikaMessageRepositoryImpl) TrackingResultsFromSentRows(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]RubikaTrackingResult, error) {
 	type fallbackRow struct {
 		AudienceProfileUID *string `gorm:"column:audience_profile_uid"`
 		PhoneNumber        string  `gorm:"column:phone_number"`
@@ -166,7 +177,12 @@ func (r *SentRubikaMessageRepositoryImpl) applyFilter(db *gorm.DB, f models.Sent
 	return db
 }
 
-func (r *SentRubikaMessageRepositoryImpl) ByFilter(ctx context.Context, filter models.SentRubikaMessageFilter, orderBy string, limit, offset int) ([]*models.SentRubikaMessage, error) {
+func (r *SentRubikaMessageRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.SentRubikaMessageFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SentRubikaMessage, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.SentRubikaMessage{}), filter)
 	if orderBy != "" {

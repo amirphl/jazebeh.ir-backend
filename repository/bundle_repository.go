@@ -115,7 +115,12 @@ func (r *BundleRepositoryImpl) applyFilter(query *gorm.DB, filter models.BundleF
 	return query
 }
 
-func (r *BundleRepositoryImpl) ByFilter(ctx context.Context, filter models.BundleFilter, orderBy string, limit, offset int) ([]*models.Bundle, error) {
+func (r *BundleRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.BundleFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Bundle, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.Bundle{}), filter)
 

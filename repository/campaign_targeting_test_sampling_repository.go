@@ -22,10 +22,24 @@ type CampaignTargetingTestSamplingRepository interface {
 	LatestByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingTestSamplingCalculation, error)
 	ActiveByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingTestSamplingCalculation, error)
 	LatestByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingTestSamplingCalculation, error)
-	LatestCalculatedByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingTestSamplingCalculation, error)
+	LatestCalculatedByInput(
+		ctx context.Context,
+		campaignID uint,
+		inputHash string,
+	) (*models.CampaignTargetingTestSamplingCalculation, error)
 	Supersede(ctx context.Context, id int64, code, message string, at time.Time) error
 	ClaimPending(ctx context.Context, limit int, staleBefore, at time.Time) ([]*models.CampaignTargetingTestSamplingCalculation, error)
-	Complete(ctx context.Context, id int64, leaseStartedAt time.Time, tagResults json.RawMessage, satisfiedTagCount int, effectiveAudienceCount int64, campaignCost uint64, allocationFingerprint string, at time.Time) error
+	Complete(
+		ctx context.Context,
+		id int64,
+		leaseStartedAt time.Time,
+		tagResults json.RawMessage,
+		satisfiedTagCount int,
+		effectiveAudienceCount int64,
+		campaignCost uint64,
+		allocationFingerprint string,
+		at time.Time,
+	) error
 	Fail(ctx context.Context, id int64, leaseStartedAt time.Time, code, message string, at time.Time) error
 }
 
@@ -42,11 +56,17 @@ func (r *CampaignTargetingTestSamplingRepositoryImpl) getDB(ctx context.Context)
 	return r.db.WithContext(ctx)
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) Save(ctx context.Context, row *models.CampaignTargetingTestSamplingCalculation) error {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) Save(
+	ctx context.Context,
+	row *models.CampaignTargetingTestSamplingCalculation,
+) error {
 	return r.getDB(ctx).Create(row).Error
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) ByID(ctx context.Context, id int64) (*models.CampaignTargetingTestSamplingCalculation, error) {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) ByID(
+	ctx context.Context,
+	id int64,
+) (*models.CampaignTargetingTestSamplingCalculation, error) {
 	var row models.CampaignTargetingTestSamplingCalculation
 	if err := r.getDB(ctx).First(&row, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -57,23 +77,47 @@ func (r *CampaignTargetingTestSamplingRepositoryImpl) ByID(ctx context.Context, 
 	return &row, nil
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) LatestByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingTestSamplingCalculation, error) {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) LatestByCampaignID(
+	ctx context.Context,
+	campaignID uint,
+) (*models.CampaignTargetingTestSamplingCalculation, error) {
 	return r.latest(ctx, "campaign_id = ?", campaignID)
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) ActiveByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingTestSamplingCalculation, error) {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) ActiveByCampaignID(
+	ctx context.Context,
+	campaignID uint,
+) (*models.CampaignTargetingTestSamplingCalculation, error) {
 	return r.latest(ctx, "campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingTestSamplingCalculating)
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) LatestByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingTestSamplingCalculation, error) {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) LatestByInput(
+	ctx context.Context,
+	campaignID uint,
+	inputHash string,
+) (*models.CampaignTargetingTestSamplingCalculation, error) {
 	return r.latest(ctx, "campaign_id = ? AND input_hash = ?", campaignID, inputHash)
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) LatestCalculatedByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingTestSamplingCalculation, error) {
-	return r.latest(ctx, "campaign_id = ? AND input_hash = ? AND status = ?", campaignID, inputHash, models.CampaignTargetingTestSamplingCalculated)
+func (r *CampaignTargetingTestSamplingRepositoryImpl) LatestCalculatedByInput(
+	ctx context.Context,
+	campaignID uint,
+	inputHash string,
+) (*models.CampaignTargetingTestSamplingCalculation, error) {
+	return r.latest(
+		ctx,
+		"campaign_id = ? AND input_hash = ? AND status = ?",
+		campaignID,
+		inputHash,
+		models.CampaignTargetingTestSamplingCalculated,
+	)
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) latest(ctx context.Context, query string, args ...any) (*models.CampaignTargetingTestSamplingCalculation, error) {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) latest(
+	ctx context.Context,
+	query string,
+	args ...any,
+) (*models.CampaignTargetingTestSamplingCalculation, error) {
 	var row models.CampaignTargetingTestSamplingCalculation
 	err := r.getDB(ctx).Where(query, args...).Order("created_at DESC, id DESC").First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -100,7 +144,11 @@ func (r *CampaignTargetingTestSamplingRepositoryImpl) Supersede(ctx context.Cont
 
 // ClaimPending atomically leases rows across application replicas. A lease can
 // be reclaimed after staleBefore if a process exited before completion.
-func (r *CampaignTargetingTestSamplingRepositoryImpl) ClaimPending(ctx context.Context, limit int, staleBefore, at time.Time) ([]*models.CampaignTargetingTestSamplingCalculation, error) {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) ClaimPending(
+	ctx context.Context,
+	limit int,
+	staleBefore, at time.Time,
+) ([]*models.CampaignTargetingTestSamplingCalculation, error) {
 	if limit <= 0 {
 		limit = 1
 	}
@@ -123,7 +171,17 @@ RETURNING calculation.*`
 	return rows, r.getDB(ctx).Raw(query, models.CampaignTargetingTestSamplingCalculating, staleBefore, limit, at).Scan(&rows).Error
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) Complete(ctx context.Context, id int64, leaseStartedAt time.Time, tagResults json.RawMessage, satisfiedTagCount int, effectiveAudienceCount int64, campaignCost uint64, allocationFingerprint string, at time.Time) error {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) Complete(
+	ctx context.Context,
+	id int64,
+	leaseStartedAt time.Time,
+	tagResults json.RawMessage,
+	satisfiedTagCount int,
+	effectiveAudienceCount int64,
+	campaignCost uint64,
+	allocationFingerprint string,
+	at time.Time,
+) error {
 	if len(allocationFingerprint) != 64 {
 		return errors.New("campaign targeting test sampling allocation fingerprint must be a 64-character SHA-256 hex digest")
 	}
@@ -131,7 +189,17 @@ func (r *CampaignTargetingTestSamplingRepositoryImpl) Complete(ctx context.Conte
 	if err != nil || hex.EncodeToString(decodedFingerprint) != allocationFingerprint {
 		return errors.New("campaign targeting test sampling allocation fingerprint must be a 64-character SHA-256 hex digest")
 	}
-	result := r.completeQuery(ctx, id, leaseStartedAt, tagResults, satisfiedTagCount, effectiveAudienceCount, campaignCost, allocationFingerprint, at)
+	result := r.completeQuery(
+		ctx,
+		id,
+		leaseStartedAt,
+		tagResults,
+		satisfiedTagCount,
+		effectiveAudienceCount,
+		campaignCost,
+		allocationFingerprint,
+		at,
+	)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -141,7 +209,17 @@ func (r *CampaignTargetingTestSamplingRepositoryImpl) Complete(ctx context.Conte
 	return nil
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) completeQuery(ctx context.Context, id int64, leaseStartedAt time.Time, tagResults json.RawMessage, satisfiedTagCount int, effectiveAudienceCount int64, campaignCost uint64, allocationFingerprint string, at time.Time) *gorm.DB {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) completeQuery(
+	ctx context.Context,
+	id int64,
+	leaseStartedAt time.Time,
+	tagResults json.RawMessage,
+	satisfiedTagCount int,
+	effectiveAudienceCount int64,
+	campaignCost uint64,
+	allocationFingerprint string,
+	at time.Time,
+) *gorm.DB {
 	return r.getDB(ctx).Model(&models.CampaignTargetingTestSamplingCalculation{}).
 		Where("id = ? AND status = ? AND started_at = ?", id, models.CampaignTargetingTestSamplingCalculating, leaseStartedAt).
 		Updates(map[string]any{
@@ -155,7 +233,13 @@ func (r *CampaignTargetingTestSamplingRepositoryImpl) completeQuery(ctx context.
 		})
 }
 
-func (r *CampaignTargetingTestSamplingRepositoryImpl) Fail(ctx context.Context, id int64, leaseStartedAt time.Time, code, message string, at time.Time) error {
+func (r *CampaignTargetingTestSamplingRepositoryImpl) Fail(
+	ctx context.Context,
+	id int64,
+	leaseStartedAt time.Time,
+	code, message string,
+	at time.Time,
+) error {
 	result := r.getDB(ctx).Model(&models.CampaignTargetingTestSamplingCalculation{}).
 		Where("id = ? AND status = ? AND started_at = ?", id, models.CampaignTargetingTestSamplingCalculating, leaseStartedAt).
 		Updates(map[string]any{"status": models.CampaignTargetingTestSamplingFailed, "finished_at": at, "error_code": code, "error_message": message})

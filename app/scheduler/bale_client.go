@@ -1126,7 +1126,10 @@ func validateNajvaUploadFile(path string) error {
 
 	ext := strings.ToLower(filepath.Ext(trimmed))
 	if _, ok := najvaAllowedUploadExt[ext]; !ok {
-		return fmt.Errorf("unsupported file extension %q; allowed extensions: jpeg, jpg, png, gif, opus, ogg, mp4", strings.TrimPrefix(ext, "."))
+		return fmt.Errorf(
+			"unsupported file extension %q; allowed extensions: jpeg, jpg, png, gif, opus, ogg, mp4",
+			strings.TrimPrefix(ext, "."),
+		)
 	}
 
 	info, err := os.Stat(trimmed)
@@ -1620,7 +1623,11 @@ func newBaleHTTPError(op string, status int, body []byte) error {
 
 func isRetryableHTTPStatus(status int) bool {
 	switch status {
-	case najvaErrorTooManyRequests, najvaErrorInternalServerError, najvaErrorBadGateway, najvaErrorServiceUnavailable, najvaErrorGatewayTimeout:
+	case najvaErrorTooManyRequests,
+		najvaErrorInternalServerError,
+		najvaErrorBadGateway,
+		najvaErrorServiceUnavailable,
+		najvaErrorGatewayTimeout:
 		return true
 	default:
 		return false

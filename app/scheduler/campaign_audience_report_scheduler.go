@@ -20,7 +20,12 @@ type CampaignAudienceReportScheduler struct {
 	inFlight                 int
 }
 
-func NewCampaignAudienceReportScheduler(flow CampaignAudienceReportExecutor, logger *log.Logger, interval, timeout, lease time.Duration, maxParallelRuns int) *CampaignAudienceReportScheduler {
+func NewCampaignAudienceReportScheduler(
+	flow CampaignAudienceReportExecutor,
+	logger *log.Logger,
+	interval, timeout, lease time.Duration,
+	maxParallelRuns int,
+) *CampaignAudienceReportScheduler {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -36,7 +41,14 @@ func NewCampaignAudienceReportScheduler(flow CampaignAudienceReportExecutor, log
 	if maxParallelRuns <= 0 {
 		maxParallelRuns = 1
 	}
-	return &CampaignAudienceReportScheduler{flow: flow, logger: logger, interval: interval, timeout: timeout, lease: lease, maxParallelRuns: maxParallelRuns}
+	return &CampaignAudienceReportScheduler{
+		flow:            flow,
+		logger:          logger,
+		interval:        interval,
+		timeout:         timeout,
+		lease:           lease,
+		maxParallelRuns: maxParallelRuns,
+	}
 }
 func (s *CampaignAudienceReportScheduler) Start(parent context.Context) func() {
 	ctx, cancel := context.WithCancel(parent)

@@ -62,12 +62,22 @@ func (h *PlatformBasePriceHandler) List(c fiber.Ctx) error {
 				return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to list platform base prices", be.Code, nil)
 			}
 		}
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to list platform base prices", "PLATFORM_BASE_PRICE_LIST_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to list platform base prices",
+			"PLATFORM_BASE_PRICE_LIST_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Platform base prices retrieved successfully", res)
 }
 
-func (h *PlatformBasePriceHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *PlatformBasePriceHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

@@ -37,7 +37,8 @@ func NewShortLinkBotHandler(flow businessflow.BotShortLinkFlow) ShortLinkBotHand
 }
 
 func (h *ShortLinkBotHandler) ErrorResponse(c fiber.Ctx, statusCode int, message, errorCode string, details any) error {
-	return c.Status(statusCode).JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: errorCode, Details: details}})
+	return c.Status(statusCode).
+		JSON(dto.APIResponse{Success: false, Message: message, Error: dto.ErrorDetail{Code: errorCode, Details: details}})
 }
 
 func (h *ShortLinkBotHandler) SuccessResponse(c fiber.Ctx, statusCode int, message string, data any) error {
@@ -72,10 +73,19 @@ func (h *ShortLinkBotHandler) AllocateShortLinks(c fiber.Ctx) error {
 		}
 		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to allocate short links", "ALLOCATE_SHORT_LINKS_FAILED", nil)
 	}
-	return h.SuccessResponse(c, fiber.StatusOK, "Short links allocated", dto.BotAllocateShortLinksResponse{Message: "Short links allocated", Codes: codes})
+	return h.SuccessResponse(
+		c,
+		fiber.StatusOK,
+		"Short links allocated",
+		dto.BotAllocateShortLinksResponse{Message: "Short links allocated", Codes: codes},
+	)
 }
 
-func (h *ShortLinkBotHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *ShortLinkBotHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

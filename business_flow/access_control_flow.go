@@ -23,11 +23,19 @@ type AccessControlFlowImpl struct {
 	auditRepo repository.AuditLogRepository
 }
 
-func NewAccessControlFlow(adminRepo repository.AdminRepository, aclRepo repository.ACLChangeRequestRepository, auditRepo repository.AuditLogRepository) AccessControlFlow {
+func NewAccessControlFlow(
+	adminRepo repository.AdminRepository,
+	aclRepo repository.ACLChangeRequestRepository,
+	auditRepo repository.AuditLogRepository,
+) AccessControlFlow {
 	return &AccessControlFlowImpl{adminRepo: adminRepo, aclRepo: aclRepo, auditRepo: auditRepo}
 }
 
-func (f *AccessControlFlowImpl) CreateRequest(ctx context.Context, requesterID uint, req *models.ACLChangeRequest) (*models.ACLChangeRequest, error) {
+func (f *AccessControlFlowImpl) CreateRequest(
+	ctx context.Context,
+	requesterID uint,
+	req *models.ACLChangeRequest,
+) (*models.ACLChangeRequest, error) {
 	target, err := f.adminRepo.ByID(ctx, req.TargetAdminID)
 	if err != nil {
 		return nil, err
@@ -53,7 +61,13 @@ func (f *AccessControlFlowImpl) CreateRequest(ctx context.Context, requesterID u
 	return req, nil
 }
 
-func (f *AccessControlFlowImpl) Approve(ctx context.Context, approverID uint, id uuid.UUID, approve bool, reason string) (*models.ACLChangeRequest, error) {
+func (f *AccessControlFlowImpl) Approve(
+	ctx context.Context,
+	approverID uint,
+	id uuid.UUID,
+	approve bool,
+	reason string,
+) (*models.ACLChangeRequest, error) {
 	req, err := f.aclRepo.ByUUID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -94,7 +108,14 @@ func (f *AccessControlFlowImpl) Approve(ctx context.Context, approverID uint, id
 	return req, nil
 }
 
-func (f *AccessControlFlowImpl) logAudit(ctx context.Context, adminID uint, action string, req *models.ACLChangeRequest, success bool, reason string) {
+func (f *AccessControlFlowImpl) logAudit(
+	ctx context.Context,
+	adminID uint,
+	action string,
+	req *models.ACLChangeRequest,
+	success bool,
+	reason string,
+) {
 	if f.auditRepo == nil {
 		return
 	}

@@ -17,11 +17,31 @@ import (
 
 // AgencyFlow defines operations for agency-level reporting
 type AgencyFlow interface {
-	CreateAgencyDiscount(ctx context.Context, req *dto.CreateAgencyDiscountRequest, metadata *ClientMetadata) (*dto.CreateAgencyDiscountResponse, error)
-	GetAgencyCustomerReport(ctx context.Context, req *dto.AgencyCustomerReportRequest, metadata *ClientMetadata) (*dto.AgencyCustomerReportResponse, error)
-	ListAgencyActiveDiscounts(ctx context.Context, req *dto.ListAgencyActiveDiscountsRequest, metadata *ClientMetadata) (*dto.ListAgencyActiveDiscountsResponse, error)
-	ListAgencyCustomerDiscounts(ctx context.Context, req *dto.ListAgencyCustomerDiscountsRequest, metadata *ClientMetadata) (*dto.ListAgencyCustomerDiscountsResponse, error)
-	ListAgencyCustomers(ctx context.Context, req *dto.ListAgencyCustomersRequest, metadata *ClientMetadata) (*dto.ListAgencyCustomersResponse, error)
+	CreateAgencyDiscount(
+		ctx context.Context,
+		req *dto.CreateAgencyDiscountRequest,
+		metadata *ClientMetadata,
+	) (*dto.CreateAgencyDiscountResponse, error)
+	GetAgencyCustomerReport(
+		ctx context.Context,
+		req *dto.AgencyCustomerReportRequest,
+		metadata *ClientMetadata,
+	) (*dto.AgencyCustomerReportResponse, error)
+	ListAgencyActiveDiscounts(
+		ctx context.Context,
+		req *dto.ListAgencyActiveDiscountsRequest,
+		metadata *ClientMetadata,
+	) (*dto.ListAgencyActiveDiscountsResponse, error)
+	ListAgencyCustomerDiscounts(
+		ctx context.Context,
+		req *dto.ListAgencyCustomerDiscountsRequest,
+		metadata *ClientMetadata,
+	) (*dto.ListAgencyCustomerDiscountsResponse, error)
+	ListAgencyCustomers(
+		ctx context.Context,
+		req *dto.ListAgencyCustomersRequest,
+		metadata *ClientMetadata,
+	) (*dto.ListAgencyCustomersResponse, error)
 }
 
 // AgencyFlowImpl implements AgencyFlow
@@ -54,7 +74,11 @@ func NewAgencyFlow(
 }
 
 // CreateAgencyDiscount creates a new discount for a customer by an agency and expires old active ones
-func (a *AgencyFlowImpl) CreateAgencyDiscount(ctx context.Context, req *dto.CreateAgencyDiscountRequest, metadata *ClientMetadata) (*dto.CreateAgencyDiscountResponse, error) {
+func (a *AgencyFlowImpl) CreateAgencyDiscount(
+	ctx context.Context,
+	req *dto.CreateAgencyDiscountRequest,
+	metadata *ClientMetadata,
+) (*dto.CreateAgencyDiscountResponse, error) {
 	_, err := getAgency(ctx, a.customerRepo, req.AgencyID)
 	if err != nil {
 		return nil, err
@@ -66,19 +90,35 @@ func (a *AgencyFlowImpl) CreateAgencyDiscount(ctx context.Context, req *dto.Crea
 	}
 
 	if req.DiscountRate < 0 || req.DiscountRate > 0.5 {
-		return nil, NewBusinessError("CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED", "Rate must be between 0 and 0.5", ErrDiscountRateOutOfRange)
+		return nil, NewBusinessError(
+			"CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED",
+			"Rate must be between 0 and 0.5",
+			ErrDiscountRateOutOfRange,
+		)
 	}
 
 	if customer.ID == req.AgencyID {
-		return nil, NewBusinessError("CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED", "Agency cannot create discount for itself", ErrAgencyCannotCreateDiscountForItself)
+		return nil, NewBusinessError(
+			"CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED",
+			"Agency cannot create discount for itself",
+			ErrAgencyCannotCreateDiscountForItself,
+		)
 	}
 
 	if customer.ReferrerAgencyID == nil {
-		return nil, NewBusinessError("CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED", "Customer is not under any agency", ErrCustomerNotUnderAgency)
+		return nil, NewBusinessError(
+			"CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED",
+			"Customer is not under any agency",
+			ErrCustomerNotUnderAgency,
+		)
 	}
 
 	if *customer.ReferrerAgencyID != req.AgencyID {
-		return nil, NewBusinessError("CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED", "Customer is not under this agency", ErrCustomerNotUnderAgency)
+		return nil, NewBusinessError(
+			"CREATE_AGENCY_DISCOUNT_VALIDATION_FAILED",
+			"Customer is not under this agency",
+			ErrCustomerNotUnderAgency,
+		)
 	}
 
 	var resp *dto.CreateAgencyDiscountResponse
@@ -132,7 +172,11 @@ func (a *AgencyFlowImpl) CreateAgencyDiscount(ctx context.Context, req *dto.Crea
 
 // GetAgencyCustomerReport retrieves aggregated stats of campaigns created by customers of an agency per customer
 // Supports pagination, sorting, and filtering by start/end date, name, and company name
-func (a *AgencyFlowImpl) GetAgencyCustomerReport(ctx context.Context, req *dto.AgencyCustomerReportRequest, metadata *ClientMetadata) (*dto.AgencyCustomerReportResponse, error) {
+func (a *AgencyFlowImpl) GetAgencyCustomerReport(
+	ctx context.Context,
+	req *dto.AgencyCustomerReportRequest,
+	metadata *ClientMetadata,
+) (*dto.AgencyCustomerReportResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -217,7 +261,11 @@ func (a *AgencyFlowImpl) GetAgencyCustomerReport(ctx context.Context, req *dto.A
 }
 
 // ListAgencyActiveDiscounts returns the last non-expired active discount per customer for an agency
-func (a *AgencyFlowImpl) ListAgencyActiveDiscounts(ctx context.Context, req *dto.ListAgencyActiveDiscountsRequest, metadata *ClientMetadata) (*dto.ListAgencyActiveDiscountsResponse, error) {
+func (a *AgencyFlowImpl) ListAgencyActiveDiscounts(
+	ctx context.Context,
+	req *dto.ListAgencyActiveDiscountsRequest,
+	metadata *ClientMetadata,
+) (*dto.ListAgencyActiveDiscountsResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -259,7 +307,11 @@ func (a *AgencyFlowImpl) ListAgencyActiveDiscounts(ctx context.Context, req *dto
 }
 
 // ListAgencyCustomerDiscounts returns the discounts of a specific customer under an agency
-func (a *AgencyFlowImpl) ListAgencyCustomerDiscounts(ctx context.Context, req *dto.ListAgencyCustomerDiscountsRequest, metadata *ClientMetadata) (*dto.ListAgencyCustomerDiscountsResponse, error) {
+func (a *AgencyFlowImpl) ListAgencyCustomerDiscounts(
+	ctx context.Context,
+	req *dto.ListAgencyCustomerDiscountsRequest,
+	metadata *ClientMetadata,
+) (*dto.ListAgencyCustomerDiscountsResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -321,7 +373,11 @@ func (a *AgencyFlowImpl) ListAgencyCustomerDiscounts(ctx context.Context, req *d
 }
 
 // ListAgencyCustomers returns all active customers referred by the agency
-func (a *AgencyFlowImpl) ListAgencyCustomers(ctx context.Context, req *dto.ListAgencyCustomersRequest, metadata *ClientMetadata) (*dto.ListAgencyCustomersResponse, error) {
+func (a *AgencyFlowImpl) ListAgencyCustomers(
+	ctx context.Context,
+	req *dto.ListAgencyCustomersRequest,
+	metadata *ClientMetadata,
+) (*dto.ListAgencyCustomersResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {

@@ -6,23 +6,23 @@ import "time"
 // campaign. Replacing a selection set deletes the old rows and inserts a new
 // complete set in one transaction.
 type CampaignSelectedTag struct {
-	ID                            uint64   `gorm:"primaryKey" json:"id"`
+	ID                            uint64   `gorm:"primaryKey"                                                                                                                                                                       json:"id"`
 	CampaignID                    uint     `gorm:"not null;uniqueIndex:uk_campaign_selected_tags_campaign_tag,priority:1;uniqueIndex:uk_campaign_selected_tags_campaign_order,priority:1;index:idx_campaign_selected_tags_campaign" json:"campaign_id"`
-	BundleID                      uint     `gorm:"not null;index:idx_campaign_selected_tags_bundle_tag,priority:1" json:"bundle_id"`
-	TagID                         uint     `gorm:"not null;uniqueIndex:uk_campaign_selected_tags_campaign_tag,priority:2;index:idx_campaign_selected_tags_bundle_tag,priority:2" json:"tag_id"`
-	SelectionOrder                int      `gorm:"not null;check:campaign_selected_tags_selection_order_nonnegative,selection_order >= 0;uniqueIndex:uk_campaign_selected_tags_campaign_order,priority:2" json:"selection_order"`
-	BundlePersonaFitScoreSnapshot *float64 `gorm:"type:numeric(5,2)" json:"bundle_persona_fit_score_snapshot"`
-	TagDisplayTitleSnapshot       *string  `gorm:"type:text" json:"tag_display_title_snapshot"`
-	TagAudienceCountSnapshot      *int64   `gorm:"type:bigint" json:"tag_audience_count_snapshot"`
+	BundleID                      uint     `gorm:"not null;index:idx_campaign_selected_tags_bundle_tag,priority:1"                                                                                                                  json:"bundle_id"`
+	TagID                         uint     `gorm:"not null;uniqueIndex:uk_campaign_selected_tags_campaign_tag,priority:2;index:idx_campaign_selected_tags_bundle_tag,priority:2"                                                    json:"tag_id"`
+	SelectionOrder                int      `gorm:"not null;check:campaign_selected_tags_selection_order_nonnegative,selection_order >= 0;uniqueIndex:uk_campaign_selected_tags_campaign_order,priority:2"                           json:"selection_order"`
+	BundlePersonaFitScoreSnapshot *float64 `gorm:"type:numeric(5,2)"                                                                                                                                                                json:"bundle_persona_fit_score_snapshot"`
+	TagDisplayTitleSnapshot       *string  `gorm:"type:text"                                                                                                                                                                        json:"tag_display_title_snapshot"`
+	TagAudienceCountSnapshot      *int64   `gorm:"type:bigint"                                                                                                                                                                      json:"tag_audience_count_snapshot"`
 	// CTR snapshots capture the latest materialized metrics at selection time.
 	// Nil means "not measured" and must not be replaced with numeric zero.
-	TestPhaseAvgCTRSnapshot *float64  `gorm:"type:numeric" json:"test_phase_avg_ctr_snapshot"`
-	OverallAvgCTRSnapshot   *float64  `gorm:"type:numeric" json:"overall_avg_ctr_snapshot"`
-	TestPhaseAvgATRSnapshot *float64  `gorm:"type:numeric" json:"test_phase_avg_atr_snapshot"`
-	OverallAvgATRSnapshot   *float64  `gorm:"type:numeric" json:"overall_avg_atr_snapshot"`
-	SelectedByCustomerID    uint      `gorm:"not null;index:idx_campaign_selected_tags_selected_by_customer" json:"selected_by_customer_id"`
-	CreatedAt               time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"created_at"`
-	UpdatedAt               time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"updated_at"`
+	TestPhaseAvgCTRSnapshot *float64  `gorm:"type:numeric"                                                                                                                                                                     json:"test_phase_avg_ctr_snapshot"`
+	OverallAvgCTRSnapshot   *float64  `gorm:"type:numeric"                                                                                                                                                                     json:"overall_avg_ctr_snapshot"`
+	TestPhaseAvgATRSnapshot *float64  `gorm:"type:numeric"                                                                                                                                                                     json:"test_phase_avg_atr_snapshot"`
+	OverallAvgATRSnapshot   *float64  `gorm:"type:numeric"                                                                                                                                                                     json:"overall_avg_atr_snapshot"`
+	SelectedByCustomerID    uint      `gorm:"not null;index:idx_campaign_selected_tags_selected_by_customer"                                                                                                                   json:"selected_by_customer_id"`
+	CreatedAt               time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"                                                                                                                                   json:"created_at"`
+	UpdatedAt               time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"                                                                                                                                   json:"updated_at"`
 }
 
 func (CampaignSelectedTag) TableName() string { return "campaign_selected_tags" }

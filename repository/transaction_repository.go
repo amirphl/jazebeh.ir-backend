@@ -148,7 +148,11 @@ func (r *TransactionRepositoryImpl) ByCustomerID(ctx context.Context, customerID
 }
 
 // ByType finds transactions by type
-func (r *TransactionRepositoryImpl) ByType(ctx context.Context, transactionType models.TransactionType, limit, offset int) ([]*models.Transaction, error) {
+func (r *TransactionRepositoryImpl) ByType(
+	ctx context.Context,
+	transactionType models.TransactionType,
+	limit, offset int,
+) ([]*models.Transaction, error) {
 	db := r.getDB(ctx)
 	var transactions []*models.Transaction
 
@@ -168,7 +172,11 @@ func (r *TransactionRepositoryImpl) ByType(ctx context.Context, transactionType 
 }
 
 // ByStatus finds transactions by status
-func (r *TransactionRepositoryImpl) ByStatus(ctx context.Context, status models.TransactionStatus, limit, offset int) ([]*models.Transaction, error) {
+func (r *TransactionRepositoryImpl) ByStatus(
+	ctx context.Context,
+	status models.TransactionStatus,
+	limit, offset int,
+) ([]*models.Transaction, error) {
 	db := r.getDB(ctx)
 	var transactions []*models.Transaction
 
@@ -212,7 +220,12 @@ func (r *TransactionRepositoryImpl) GetCompletedTransactions(ctx context.Context
 }
 
 // GetAdminListWithCustomer retrieves filtered transactions and preloads full customer records.
-func (r *TransactionRepositoryImpl) GetAdminListWithCustomer(ctx context.Context, filter models.TransactionFilter, orderBy string, limit, offset int) ([]*models.Transaction, error) {
+func (r *TransactionRepositoryImpl) GetAdminListWithCustomer(
+	ctx context.Context,
+	filter models.TransactionFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Transaction, error) {
 	db := r.getDB(ctx)
 	var transactions []*models.Transaction
 
@@ -240,7 +253,12 @@ func (r *TransactionRepositoryImpl) GetAdminListWithCustomer(ctx context.Context
 }
 
 // ByFilter retrieves transactions based on filter criteria
-func (r *TransactionRepositoryImpl) ByFilter(ctx context.Context, filter models.TransactionFilter, orderBy string, limit, offset int) ([]*models.Transaction, error) {
+func (r *TransactionRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.TransactionFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.Transaction, error) {
 	db := r.getDB(ctx)
 	var transactions []*models.Transaction
 
@@ -453,7 +471,13 @@ func (r *TransactionRepositoryImpl) applyFilter(query *gorm.DB, filter models.Tr
 }
 
 // AggregateAgencyTransactionsByCustomers aggregates transaction amounts per customer under an agency based on metadata
-func (r *TransactionRepositoryImpl) AggregateAgencyTransactionsByCustomers(ctx context.Context, agencyID uint, nameLike string, startDate, endDate *time.Time, orderBy string) ([]*AgencyCustomerTransactionAggregate, error) {
+func (r *TransactionRepositoryImpl) AggregateAgencyTransactionsByCustomers(
+	ctx context.Context,
+	agencyID uint,
+	nameLike string,
+	startDate, endDate *time.Time,
+	orderBy string,
+) ([]*AgencyCustomerTransactionAggregate, error) {
 	db := r.getDB(ctx)
 	rows := make([]*AgencyCustomerTransactionAggregate, 0)
 
@@ -480,7 +504,12 @@ func (r *TransactionRepositoryImpl) AggregateAgencyTransactionsByCustomers(ctx c
 
 	if nameLike != "" {
 		pattern := "%" + nameLike + "%"
-		query = query.Where("u.representative_first_name like ? OR u.representative_last_name like ? OR u.company_name like ?", pattern, pattern, pattern)
+		query = query.Where(
+			"u.representative_first_name like ? OR u.representative_last_name like ? OR u.company_name like ?",
+			pattern,
+			pattern,
+			pattern,
+		)
 	}
 
 	if startDate != nil {
@@ -497,7 +526,12 @@ func (r *TransactionRepositoryImpl) AggregateAgencyTransactionsByCustomers(ctx c
 }
 
 // AggregateAgencyTransactionsByDiscounts aggregates transactions by agency_discount_id for a given agency and customer
-func (r *TransactionRepositoryImpl) AggregateAgencyTransactionsByDiscounts(ctx context.Context, agencyID uint, customerID uint, orderBy string) ([]*AgencyCustomerDiscountAggregate, error) {
+func (r *TransactionRepositoryImpl) AggregateAgencyTransactionsByDiscounts(
+	ctx context.Context,
+	agencyID uint,
+	customerID uint,
+	orderBy string,
+) ([]*AgencyCustomerDiscountAggregate, error) {
 	db := r.getDB(ctx)
 	rows := make([]*AgencyCustomerDiscountAggregate, 0)
 
@@ -529,7 +563,11 @@ func (r *TransactionRepositoryImpl) AggregateAgencyTransactionsByDiscounts(ctx c
 }
 
 // AggregateCustomerTransactionsByDiscounts aggregates discounts used by a customer across all agencies
-func (r *TransactionRepositoryImpl) AggregateCustomerTransactionsByDiscounts(ctx context.Context, customerID uint, orderBy string) ([]*AgencyCustomerDiscountAggregate, error) {
+func (r *TransactionRepositoryImpl) AggregateCustomerTransactionsByDiscounts(
+	ctx context.Context,
+	customerID uint,
+	orderBy string,
+) ([]*AgencyCustomerDiscountAggregate, error) {
 	db := r.getDB(ctx)
 	rows := make([]*AgencyCustomerDiscountAggregate, 0)
 
@@ -561,7 +599,11 @@ func (r *TransactionRepositoryImpl) AggregateCustomerTransactionsByDiscounts(ctx
 
 // AggregateCustomersShares aggregates agency/system/tax shares for one bounded
 // report page. Callers must require a date range before reaching this query.
-func (r *TransactionRepositoryImpl) AggregateCustomersShares(ctx context.Context, startDate, endDate *time.Time, limit, offset int) ([]*CustomerShareAggregate, error) {
+func (r *TransactionRepositoryImpl) AggregateCustomersShares(
+	ctx context.Context,
+	startDate, endDate *time.Time,
+	limit, offset int,
+) ([]*CustomerShareAggregate, error) {
 	db := r.getDB(ctx)
 	rows := make([]*CustomerShareAggregate, 0)
 

@@ -32,15 +32,15 @@ type BotLoginResponse struct {
 
 // PhoneWithAdLink pairs a phone number with its specific ad link for short link allocation.
 type PhoneWithAdLink struct {
-	Phone  string  `json:"phone" validate:"required,max=20"`
+	Phone  string  `json:"phone"   validate:"required,max=20"`
 	AdLink *string `json:"ad_link" validate:"omitempty,max=10000"`
 }
 
 // BotAllocateShortLinksRequest is used by scheduler/bots to allocate sequential short links
 // with a distinct ad link per phone for a campaign.
 type BotAllocateShortLinksRequest struct {
-	CampaignID      uint              `json:"campaign_id" validate:"required"`
-	Items           []PhoneWithAdLink `json:"items" validate:"required,min=1,dive"`
+	CampaignID      uint              `json:"campaign_id"       validate:"required"`
+	Items           []PhoneWithAdLink `json:"items"             validate:"required,min=1,dive"`
 	ShortLinkDomain string            `json:"short_link_domain" validate:"required"`
 }
 

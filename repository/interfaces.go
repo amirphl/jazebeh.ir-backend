@@ -53,7 +53,12 @@ type AudienceProfileRepository interface {
 	ByIDs(ctx context.Context, ids []int64) ([]*models.AudienceProfile, error)
 	ByUID(ctx context.Context, uid string) (*models.AudienceProfile, error)
 	ByUIDs(ctx context.Context, uids []string) ([]*models.AudienceProfile, error)
-	SelectCampaignCandidates(ctx context.Context, filter models.AudienceProfileFilter, excludeIDs []int64, limit int) ([]*models.AudienceProfile, error)
+	SelectCampaignCandidates(
+		ctx context.Context,
+		filter models.AudienceProfileFilter,
+		excludeIDs []int64,
+		limit int,
+	) ([]*models.AudienceProfile, error)
 }
 
 // LineNumberRepository defines operations for line numbers
@@ -93,7 +98,12 @@ type CustomerRepository interface {
 	ListByAgency(ctx context.Context, agencyID uint) ([]*models.Customer, error)
 	ListActiveCustomers(ctx context.Context, limit, offset int) ([]*models.Customer, error)
 	UpdatePassword(ctx context.Context, customerID uint, passwordHash string) error
-	UpdateVerificationStatus(ctx context.Context, customerID uint, isMobileVerified, isEmailVerified *bool, mobileVerifiedAt, emailVerifiedAt *time.Time) error
+	UpdateVerificationStatus(
+		ctx context.Context,
+		customerID uint,
+		isMobileVerified, isEmailVerified *bool,
+		mobileVerifiedAt, emailVerifiedAt *time.Time,
+	) error
 	FindByIDs(ctx context.Context, ids []uint) ([]*models.Customer, error)
 	UpdateActiveStatus(ctx context.Context, customerID uint, isActive bool) error
 }
@@ -180,14 +190,42 @@ type TransactionRepository interface {
 	ByExternalReference(ctx context.Context, externalReference string) (*models.Transaction, error)
 	GetPendingTransactions(ctx context.Context, limit, offset int) ([]*models.Transaction, error)
 	GetCompletedTransactions(ctx context.Context, limit, offset int) ([]*models.Transaction, error)
-	GetAdminListWithCustomer(ctx context.Context, filter models.TransactionFilter, orderBy string, limit, offset int) ([]*models.Transaction, error)
+	GetAdminListWithCustomer(
+		ctx context.Context,
+		filter models.TransactionFilter,
+		orderBy string,
+		limit, offset int,
+	) ([]*models.Transaction, error)
 	// History queries
-	GetHistoryWithMetadata(ctx context.Context, walletID uint, customerID uint, startDate, endDate *time.Time, txType *models.TransactionType, status *models.TransactionStatus, limit, offset int) ([]*models.Transaction, int64, error)
+	GetHistoryWithMetadata(
+		ctx context.Context,
+		walletID uint,
+		customerID uint,
+		startDate, endDate *time.Time,
+		txType *models.TransactionType,
+		status *models.TransactionStatus,
+		limit, offset int,
+	) ([]*models.Transaction, int64, error)
 	// Reports
-	AggregateAgencyTransactionsByCustomers(ctx context.Context, agencyID uint, nameLike string, startDate, endDate *time.Time, orderBy string) ([]*AgencyCustomerTransactionAggregate, error)
-	AggregateAgencyTransactionsByDiscounts(ctx context.Context, agencyID uint, customerID uint, orderBy string) ([]*AgencyCustomerDiscountAggregate, error)
+	AggregateAgencyTransactionsByCustomers(
+		ctx context.Context,
+		agencyID uint,
+		nameLike string,
+		startDate, endDate *time.Time,
+		orderBy string,
+	) ([]*AgencyCustomerTransactionAggregate, error)
+	AggregateAgencyTransactionsByDiscounts(
+		ctx context.Context,
+		agencyID uint,
+		customerID uint,
+		orderBy string,
+	) ([]*AgencyCustomerDiscountAggregate, error)
 	AggregateCustomersShares(ctx context.Context, startDate, endDate *time.Time, limit, offset int) ([]*CustomerShareAggregate, error)
-	AggregateCustomerTransactionsByDiscounts(ctx context.Context, customerID uint, orderBy string) ([]*AgencyCustomerDiscountAggregate, error)
+	AggregateCustomerTransactionsByDiscounts(
+		ctx context.Context,
+		customerID uint,
+		orderBy string,
+	) ([]*AgencyCustomerDiscountAggregate, error)
 }
 
 // ACLChangeRequestRepository defines operations for maker-checker requests.
@@ -298,7 +336,14 @@ type TagRepository interface {
 // reads prefer the latest completed evaluation snapshot and fall back to the
 // active tag catalog when a bundle has no current score rows.
 type CampaignSelectedTagRepository interface {
-	ListAvailable(ctx context.Context, bundleID, campaignID uint, search string, capacity *int64, sortBy, sortDirection string, limit, offset int) ([]*models.SmartTargetingTagRow, int64, error)
+	ListAvailable(
+		ctx context.Context,
+		bundleID, campaignID uint,
+		search string,
+		capacity *int64,
+		sortBy, sortDirection string,
+		limit, offset int,
+	) ([]*models.SmartTargetingTagRow, int64, error)
 	ListAvailableTagIDs(ctx context.Context, bundleID uint, search, sortBy, sortDirection string, limit int) ([]uint, error)
 	ListSelected(ctx context.Context, campaignID uint) ([]*models.CampaignSelectedTag, error)
 	Summary(ctx context.Context, campaignID uint) (*models.CampaignSelectedTagSummary, error)

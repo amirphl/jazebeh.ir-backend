@@ -29,12 +29,20 @@ func (r *SentSMSRepositoryImpl) ByID(ctx context.Context, id uint) (*models.Sent
 	return &row, nil
 }
 
-func (r *SentSMSRepositoryImpl) ListByProcessedCampaign(ctx context.Context, processedCampaignID uint, limit, offset int) ([]*models.SentSMS, error) {
+func (r *SentSMSRepositoryImpl) ListByProcessedCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+	limit, offset int,
+) ([]*models.SentSMS, error) {
 	filter := models.SentSMSFilter{ProcessedCampaignID: &processedCampaignID}
 	return r.ByFilter(ctx, filter, "id ASC", limit, offset)
 }
 
-func (r *SentSMSRepositoryImpl) ListByTrackingIDs(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentSMS, error) {
+func (r *SentSMSRepositoryImpl) ListByTrackingIDs(
+	ctx context.Context,
+	processedCampaignID uint,
+	trackingIDs []string,
+) ([]*models.SentSMS, error) {
 	if len(trackingIDs) == 0 {
 		return []*models.SentSMS{}, nil
 	}
@@ -68,7 +76,12 @@ func (r *SentSMSRepositoryImpl) applyFilter(db *gorm.DB, f models.SentSMSFilter)
 	return db
 }
 
-func (r *SentSMSRepositoryImpl) ByFilter(ctx context.Context, filter models.SentSMSFilter, orderBy string, limit, offset int) ([]*models.SentSMS, error) {
+func (r *SentSMSRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.SentSMSFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SentSMS, error) {
 	db := r.getDB(ctx)
 	query := r.applyFilter(db.Model(&models.SentSMS{}), filter)
 	if orderBy != "" {

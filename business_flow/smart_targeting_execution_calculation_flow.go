@@ -27,8 +27,16 @@ type smartTargetingExecutionCalculationInput struct {
 
 // executionCalculationInput produces the same immutable eligibility contract
 // used by the active reservation, without scanning or reserving anybody.
-func (s *CampaignFlowImpl) executionCalculationInput(ctx context.Context, campaign *models.Campaign, expected uint64) (*smartTargetingExecutionCalculationInput, error) {
-	if campaign == nil || !campaign.Spec.UsesSmartTargeting() || campaign.Phase != models.CampaignPhaseExecution || campaign.BundleID == nil || *campaign.BundleID == 0 || expected == 0 || expected > math.MaxInt64 {
+func (s *CampaignFlowImpl) executionCalculationInput(
+	ctx context.Context,
+	campaign *models.Campaign,
+	expected uint64,
+) (*smartTargetingExecutionCalculationInput, error) {
+	if campaign == nil || !campaign.Spec.UsesSmartTargeting() || campaign.Phase != models.CampaignPhaseExecution ||
+		campaign.BundleID == nil ||
+		*campaign.BundleID == 0 ||
+		expected == 0 ||
+		expected > math.MaxInt64 {
 		return nil, repository.ErrSmartTargetingExecutionReservationUnavailable
 	}
 	selected, err := s.selectedTagRepo.ListSelected(ctx, campaign.ID)
@@ -37,7 +45,8 @@ func (s *CampaignFlowImpl) executionCalculationInput(ctx context.Context, campai
 	}
 	tagIDs := make([]int64, 0, len(selected))
 	for position, tag := range selected {
-		if tag == nil || tag.CampaignID != campaign.ID || tag.BundleID != *campaign.BundleID || tag.TagID == 0 || tag.SelectionOrder != position {
+		if tag == nil || tag.CampaignID != campaign.ID || tag.BundleID != *campaign.BundleID || tag.TagID == 0 ||
+			tag.SelectionOrder != position {
 			return nil, repository.ErrSmartTargetingExecutionReservationUnavailable
 		}
 		tagIDs = append(tagIDs, int64(tag.TagID))
@@ -53,11 +62,24 @@ func (s *CampaignFlowImpl) executionCalculationInput(ctx context.Context, campai
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := json.Marshal(repository.ExecutionReservationRequestSnapshot{TagIDs: tagIDs, ScoreClasses: classes, AllowedColors: allowedColors, Platform: strings.ToLower(strings.TrimSpace(campaign.Spec.Platform))})
+	snapshot, err := json.Marshal(
+		repository.ExecutionReservationRequestSnapshot{
+			TagIDs:        tagIDs,
+			ScoreClasses:  classes,
+			AllowedColors: allowedColors,
+			Platform:      strings.ToLower(strings.TrimSpace(campaign.Spec.Platform)),
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
-	hash := smartTargetingInputHash(smartTargetingTagHash(campaign.ID, uint64ToUintSlice(tagIDs)), classes, campaign.Spec.Platform, allowedColors, repository.SmartTargetingSelectionPhaseExecution)
+	hash := smartTargetingInputHash(
+		smartTargetingTagHash(campaign.ID, uint64ToUintSlice(tagIDs)),
+		classes,
+		campaign.Spec.Platform,
+		allowedColors,
+		repository.SmartTargetingSelectionPhaseExecution,
+	)
 	return &smartTargetingExecutionCalculationInput{
 		header: &models.CampaignTargetingExecutionReservationHeader{
 			CampaignID: campaign.ID, BundleID: *campaign.BundleID, Phase: models.CampaignPhaseExecution,
@@ -67,28 +89,55 @@ func (s *CampaignFlowImpl) executionCalculationInput(ctx context.Context, campai
 			AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion,
 			AllocationFingerprint:        emptySmartTargetingAllocationFingerprint(), RequestSnapshot: snapshot,
 		},
-		query: repository.SmartTargetingAudienceQuery{BundleID: *campaign.BundleID, Phase: repository.SmartTargetingSelectionPhaseExecution, ExcludeActiveExecutionReservationCampaignID: campaign.ID, TagIDs: tagIDs, ScoreClasses: classes, AllowedColors: allowedColors},
+		query: repository.SmartTargetingAudienceQuery{
+			BundleID: *campaign.BundleID,
+			Phase:    repository.SmartTargetingSelectionPhaseExecution,
+			ExcludeActiveExecutionReservationCampaignID: campaign.ID,
+			TagIDs:        tagIDs,
+			ScoreClasses:  classes,
+			AllowedColors: allowedColors,
+		},
 	}, nil
 }
 
-func (s *CampaignFlowImpl) StartSmartTargetingExecutionCalculation(ctx context.Context, req *dto.SmartTargetingExecutionCalculationRequest, metadata *ClientMetadata) (*dto.SmartTargetingExecutionCalculationResponse, error) {
+func (s *CampaignFlowImpl) StartSmartTargetingExecutionCalculation(
+	ctx context.Context,
+	req *dto.SmartTargetingExecutionCalculationRequest,
+	metadata *ClientMetadata,
+) (*dto.SmartTargetingExecutionCalculationResponse, error) {
 	if req == nil {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_INVALID", "Execution audience calculation request is invalid", ErrCampaignNotFound)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_INVALID",
+			"Execution audience calculation request is invalid",
+			ErrCampaignNotFound,
+		)
 	}
 	campaign, err := getCampaign(ctx, s.campaignRepo, req.CampaignUUID, req.CustomerID)
 	if err != nil {
 		return nil, NewBusinessError("CAMPAIGN_LOOKUP_FAILED", "Failed to lookup campaign", err)
 	}
 	if !campaign.IsEditable() || !campaign.Spec.UsesSmartTargeting() || campaign.Phase != models.CampaignPhaseExecution {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_INVALID", "An editable Smart Targeting Execution campaign is required", ErrCampaignUpdateNotAllowed)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_INVALID",
+			"An editable Smart Targeting Execution campaign is required",
+			ErrCampaignUpdateNotAllowed,
+		)
 	}
 	// This only calculates price/count; it does not select audience members.
-	cost, err := s.CalculateCampaignCost(ctx, &dto.CalculateCampaignCostRequest{CampaignID: campaign.ID, CustomerID: campaign.CustomerID}, metadata)
+	cost, err := s.CalculateCampaignCost(
+		ctx,
+		&dto.CalculateCampaignCostRequest{CampaignID: campaign.ID, CustomerID: campaign.CustomerID},
+		metadata,
+	)
 	if err != nil {
 		return nil, err
 	}
 	if cost.NumTargetAudience == 0 || cost.NumTargetAudience > math.MaxInt64 {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_INVALID", "Execution audience count is invalid", ErrInsufficientCampaignCapacity)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_INVALID",
+			"Execution audience count is invalid",
+			ErrInsufficientCampaignCapacity,
+		)
 	}
 	repo := repository.NewCampaignTargetingExecutionCalculationRepository(s.db)
 	var result *models.CampaignTargetingExecutionCalculation
@@ -99,7 +148,10 @@ func (s *CampaignFlowImpl) StartSmartTargetingExecutionCalculation(ctx context.C
 		if err := txDB.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, campaign.ID).Error; err != nil {
 			return err
 		}
-		if !locked.IsEditable() || !locked.Spec.UsesSmartTargeting() || locked.Phase != models.CampaignPhaseExecution || locked.UpdatedAt == nil || campaign.UpdatedAt == nil || !locked.UpdatedAt.Equal(*campaign.UpdatedAt) {
+		if !locked.IsEditable() || !locked.Spec.UsesSmartTargeting() || locked.Phase != models.CampaignPhaseExecution ||
+			locked.UpdatedAt == nil ||
+			campaign.UpdatedAt == nil ||
+			!locked.UpdatedAt.Equal(*campaign.UpdatedAt) {
 			return errSmartTargetingExecutionCalculationStale
 		}
 		input, err := s.executionCalculationInput(txCtx, &locked, cost.NumTargetAudience)
@@ -141,22 +193,52 @@ func (s *CampaignFlowImpl) StartSmartTargetingExecutionCalculation(ctx context.C
 				return nil
 			}
 		}
-		result = &models.CampaignTargetingExecutionCalculation{CampaignID: locked.ID, BundleID: *locked.BundleID, CustomerID: locked.CustomerID, RequestedAudienceCount: input.header.RequestedAudienceCount, SelectedTagIDs: pq.Int64Array(input.query.TagIDs), SelectedScoreClasses: pq.StringArray(input.query.ScoreClasses), SelectionInputHash: input.header.SelectionInputHash, RequestSnapshot: input.header.RequestSnapshot, AllocationFingerprint: emptySmartTargetingAllocationFingerprint(), CalculationVersion: models.SmartTargetingExecutionCalculationVersion, Status: models.CampaignTargetingExecutionCalculationPending, CreatedAt: utils.UTCNow()}
+		result = &models.CampaignTargetingExecutionCalculation{
+			CampaignID:             locked.ID,
+			BundleID:               *locked.BundleID,
+			CustomerID:             locked.CustomerID,
+			RequestedAudienceCount: input.header.RequestedAudienceCount,
+			SelectedTagIDs:         pq.Int64Array(input.query.TagIDs),
+			SelectedScoreClasses:   pq.StringArray(input.query.ScoreClasses),
+			SelectionInputHash:     input.header.SelectionInputHash,
+			RequestSnapshot:        input.header.RequestSnapshot,
+			AllocationFingerprint:  emptySmartTargetingAllocationFingerprint(),
+			CalculationVersion:     models.SmartTargetingExecutionCalculationVersion,
+			Status:                 models.CampaignTargetingExecutionCalculationPending,
+			CreatedAt:              utils.UTCNow(),
+		}
 		return repo.Save(txCtx, result)
 	})
 	if err != nil {
 		if errors.Is(err, errSmartTargetingExecutionCalculationStale) {
-			return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_STALE", "Campaign changed while calculation was requested; retry", ErrInvalidState)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_EXECUTION_CALCULATION_STALE",
+				"Campaign changed while calculation was requested; retry",
+				ErrInvalidState,
+			)
 		}
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_REQUEST_FAILED", "Failed to request execution audience calculation", err)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_REQUEST_FAILED",
+			"Failed to request execution audience calculation",
+			err,
+		)
 	}
-	return smartTargetingExecutionCalculationDTO(result, result.Status == models.CampaignTargetingExecutionCalculationReady, false, reused), nil
+	return smartTargetingExecutionCalculationDTO(
+		result,
+		result.Status == models.CampaignTargetingExecutionCalculationReady,
+		false,
+		reused,
+	), nil
 }
 
 // GetCurrentSmartTargetingExecutionCalculation returns the calculation that
 // matches the campaign's current effective input. It lets clients resume
 // polling after losing a previously returned calculation ID.
-func (s *CampaignFlowImpl) GetCurrentSmartTargetingExecutionCalculation(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingExecutionCalculationResponse, error) {
+func (s *CampaignFlowImpl) GetCurrentSmartTargetingExecutionCalculation(
+	ctx context.Context,
+	customerID uint,
+	campaignUUID string,
+) (*dto.SmartTargetingExecutionCalculationResponse, error) {
 	campaign, err := s.ownedSmartTargetingExecutionCampaign(ctx, customerID, campaignUUID)
 	if err != nil {
 		return nil, err
@@ -167,24 +249,44 @@ func (s *CampaignFlowImpl) GetCurrentSmartTargetingExecutionCalculation(ctx cont
 	}
 	input, err := s.executionCalculationInput(ctx, campaign, expected)
 	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED", "Failed to load execution audience calculation inputs", err)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED",
+			"Failed to load execution audience calculation inputs",
+			err,
+		)
 	}
 	if err := s.selectedTagRepo.Validate(ctx, campaign.ID, *campaign.BundleID); err != nil {
 		if errors.Is(err, repository.ErrInvalidCampaignSelectedTags) {
-			return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED", "Execution audience calculation inputs are invalid", ErrSmartTargetingTagInvalid)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED",
+				"Execution audience calculation inputs are invalid",
+				ErrSmartTargetingTagInvalid,
+			)
 		}
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED", "Failed to validate execution audience calculation inputs", err)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED",
+			"Failed to validate execution audience calculation inputs",
+			err,
+		)
 	}
 
 	repo := repository.NewCampaignTargetingExecutionCalculationRepository(s.db)
 	calculation, err := repo.LatestByInput(ctx, campaign.ID, input.header.SelectionInputHash, input.header.RequestedAudienceCount)
 	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED", "Failed to load execution audience calculation", err)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED",
+			"Failed to load execution audience calculation",
+			err,
+		)
 	}
 	if calculation == nil {
 		calculation, err = repo.LatestByCampaignID(ctx, campaign.ID)
 		if err != nil {
-			return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED", "Failed to load execution audience calculation", err)
+			return nil, NewBusinessError(
+				"SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED",
+				"Failed to load execution audience calculation",
+				err,
+			)
 		}
 		if calculation == nil {
 			return &dto.SmartTargetingExecutionCalculationResponse{
@@ -197,7 +299,12 @@ func (s *CampaignFlowImpl) GetCurrentSmartTargetingExecutionCalculation(ctx cont
 	return s.smartTargetingExecutionCalculationStatusDTO(ctx, campaign, calculation, expected)
 }
 
-func (s *CampaignFlowImpl) GetSmartTargetingExecutionCalculation(ctx context.Context, customerID uint, campaignUUID string, id int64) (*dto.SmartTargetingExecutionCalculationResponse, error) {
+func (s *CampaignFlowImpl) GetSmartTargetingExecutionCalculation(
+	ctx context.Context,
+	customerID uint,
+	campaignUUID string,
+	id int64,
+) (*dto.SmartTargetingExecutionCalculationResponse, error) {
 	campaign, err := s.ownedSmartTargetingExecutionCampaign(ctx, customerID, campaignUUID)
 	if err != nil {
 		return nil, err
@@ -207,10 +314,19 @@ func (s *CampaignFlowImpl) GetSmartTargetingExecutionCalculation(ctx context.Con
 		return nil, err
 	}
 	if calculation == nil || calculation.CampaignID != campaign.ID {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_NOT_FOUND", "Execution audience calculation not found", ErrCampaignNotFound)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_NOT_FOUND",
+			"Execution audience calculation not found",
+			ErrCampaignNotFound,
+		)
 	}
 	if calculation.Status != models.CampaignTargetingExecutionCalculationReady || !campaign.IsEditable() {
-		return smartTargetingExecutionCalculationDTO(calculation, false, calculation.Status == models.CampaignTargetingExecutionCalculationStale, false), nil
+		return smartTargetingExecutionCalculationDTO(
+			calculation,
+			false,
+			calculation.Status == models.CampaignTargetingExecutionCalculationStale,
+			false,
+		), nil
 	}
 	expected, err := s.currentSmartTargetingExecutionAudienceCount(ctx, campaign)
 	if err != nil {
@@ -219,16 +335,28 @@ func (s *CampaignFlowImpl) GetSmartTargetingExecutionCalculation(ctx context.Con
 	return s.smartTargetingExecutionCalculationStatusDTO(ctx, campaign, calculation, expected)
 }
 
-func (s *CampaignFlowImpl) ownedSmartTargetingExecutionCampaign(ctx context.Context, customerID uint, campaignUUID string) (*models.Campaign, error) {
+func (s *CampaignFlowImpl) ownedSmartTargetingExecutionCampaign(
+	ctx context.Context,
+	customerID uint,
+	campaignUUID string,
+) (*models.Campaign, error) {
 	if customerID == 0 || strings.TrimSpace(campaignUUID) == "" {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_INVALID", "Invalid execution audience calculation request", ErrCampaignNotFound)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_INVALID",
+			"Invalid execution audience calculation request",
+			ErrCampaignNotFound,
+		)
 	}
 	campaign, err := getCampaign(ctx, s.campaignRepo, campaignUUID, customerID)
 	if err != nil {
 		return nil, NewBusinessError("CAMPAIGN_LOOKUP_FAILED", "Failed to lookup campaign", err)
 	}
 	if !campaign.Spec.UsesSmartTargeting() || campaign.Phase != models.CampaignPhaseExecution {
-		return nil, NewBusinessError("SMART_TARGETING_EXECUTION_CALCULATION_INVALID", "Smart Targeting Execution campaign is required", ErrInvalidState)
+		return nil, NewBusinessError(
+			"SMART_TARGETING_EXECUTION_CALCULATION_INVALID",
+			"Smart Targeting Execution campaign is required",
+			ErrInvalidState,
+		)
 	}
 	if campaign.BundleID == nil || *campaign.BundleID == 0 {
 		return nil, NewBusinessError("BUNDLE_NOT_FOUND", "Campaign bundle not found", ErrBundleNotFound)
@@ -240,7 +368,11 @@ func (s *CampaignFlowImpl) currentSmartTargetingExecutionAudienceCount(ctx conte
 	if campaign == nil {
 		return 0, ErrCampaignNotFound
 	}
-	cost, err := s.CalculateCampaignCost(ctx, &dto.CalculateCampaignCostRequest{CampaignID: campaign.ID, CustomerID: campaign.CustomerID}, nil)
+	cost, err := s.CalculateCampaignCost(
+		ctx,
+		&dto.CalculateCampaignCostRequest{CampaignID: campaign.ID, CustomerID: campaign.CustomerID},
+		nil,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -250,12 +382,23 @@ func (s *CampaignFlowImpl) currentSmartTargetingExecutionAudienceCount(ctx conte
 	return cost.NumTargetAudience, nil
 }
 
-func (s *CampaignFlowImpl) smartTargetingExecutionCalculationStatusDTO(ctx context.Context, campaign *models.Campaign, calculation *models.CampaignTargetingExecutionCalculation, expected uint64) (*dto.SmartTargetingExecutionCalculationResponse, error) {
+func (s *CampaignFlowImpl) smartTargetingExecutionCalculationStatusDTO(
+	ctx context.Context,
+	campaign *models.Campaign,
+	calculation *models.CampaignTargetingExecutionCalculation,
+	expected uint64,
+) (*dto.SmartTargetingExecutionCalculationResponse, error) {
 	if calculation == nil {
 		return nil, nil
 	}
 	if calculation.Status != models.CampaignTargetingExecutionCalculationReady {
-		return smartTargetingExecutionCalculationDTO(calculation, false, calculation.Status == models.CampaignTargetingExecutionCalculationFailed || calculation.Status == models.CampaignTargetingExecutionCalculationStale, false), nil
+		return smartTargetingExecutionCalculationDTO(
+			calculation,
+			false,
+			calculation.Status == models.CampaignTargetingExecutionCalculationFailed ||
+				calculation.Status == models.CampaignTargetingExecutionCalculationStale,
+			false,
+		), nil
 	}
 	matchErr := s.executionCalculationStillMatches(ctx, campaign, calculation, int64(expected))
 	if matchErr != nil && !errors.Is(matchErr, errSmartTargetingExecutionCalculationStale) {
@@ -272,8 +415,12 @@ func (s *CampaignFlowImpl) smartTargetingExecutionCalculationStatusDTO(ctx conte
 	return smartTargetingExecutionCalculationDTO(calculation, current, !current, false), nil
 }
 
-func (s *CampaignFlowImpl) executionCalculationAllocationCurrent(ctx context.Context, calculation *models.CampaignTargetingExecutionCalculation) (bool, error) {
-	if calculation == nil || calculation.Status != models.CampaignTargetingExecutionCalculationReady || len(calculation.AllocationFingerprint) != 64 {
+func (s *CampaignFlowImpl) executionCalculationAllocationCurrent(
+	ctx context.Context,
+	calculation *models.CampaignTargetingExecutionCalculation,
+) (bool, error) {
+	if calculation == nil || calculation.Status != models.CampaignTargetingExecutionCalculationReady ||
+		len(calculation.AllocationFingerprint) != 64 {
 		return false, nil
 	}
 	fingerprint, err := smartTargetingBundleAllocationFingerprint(ctx, s.db, calculation.BundleID, calculation.CampaignID)
@@ -283,15 +430,41 @@ func (s *CampaignFlowImpl) executionCalculationAllocationCurrent(ctx context.Con
 	return fingerprint == calculation.AllocationFingerprint, nil
 }
 
-func smartTargetingExecutionCalculationDTO(c *models.CampaignTargetingExecutionCalculation, current, recalc, reused bool) *dto.SmartTargetingExecutionCalculationResponse {
+func smartTargetingExecutionCalculationDTO(
+	c *models.CampaignTargetingExecutionCalculation,
+	current, recalc, reused bool,
+) *dto.SmartTargetingExecutionCalculationResponse {
 	if c == nil {
 		return nil
 	}
-	return &dto.SmartTargetingExecutionCalculationResponse{CalculationID: c.ID, CampaignID: c.CampaignID, BundleID: c.BundleID, RequestedAudienceCount: uint64(c.RequestedAudienceCount), Status: string(c.Status), IsCurrent: current, RecalculationRequired: recalc, Reused: reused, CreatedAt: c.CreatedAt, StartedAt: c.StartedAt, FinishedAt: c.FinishedAt, ErrorCode: c.ErrorCode, ErrorMessage: c.ErrorMessage}
+	return &dto.SmartTargetingExecutionCalculationResponse{
+		CalculationID:          c.ID,
+		CampaignID:             c.CampaignID,
+		BundleID:               c.BundleID,
+		RequestedAudienceCount: uint64(c.RequestedAudienceCount),
+		Status:                 string(c.Status),
+		IsCurrent:              current,
+		RecalculationRequired:  recalc,
+		Reused:                 reused,
+		CreatedAt:              c.CreatedAt,
+		StartedAt:              c.StartedAt,
+		FinishedAt:             c.FinishedAt,
+		ErrorCode:              c.ErrorCode,
+		ErrorMessage:           c.ErrorMessage,
+	}
 }
 
-func (s *CampaignFlowImpl) executionCalculationStillMatches(ctx context.Context, campaign *models.Campaign, calculation *models.CampaignTargetingExecutionCalculation, expected int64) error {
-	if campaign == nil || calculation == nil || !campaign.IsEditable() || !campaign.Spec.UsesSmartTargeting() || campaign.Phase != models.CampaignPhaseExecution || campaign.BundleID == nil || *campaign.BundleID != calculation.BundleID || calculation.CalculationVersion != models.SmartTargetingExecutionCalculationVersion {
+func (s *CampaignFlowImpl) executionCalculationStillMatches(
+	ctx context.Context,
+	campaign *models.Campaign,
+	calculation *models.CampaignTargetingExecutionCalculation,
+	expected int64,
+) error {
+	if campaign == nil || calculation == nil || !campaign.IsEditable() || !campaign.Spec.UsesSmartTargeting() ||
+		campaign.Phase != models.CampaignPhaseExecution ||
+		campaign.BundleID == nil ||
+		*campaign.BundleID != calculation.BundleID ||
+		calculation.CalculationVersion != models.SmartTargetingExecutionCalculationVersion {
 		return errSmartTargetingExecutionCalculationStale
 	}
 	if expected <= 0 || calculation.RequestedAudienceCount != expected {
@@ -301,7 +474,8 @@ func (s *CampaignFlowImpl) executionCalculationStillMatches(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	if input.header.SelectionInputHash != calculation.SelectionInputHash || !sameExecutionReservationRequestSnapshot(input.header.RequestSnapshot, calculation.RequestSnapshot) {
+	if input.header.SelectionInputHash != calculation.SelectionInputHash ||
+		!sameExecutionReservationRequestSnapshot(input.header.RequestSnapshot, calculation.RequestSnapshot) {
 		return errSmartTargetingExecutionCalculationStale
 	}
 	if err := s.selectedTagRepo.Validate(ctx, campaign.ID, *campaign.BundleID); err != nil {
@@ -327,13 +501,18 @@ func sameExecutionReservationRequestSnapshot(left, right json.RawMessage) bool {
 		leftSnapshot.Platform == rightSnapshot.Platform
 }
 
-func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) (err error) {
+func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(
+	ctx context.Context,
+	calculationID int64,
+	leaseStartedAt time.Time,
+) (err error) {
 	repo := repository.NewCampaignTargetingExecutionCalculationRepository(s.db)
 	calculation, err := repo.ByID(ctx, calculationID)
 	if err != nil {
 		return err
 	}
-	if calculation == nil || calculation.Status != models.CampaignTargetingExecutionCalculationPending || calculation.StartedAt == nil || !calculation.StartedAt.Equal(leaseStartedAt) {
+	if calculation == nil || calculation.Status != models.CampaignTargetingExecutionCalculationPending || calculation.StartedAt == nil ||
+		!calculation.StartedAt.Equal(leaseStartedAt) {
 		return nil
 	}
 	defer func() {
@@ -343,7 +522,15 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context
 		if err != nil {
 			failCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = repo.Finish(failCtx, calculationID, leaseStartedAt, models.CampaignTargetingExecutionCalculationFailed, "EXECUTION_AUDIENCE_CALCULATION_FAILED", "Execution audience calculation could not be completed", utils.UTCNow())
+			_ = repo.Finish(
+				failCtx,
+				calculationID,
+				leaseStartedAt,
+				models.CampaignTargetingExecutionCalculationFailed,
+				"EXECUTION_AUDIENCE_CALCULATION_FAILED",
+				"Execution audience calculation could not be completed",
+				utils.UTCNow(),
+			)
 		}
 	}()
 	campaign, err := s.campaignRepo.ByID(ctx, calculation.CampaignID)
@@ -352,7 +539,15 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context
 	}
 	if matchErr := s.executionCalculationStillMatches(ctx, campaign, calculation, calculation.RequestedAudienceCount); matchErr != nil {
 		if errors.Is(matchErr, errSmartTargetingExecutionCalculationStale) {
-			return repo.Finish(ctx, calculationID, leaseStartedAt, models.CampaignTargetingExecutionCalculationStale, "CAMPAIGN_CHANGED", "Campaign inputs changed before selection completed", utils.UTCNow())
+			return repo.Finish(
+				ctx,
+				calculationID,
+				leaseStartedAt,
+				models.CampaignTargetingExecutionCalculationStale,
+				"CAMPAIGN_CHANGED",
+				"Campaign inputs changed before selection completed",
+				utils.UTCNow(),
+			)
 		}
 		return matchErr
 	}
@@ -364,12 +559,21 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context
 	if err != nil {
 		return err
 	}
-	rows, err := repository.NewSmartTargetingAudienceRepository(s.db).SelectCandidates(ctx, repository.SmartTargetingAudienceQuery{BundleID: calculation.BundleID, Phase: repository.SmartTargetingSelectionPhaseExecution, ExcludeActiveExecutionReservationCampaignID: calculation.CampaignID, TagIDs: snapshot.TagIDs, ScoreClasses: snapshot.ScoreClasses, AllowedColors: snapshot.AllowedColors}, calculation.RequestedAudienceCount)
+	rows, err := repository.NewSmartTargetingAudienceRepository(s.db).
+		SelectCandidates(ctx, repository.SmartTargetingAudienceQuery{BundleID: calculation.BundleID, Phase: repository.SmartTargetingSelectionPhaseExecution, ExcludeActiveExecutionReservationCampaignID: calculation.CampaignID, TagIDs: snapshot.TagIDs, ScoreClasses: snapshot.ScoreClasses, AllowedColors: snapshot.AllowedColors}, calculation.RequestedAudienceCount)
 	if err != nil {
 		return err
 	}
 	if int64(len(rows)) != calculation.RequestedAudienceCount {
-		return repo.Finish(ctx, calculationID, leaseStartedAt, models.CampaignTargetingExecutionCalculationFailed, "INSUFFICIENT_CAPACITY", "The requested execution audience is no longer available", utils.UTCNow())
+		return repo.Finish(
+			ctx,
+			calculationID,
+			leaseStartedAt,
+			models.CampaignTargetingExecutionCalculationFailed,
+			"INSUFFICIENT_CAPACITY",
+			"The requested execution audience is no longer available",
+			utils.UTCNow(),
+		)
 	}
 	members := make([]models.CampaignTargetingExecutionCalculationMember, 0, len(rows))
 	for i, row := range rows {
@@ -380,7 +584,15 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context
 		if tag == 0 {
 			return fmt.Errorf("candidate lost assigned tag")
 		}
-		members = append(members, models.CampaignTargetingExecutionCalculationMember{AudienceID: row.ID, AssignedTagID: tag, SelectionOrder: int64(i), AudienceScore: row.NormalizedScore})
+		members = append(
+			members,
+			models.CampaignTargetingExecutionCalculationMember{
+				AudienceID:     row.ID,
+				AssignedTagID:  tag,
+				SelectionOrder: int64(i),
+				AudienceScore:  row.NormalizedScore,
+			},
+		)
 	}
 	err = repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
 		txDB := smartTargetingDB(txCtx, s.db)
@@ -407,12 +619,25 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context
 		return repo.Complete(txCtx, calculationID, leaseStartedAt, fingerprint, members, utils.UTCNow())
 	})
 	if errors.Is(err, errSmartTargetingExecutionCalculationStale) {
-		return repo.Finish(ctx, calculationID, leaseStartedAt, models.CampaignTargetingExecutionCalculationStale, "ALLOCATION_CHANGED", "Bundle availability changed during selection", utils.UTCNow())
+		return repo.Finish(
+			ctx,
+			calculationID,
+			leaseStartedAt,
+			models.CampaignTargetingExecutionCalculationStale,
+			"ALLOCATION_CHANGED",
+			"Bundle availability changed during selection",
+			utils.UTCNow(),
+		)
 	}
 	return err
 }
 
-func (s *CampaignFlowImpl) executionReservationPlanFromCalculation(ctx context.Context, campaign *models.Campaign, calculationID int64, expected uint64) (*smartTargetingExecutionReservationPlan, error) {
+func (s *CampaignFlowImpl) executionReservationPlanFromCalculation(
+	ctx context.Context,
+	campaign *models.Campaign,
+	calculationID int64,
+	expected uint64,
+) (*smartTargetingExecutionReservationPlan, error) {
 	if calculationID <= 0 || expected == 0 || expected > math.MaxInt64 {
 		return nil, ErrSmartTargetingExecutionCalculationRequired
 	}
@@ -430,6 +655,18 @@ func (s *CampaignFlowImpl) executionReservationPlanFromCalculation(ctx context.C
 		}
 		return nil, err
 	}
-	header := &models.CampaignTargetingExecutionReservationHeader{CampaignID: campaign.ID, BundleID: calculation.BundleID, Phase: models.CampaignPhaseExecution, ReservationVersion: models.SmartTargetingExecutionReservationSchemaVersion, RequestedAudienceCount: calculation.RequestedAudienceCount, CandidateGeneration: models.SmartTargetingCapacityAlgorithmVersion, SelectionInputVersion: models.SmartTargetingExecutionReservationSelectionInputVersion, SelectionInputHash: calculation.SelectionInputHash, AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion, AllocationFingerprint: calculation.AllocationFingerprint, RequestSnapshot: calculation.RequestSnapshot}
+	header := &models.CampaignTargetingExecutionReservationHeader{
+		CampaignID:                   campaign.ID,
+		BundleID:                     calculation.BundleID,
+		Phase:                        models.CampaignPhaseExecution,
+		ReservationVersion:           models.SmartTargetingExecutionReservationSchemaVersion,
+		RequestedAudienceCount:       calculation.RequestedAudienceCount,
+		CandidateGeneration:          models.SmartTargetingCapacityAlgorithmVersion,
+		SelectionInputVersion:        models.SmartTargetingExecutionReservationSelectionInputVersion,
+		SelectionInputHash:           calculation.SelectionInputHash,
+		AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion,
+		AllocationFingerprint:        calculation.AllocationFingerprint,
+		RequestSnapshot:              calculation.RequestSnapshot,
+	}
 	return &smartTargetingExecutionReservationPlan{header: header}, nil
 }

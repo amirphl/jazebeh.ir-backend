@@ -76,11 +76,13 @@ func TestCandooSendBatchUsesDocumentedRequestShapeAndCorrelatesByCustomerID(t *t
 		byTrackingID[item.TrackingID] = item
 	}
 	accepted := byTrackingID["trk-1"]
-	if !accepted.TrackDeliveryStatus || accepted.ProviderMessageID == nil || *accepted.ProviderMessageID != "9001" || accepted.InternalStatus != models.SMSSendStatusPending {
+	if !accepted.TrackDeliveryStatus || accepted.ProviderMessageID == nil || *accepted.ProviderMessageID != "9001" ||
+		accepted.InternalStatus != models.SMSSendStatusPending {
 		t.Fatalf("accepted result = %+v", accepted)
 	}
 	rejected := byTrackingID["trk-2"]
-	if rejected.TrackDeliveryStatus || rejected.InternalStatus != models.SMSSendStatusUnsuccessful || rejected.ErrorCode == nil || *rejected.ErrorCode != "-4" {
+	if rejected.TrackDeliveryStatus || rejected.InternalStatus != models.SMSSendStatusUnsuccessful || rejected.ErrorCode == nil ||
+		*rejected.ErrorCode != "-4" {
 		t.Fatalf("rejected result = %+v", rejected)
 	}
 }
@@ -134,7 +136,8 @@ func TestCandooSendBatchRejectsOversizedBatchAndInvalidRecipientLocally(t *testi
 	if err != nil {
 		t.Fatalf("invalid recipient should become a per-message failure: %v", err)
 	}
-	if len(result.Items) != 1 || result.Items[0].InternalStatus != models.SMSSendStatusUnsuccessful || result.Items[0].ErrorCode == nil || *result.Items[0].ErrorCode != "INVALID_RECIPIENT" {
+	if len(result.Items) != 1 || result.Items[0].InternalStatus != models.SMSSendStatusUnsuccessful || result.Items[0].ErrorCode == nil ||
+		*result.Items[0].ErrorCode != "INVALID_RECIPIENT" {
 		t.Fatalf("invalid recipient result = %+v", result.Items)
 	}
 }
@@ -203,7 +206,11 @@ func TestCandooFetchStatusUsesCustomerIDsAndPreservesPendingStatus(t *testing.T)
 		t.Fatalf("status item count = %d", len(result.Items))
 	}
 	item := result.Items[0]
-	if item.ProviderCustomerID == nil || *item.ProviderCustomerID != 123243446 || item.ProviderMessageID != "0" || item.ProviderStatusCode == nil || *item.ProviderStatusCode != "-1" || item.InternalStatus != models.SMSSendStatusPending || item.UnknownParts != 1 {
+	if item.ProviderCustomerID == nil || *item.ProviderCustomerID != 123243446 || item.ProviderMessageID != "0" ||
+		item.ProviderStatusCode == nil ||
+		*item.ProviderStatusCode != "-1" ||
+		item.InternalStatus != models.SMSSendStatusPending ||
+		item.UnknownParts != 1 {
 		t.Fatalf("status item = %+v", item)
 	}
 }
@@ -233,7 +240,8 @@ func TestCandooFetchStatusMapsConfiguredTerminalStatuses(t *testing.T) {
 	if got := result.Items[0]; got.InternalStatus != models.SMSSendStatusSuccessful || got.DeliveredParts != 1 || got.UnknownParts != 0 {
 		t.Fatalf("successful Candoo mapping = %+v", got)
 	}
-	if got := result.Items[1]; got.InternalStatus != models.SMSSendStatusUnsuccessful || got.UndeliveredParts != 1 || got.UnknownParts != 0 {
+	if got := result.Items[1]; got.InternalStatus != models.SMSSendStatusUnsuccessful || got.UndeliveredParts != 1 ||
+		got.UnknownParts != 0 {
 		t.Fatalf("unsuccessful Candoo mapping = %+v", got)
 	}
 }

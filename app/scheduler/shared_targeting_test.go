@@ -23,7 +23,11 @@ func TestHeavySmartTargetingTimeoutsRemainConsistent(t *testing.T) {
 		t.Fatalf("Smart Targeting calculation lease = %s, want 70m", smartTargetingCalculationLeaseDuration)
 	}
 	if smartTargetingCalculationLeaseDuration <= smartTargetingCalculationJobTimeout {
-		t.Fatalf("Smart Targeting lease %s must exceed job timeout %s", smartTargetingCalculationLeaseDuration, smartTargetingCalculationJobTimeout)
+		t.Fatalf(
+			"Smart Targeting lease %s must exceed job timeout %s",
+			smartTargetingCalculationLeaseDuration,
+			smartTargetingCalculationJobTimeout,
+		)
 	}
 	if campaignExecutionTimeout != 8*time.Hour {
 		t.Fatalf("campaign execution timeout = %s, want 8h", campaignExecutionTimeout)
@@ -38,7 +42,12 @@ func TestHeavySmartTargetingTimeoutsRemainConsistent(t *testing.T) {
 
 type missingSchedulerStatsRepository struct{}
 
-func (missingSchedulerStatsRepository) FetchPercentiles(context.Context, *string, []string, []string) (*repository.LayerPercentiles, error) {
+func (missingSchedulerStatsRepository) FetchPercentiles(
+	context.Context,
+	*string,
+	[]string,
+	[]string,
+) (*repository.LayerPercentiles, error) {
 	return nil, nil
 }
 
@@ -202,7 +211,15 @@ func (n *audienceShortfallNotifier) SendSMSBulk(context.Context, []string, strin
 
 func TestNotifyAudienceShortfallSendsRequestedAndEligibleCounts(t *testing.T) {
 	notifier := &audienceShortfallNotifier{calls: make(chan string, 2)}
-	notifyAudienceShortfall(log.New(io.Discard, "", 0), notifier, config.AdminConfig{Mobiles: []string{"989121234567", "989121234568"}}, "SMS", 91, 10_000, 8_000)
+	notifyAudienceShortfall(
+		log.New(io.Discard, "", 0),
+		notifier,
+		config.AdminConfig{Mobiles: []string{"989121234567", "989121234568"}},
+		"SMS",
+		91,
+		10_000,
+		8_000,
+	)
 	for range 2 {
 		select {
 		case message := <-notifier.calls:
@@ -285,8 +302,21 @@ func TestExcelTargetingCanReuseAudienceAcrossBundleCampaigns(t *testing.T) {
 		return []*models.AudienceProfile{{ID: 91, UID: "uid-1", PhoneNumber: &phone}}, nil
 	}}
 	for attempt := 0; attempt < 2; attempt++ {
-		campaign := dto.BotGetCampaignResponse{ID: uint(748 + attempt), BundleID: &bundleID, TargetingMethod: models.CampaignAudienceTargetingExcel}
-		result, err := fetchAudiencePhonesByUIDs(context.Background(), log.New(io.Discard, "", 0), repo, nil, campaign, "", []string{"uid-1"}, "")
+		campaign := dto.BotGetCampaignResponse{
+			ID:              uint(748 + attempt),
+			BundleID:        &bundleID,
+			TargetingMethod: models.CampaignAudienceTargetingExcel,
+		}
+		result, err := fetchAudiencePhonesByUIDs(
+			context.Background(),
+			log.New(io.Discard, "", 0),
+			repo,
+			nil,
+			campaign,
+			"",
+			[]string{"uid-1"},
+			"",
+		)
 		if err != nil {
 			t.Fatalf("Excel selection attempt %d failed: %v", attempt+1, err)
 		}
@@ -311,10 +341,22 @@ func TestStandardScoreResolutionOnlyRequiresStatisticsForRestrictedGrades(t *tes
 		name    string
 		resolve func(context.Context, dto.BotGetCampaignResponse) (*models.NormalizedScoreConstraint, error)
 	}{
-		{name: "sms", resolve: (&SMSCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint},
-		{name: "bale", resolve: (&BaleCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint},
-		{name: "rubika", resolve: (&RubikaCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint},
-		{name: "splus", resolve: (&SplusCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint},
+		{
+			name:    "sms",
+			resolve: (&SMSCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint,
+		},
+		{
+			name:    "bale",
+			resolve: (&BaleCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint,
+		},
+		{
+			name:    "rubika",
+			resolve: (&RubikaCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint,
+		},
+		{
+			name:    "splus",
+			resolve: (&SplusCampaignScheduler{statsRepo: missingSchedulerStatsRepository{}, logger: logger}).resolveScoreConstraint,
+		},
 	}
 
 	for _, tt := range resolvers {
@@ -327,7 +369,8 @@ func TestStandardScoreResolutionOnlyRequiresStatisticsForRestrictedGrades(t *tes
 				}
 			}
 			for _, restricted := range restrictedCampaigns {
-				if _, err := tc.resolve(context.Background(), restricted); err == nil || !strings.Contains(err.Error(), "statistics are missing") {
+				if _, err := tc.resolve(context.Background(), restricted); err == nil ||
+					!strings.Contains(err.Error(), "statistics are missing") {
 					t.Fatalf("campaign %d: restricted grades without statistics must fail, got %v", restricted.ID, err)
 				}
 			}
@@ -352,7 +395,10 @@ func TestStandardTargetingUsesDisjointSmartTargetingGradeBoundaries(t *testing.T
 	}
 	for _, tt := range tests {
 		got := gradesToScoreConstraint(tt.grades, p33, p66)
-		if got == nil || !sameOptionalFloat(got.GT, tt.wantGT) || !sameOptionalFloat(got.LTE, tt.wantLTE) || !sameOptionalFloat(got.OrGT, tt.wantOrGT) || got.GTE != nil || got.OrGTE != nil {
+		if got == nil || !sameOptionalFloat(got.GT, tt.wantGT) || !sameOptionalFloat(got.LTE, tt.wantLTE) ||
+			!sameOptionalFloat(got.OrGT, tt.wantOrGT) ||
+			got.GTE != nil ||
+			got.OrGTE != nil {
 			t.Fatalf("grades %v constraint = %#v", tt.grades, got)
 		}
 	}

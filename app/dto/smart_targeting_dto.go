@@ -118,8 +118,8 @@ type ReplaceSmartTargetingSelectionRequest struct {
 type AutoSelectSmartTargetingTagsRequest struct {
 	CustomerID    uint   `json:"-"`
 	CampaignUUID  string `json:"-"`
-	Count         int    `json:"count" validate:"required,min=1,max=10000"`
-	Search        string `json:"search,omitempty" validate:"omitempty,max=200"`
+	Count         int    `json:"count"                    validate:"required,min=1,max=10000"`
+	Search        string `json:"search,omitempty"         validate:"omitempty,max=200"`
 	SortBy        string `json:"sort_by,omitempty"`
 	SortDirection string `json:"sort_direction,omitempty"`
 }

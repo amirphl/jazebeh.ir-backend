@@ -38,11 +38,13 @@ func NewAccessControlHandler(flow businessflow.AccessControlFlow) AccessControlH
 func (h *AccessControlHandler) CreateRequest(c fiber.Ctx) error {
 	var req dto.AdminACLChangeRequestCreate
 	if err := c.Bind().JSON(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Invalid body", Error: dto.ErrorDetail{Code: "INVALID_BODY"}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Invalid body", Error: dto.ErrorDetail{Code: "INVALID_BODY"}})
 	}
 	requesterID, ok := middleware.GetAdminIDFromContext(c)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Admin required", Error: dto.ErrorDetail{Code: "ADMIN_AUTHENTICATION_REQUIRED"}})
+		return c.Status(fiber.StatusUnauthorized).
+			JSON(dto.APIResponse{Success: false, Message: "Admin required", Error: dto.ErrorDetail{Code: "ADMIN_AUTHENTICATION_REQUIRED"}})
 	}
 
 	modelReq := &models.ACLChangeRequest{
@@ -58,7 +60,8 @@ func (h *AccessControlHandler) CreateRequest(c fiber.Ctx) error {
 
 	created, err := h.flow.CreateRequest(c.Context(), requesterID, modelReq)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(dto.APIResponse{Success: false, Message: "Failed to create request", Error: dto.ErrorDetail{Code: "ACL_REQUEST_CREATE_FAILED", Details: map[string]any{"reason": err.Error()}}})
+		return c.Status(fiber.StatusInternalServerError).
+			JSON(dto.APIResponse{Success: false, Message: "Failed to create request", Error: dto.ErrorDetail{Code: "ACL_REQUEST_CREATE_FAILED", Details: map[string]any{"reason": err.Error()}}})
 	}
 
 	return c.JSON(dto.APIResponse{Success: true, Data: map[string]any{"uuid": created.UUID.String(), "status": created.Status}})
@@ -85,7 +88,8 @@ func (h *AccessControlHandler) ApproveRequest(c fiber.Ctx) error {
 	idStr := c.Params("uuid")
 	u, err := uuid.Parse(idStr)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{Success: false, Message: "Invalid uuid", Error: dto.ErrorDetail{Code: "INVALID_UUID"}})
+		return c.Status(fiber.StatusBadRequest).
+			JSON(dto.APIResponse{Success: false, Message: "Invalid uuid", Error: dto.ErrorDetail{Code: "INVALID_UUID"}})
 	}
 	action := c.Query("action", "approve")
 	approve := action != "reject"
@@ -95,7 +99,8 @@ func (h *AccessControlHandler) ApproveRequest(c fiber.Ctx) error {
 
 	adminID, ok := middleware.GetAdminIDFromContext(c)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.APIResponse{Success: false, Message: "Admin required", Error: dto.ErrorDetail{Code: "ADMIN_AUTHENTICATION_REQUIRED"}})
+		return c.Status(fiber.StatusUnauthorized).
+			JSON(dto.APIResponse{Success: false, Message: "Admin required", Error: dto.ErrorDetail{Code: "ADMIN_AUTHENTICATION_REQUIRED"}})
 	}
 
 	updated, err := h.flow.Approve(c.Context(), adminID, u, approve, body.Reason)
@@ -113,7 +118,8 @@ func (h *AccessControlHandler) ApproveRequest(c fiber.Ctx) error {
 			status = fiber.StatusNotFound
 			code = "ACL_REQUEST_NOT_FOUND"
 		}
-		return c.Status(status).JSON(dto.APIResponse{Success: false, Message: "Approval failed", Error: dto.ErrorDetail{Code: code, Details: map[string]any{"reason": err.Error()}}})
+		return c.Status(status).
+			JSON(dto.APIResponse{Success: false, Message: "Approval failed", Error: dto.ErrorDetail{Code: code, Details: map[string]any{"reason": err.Error()}}})
 	}
 
 	return c.JSON(dto.APIResponse{Success: true, Data: map[string]any{"uuid": updated.UUID.String(), "status": updated.Status}})

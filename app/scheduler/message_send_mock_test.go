@@ -70,7 +70,8 @@ func TestMockSplusClientReturnsSuccessfulResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
-	if response.ResultCode != 200 || response.HTTPStatus != 200 || response.MessageID == nil || !strings.HasPrefix(*response.MessageID, "mock-splus-") {
+	if response.ResultCode != 200 || response.HTTPStatus != 200 || response.MessageID == nil ||
+		!strings.HasPrefix(*response.MessageID, "mock-splus-") {
 		t.Fatalf("SendMessage() = %+v, want successful mock response", response)
 	}
 	if response.UserID == nil || *response.UserID != "user-1" {

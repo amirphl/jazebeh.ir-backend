@@ -75,7 +75,12 @@ func NewPayamBalanceScheduler(
 func (s *PayamBalanceScheduler) Start(parent context.Context) func() {
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
-	s.logger.Printf("payamsms balance monitor: started interval=%s threshold_tomans=%s max_alert_interval=%s", s.interval, formatPayamTomans(s.thresholdRial), s.maxAlertDelay)
+	s.logger.Printf(
+		"payamsms balance monitor: started interval=%s threshold_tomans=%s max_alert_interval=%s",
+		s.interval,
+		formatPayamTomans(s.thresholdRial),
+		s.maxAlertDelay,
+	)
 	go func() {
 		defer close(done)
 		ticker := time.NewTicker(s.interval)
@@ -117,11 +122,18 @@ func (s *PayamBalanceScheduler) runOnce(ctx context.Context) {
 		return
 	}
 	if len(s.adminCfg.ActiveMobiles()) == 0 {
-		s.logger.Printf("payamsms balance monitor: balance is low (%s TMN) but no active admin mobiles are configured", formatPayamTomans(balanceRial))
+		s.logger.Printf(
+			"payamsms balance monitor: balance is low (%s TMN) but no active admin mobiles are configured",
+			formatPayamTomans(balanceRial),
+		)
 		return
 	}
 
-	message := fmt.Sprintf("WARNING: PayamSMS balance is low: %s TMN (threshold: %s TMN).", formatPayamTomans(balanceRial), formatPayamTomans(s.thresholdRial))
+	message := fmt.Sprintf(
+		"WARNING: PayamSMS balance is low: %s TMN (threshold: %s TMN).",
+		formatPayamTomans(balanceRial),
+		formatPayamTomans(s.thresholdRial),
+	)
 	if err := s.sendWarning(ctx, message); err != nil {
 		s.logger.Printf("payamsms balance monitor: warning notification failed: %v", err)
 		return
@@ -130,7 +142,11 @@ func (s *PayamBalanceScheduler) runOnce(ctx context.Context) {
 	delay := retryBackoffDelay(s.alertLevel, s.interval, s.maxAlertDelay)
 	s.alertLevel++
 	s.nextAlertAt = now.Add(delay)
-	s.logger.Printf("payamsms balance monitor: low balance warning sent balance_tomans=%s next_alert_at=%s", formatPayamTomans(balanceRial), s.nextAlertAt.Format(time.RFC3339))
+	s.logger.Printf(
+		"payamsms balance monitor: low balance warning sent balance_tomans=%s next_alert_at=%s",
+		formatPayamTomans(balanceRial),
+		s.nextAlertAt.Format(time.RFC3339),
+	)
 }
 
 func (s *PayamBalanceScheduler) sendWarning(ctx context.Context, message string) error {

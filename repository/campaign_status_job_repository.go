@@ -31,7 +31,12 @@ func (r *CampaignStatusJobRepositoryImpl) ByID(ctx context.Context, id uint) (*m
 }
 
 // ListDue returns jobs for one platform scheduled before or at 'now' with retry_count < 3.
-func (r *CampaignStatusJobRepositoryImpl) ListDue(ctx context.Context, platform string, now time.Time, limit int) ([]*models.CampaignStatusJob, error) {
+func (r *CampaignStatusJobRepositoryImpl) ListDue(
+	ctx context.Context,
+	platform string,
+	now time.Time,
+	limit int,
+) ([]*models.CampaignStatusJob, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -50,7 +55,12 @@ func (r *CampaignStatusJobRepositoryImpl) ListDue(ctx context.Context, platform 
 // each processed campaign's earliest job is returned before a second job from
 // any campaign. It is intentionally separate from ListDue because only the SMS
 // scheduler currently processes processed-campaign groups concurrently.
-func (r *CampaignStatusJobRepositoryImpl) ListDueInterleavedByCampaign(ctx context.Context, platform string, now time.Time, limit int) ([]*models.CampaignStatusJob, error) {
+func (r *CampaignStatusJobRepositoryImpl) ListDueInterleavedByCampaign(
+	ctx context.Context,
+	platform string,
+	now time.Time,
+	limit int,
+) ([]*models.CampaignStatusJob, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -107,7 +117,12 @@ func (r *CampaignStatusJobRepositoryImpl) DeliveryStatusFinal(ctx context.Contex
 }
 
 // ByFilter: since no filter is defined, apply order/limit/offset only
-func (r *CampaignStatusJobRepositoryImpl) ByFilter(ctx context.Context, _ any, orderBy string, limit, offset int) ([]*models.CampaignStatusJob, error) {
+func (r *CampaignStatusJobRepositoryImpl) ByFilter(
+	ctx context.Context,
+	_ any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.CampaignStatusJob, error) {
 	db := r.getDB(ctx)
 	if orderBy != "" {
 		db = db.Order(orderBy)

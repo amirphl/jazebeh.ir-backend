@@ -2,8 +2,8 @@ package dto
 
 // AdminCreateSegmentPriceFactorRequest represents the payload to add/update a segment price factor for a level3 value.
 type AdminCreateSegmentPriceFactorRequest struct {
-	Level3      string  `json:"level3" validate:"required"`
-	Platform    string  `json:"platform" validate:"required,oneof=sms rubika bale splus"`
+	Level3      string  `json:"level3"       validate:"required"`
+	Platform    string  `json:"platform"     validate:"required,oneof=sms rubika bale splus"`
 	PriceFactor float64 `json:"price_factor" validate:"required,gt=0"`
 }
 

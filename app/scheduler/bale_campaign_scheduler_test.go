@@ -43,7 +43,12 @@ type stubSentBaleMessageRepo struct {
 	listByTrackingIDsFn func(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentBaleMessage, error)
 }
 
-func (s *stubSentBaleMessageRepo) ByFilter(ctx context.Context, filter models.SentBaleMessageFilter, orderBy string, limit, offset int) ([]*models.SentBaleMessage, error) {
+func (s *stubSentBaleMessageRepo) ByFilter(
+	ctx context.Context,
+	filter models.SentBaleMessageFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.SentBaleMessage, error) {
 	return nil, nil
 }
 
@@ -67,22 +72,37 @@ func (s *stubSentBaleMessageRepo) ByID(ctx context.Context, id uint) (*models.Se
 	return nil, nil
 }
 
-func (s *stubSentBaleMessageRepo) ListByProcessedCampaign(ctx context.Context, processedCampaignID uint, limit, offset int) ([]*models.SentBaleMessage, error) {
+func (s *stubSentBaleMessageRepo) ListByProcessedCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+	limit, offset int,
+) ([]*models.SentBaleMessage, error) {
 	return nil, nil
 }
 
-func (s *stubSentBaleMessageRepo) ListByTrackingIDs(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentBaleMessage, error) {
+func (s *stubSentBaleMessageRepo) ListByTrackingIDs(
+	ctx context.Context,
+	processedCampaignID uint,
+	trackingIDs []string,
+) ([]*models.SentBaleMessage, error) {
 	if s.listByTrackingIDsFn != nil {
 		return s.listByTrackingIDsFn(ctx, processedCampaignID, trackingIDs)
 	}
 	return nil, nil
 }
 
-func (s *stubSentBaleMessageRepo) TrackingResultsFromSentRows(ctx context.Context, processedCampaignID uint) ([]repository.BaleTrackingResult, error) {
+func (s *stubSentBaleMessageRepo) TrackingResultsFromSentRows(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]repository.BaleTrackingResult, error) {
 	return nil, nil
 }
 
-func (s *stubSentBaleMessageRepo) UpdateSendResultByTrackingIDs(ctx context.Context, processedCampaignID uint, updates []repository.SentBaleSendResultUpdate) error {
+func (s *stubSentBaleMessageRepo) UpdateSendResultByTrackingIDs(
+	ctx context.Context,
+	processedCampaignID uint,
+	updates []repository.SentBaleSendResultUpdate,
+) error {
 	return nil
 }
 
@@ -90,7 +110,12 @@ type stubCampaignStatusJobRepo struct {
 	updated []*models.CampaignStatusJob
 }
 
-func (s *stubCampaignStatusJobRepo) ByFilter(ctx context.Context, filter any, orderBy string, limit, offset int) ([]*models.CampaignStatusJob, error) {
+func (s *stubCampaignStatusJobRepo) ByFilter(
+	ctx context.Context,
+	filter any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.CampaignStatusJob, error) {
 	return nil, nil
 }
 
@@ -114,7 +139,12 @@ func (s *stubCampaignStatusJobRepo) ByID(ctx context.Context, id uint) (*models.
 	return nil, nil
 }
 
-func (s *stubCampaignStatusJobRepo) ListDue(ctx context.Context, platform string, now time.Time, limit int) ([]*models.CampaignStatusJob, error) {
+func (s *stubCampaignStatusJobRepo) ListDue(
+	ctx context.Context,
+	platform string,
+	now time.Time,
+	limit int,
+) ([]*models.CampaignStatusJob, error) {
 	return nil, nil
 }
 

@@ -48,12 +48,22 @@ func (h *LineNumberHandler) ListActive(c fiber.Ctx) error {
 	res, err := h.flow.ListActiveLineNumbers(ctx, metadata)
 	if err != nil {
 		log.Println("List active line numbers failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to list active line numbers", "LIST_ACTIVE_LINE_NUMBERS_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to list active line numbers",
+			"LIST_ACTIVE_LINE_NUMBERS_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Active line numbers retrieved", res)
 }
 
-func (h *LineNumberHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *LineNumberHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

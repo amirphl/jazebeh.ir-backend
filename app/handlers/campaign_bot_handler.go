@@ -169,7 +169,13 @@ func (h *CampaignBotHandler) DownloadTargetAudienceExcelFile(c fiber.Ctx) error 
 	)
 	if err != nil {
 		if businessflow.IsCampaignNotFound(err) || businessflow.IsCampaignTargetAudienceExcelMediaNotFound(err) {
-			return h.ErrorResponse(c, fiber.StatusNotFound, "Target audience excel file not found", "TARGET_AUDIENCE_EXCEL_FILE_NOT_FOUND", nil)
+			return h.ErrorResponse(
+				c,
+				fiber.StatusNotFound,
+				"Target audience excel file not found",
+				"TARGET_AUDIENCE_EXCEL_FILE_NOT_FOUND",
+				nil,
+			)
 		}
 		if be, ok := err.(*businessflow.BusinessError); ok {
 			switch be.Code {
@@ -180,7 +186,13 @@ func (h *CampaignBotHandler) DownloadTargetAudienceExcelFile(c fiber.Ctx) error 
 			}
 		}
 		log.Println("Download target audience excel file failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to download target audience excel file", "DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to download target audience excel file",
+			"DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED",
+			nil,
+		)
 	}
 
 	if contentType != "" {
@@ -233,7 +245,13 @@ func (h *CampaignBotHandler) UpdateCampaignStatistics(c fiber.Ctx) error {
 			}
 		}
 		log.Println("Update campaign statistics failed", err)
-		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update campaign statistics", "UPDATE_CAMPAIGN_STATISTICS_FAILED", nil)
+		return h.ErrorResponse(
+			c,
+			fiber.StatusInternalServerError,
+			"Failed to update campaign statistics",
+			"UPDATE_CAMPAIGN_STATISTICS_FAILED",
+			nil,
+		)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Campaign statistics updated", res)
 }
@@ -278,7 +296,11 @@ func (h *CampaignBotHandler) PushAudienceUIDs(c fiber.Ctx) error {
 	return h.SuccessResponse(c, fiber.StatusOK, "Audience UIDs stored", dto.BotPushAudienceUIDsResponse{Message: "Audience UIDs stored"})
 }
 
-func (h *CampaignBotHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *CampaignBotHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

@@ -198,7 +198,12 @@ func (c *httpPayamSMSClient) SendBatch(ctx context.Context, sender string, items
 	return out, err
 }
 
-func (c *httpPayamSMSClient) sendBatchOnce(ctx context.Context, sender string, items []PayamSMSItem, token string) (PayamSMSSendResult, error) {
+func (c *httpPayamSMSClient) sendBatchOnce(
+	ctx context.Context,
+	sender string,
+	items []PayamSMSItem,
+	token string,
+) (PayamSMSSendResult, error) {
 	payload := struct {
 		Sender   string `json:"sender"`
 		SMSItems []any  `json:"smsItems"`

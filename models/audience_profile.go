@@ -11,15 +11,15 @@ import (
 // PhoneNumber is optional and unique when present
 // UID is a required unique identifier (external/system specific)
 type AudienceProfile struct {
-	ID              int64         `gorm:"primaryKey;autoIncrement;type:bigserial" json:"id"`
-	UID             string        `gorm:"size:255;not null;uniqueIndex:audience_profiles_uid_key" json:"uid"`
-	PhoneNumber     *string       `gorm:"size:20;uniqueIndex:audience_profiles_phone_number_key" json:"phone_number,omitempty"`
+	ID              int64         `gorm:"primaryKey;autoIncrement;type:bigserial"                       json:"id"`
+	UID             string        `gorm:"size:255;not null;uniqueIndex:audience_profiles_uid_key"       json:"uid"`
+	PhoneNumber     *string       `gorm:"size:20;uniqueIndex:audience_profiles_phone_number_key"        json:"phone_number,omitempty"`
 	Tags            pq.Int32Array `gorm:"type:integer[];index:idx_audience_profiles_tags_gin,using:gin" json:"tags"`
-	Color           string        `gorm:"size:20;not null;index:idx_audience_profiles_color" json:"color"`
-	NormalizedScore *float64      `gorm:"column:normalized_score" json:"normalized_score,omitempty"`
+	Color           string        `gorm:"size:20;not null;index:idx_audience_profiles_color"            json:"color"`
+	NormalizedScore *float64      `gorm:"column:normalized_score"                                       json:"normalized_score,omitempty"`
 
 	CreatedAt time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC');index:idx_audience_profiles_created_at" json:"created_at"`
-	UpdatedAt time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"updated_at"`
+	UpdatedAt time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"                                        json:"updated_at"`
 }
 
 func (AudienceProfile) TableName() string {

@@ -11,9 +11,9 @@ import (
 // Wallet represents a customer's wallet reference (immutable design)
 // The actual balance state is stored in BalanceSnapshot records
 type Wallet struct {
-	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID         uint      `gorm:"primaryKey;autoIncrement"                                 json:"id"`
 	UUID       uuid.UUID `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()" json:"uuid"`
-	CustomerID uint      `gorm:"not null;uniqueIndex;index" json:"customer_id"`
+	CustomerID uint      `gorm:"not null;uniqueIndex;index"                               json:"customer_id"`
 
 	// Metadata for additional wallet information
 	Metadata json.RawMessage `gorm:"type:jsonb;default:'{}'" json:"metadata"`
@@ -21,12 +21,12 @@ type Wallet struct {
 	// Audit fields
 	CreatedAt time.Time      `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time      `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	DeletedAt gorm.DeletedAt `gorm:"index"                              json:"deleted_at,omitempty"`
 
 	// Relationships
 	Customer         Customer          `gorm:"foreignKey:CustomerID;constraint:OnDelete:CASCADE" json:"customer,omitempty"`
-	Transactions     []Transaction     `gorm:"foreignKey:WalletID" json:"transactions,omitempty"`
-	BalanceSnapshots []BalanceSnapshot `gorm:"foreignKey:WalletID" json:"balance_snapshots,omitempty"`
+	Transactions     []Transaction     `gorm:"foreignKey:WalletID"                               json:"transactions,omitempty"`
+	BalanceSnapshots []BalanceSnapshot `gorm:"foreignKey:WalletID"                               json:"balance_snapshots,omitempty"`
 }
 
 // WalletFilter represents filter criteria for wallet queries

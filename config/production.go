@@ -507,11 +507,14 @@ type ExternalShortLinkConfig struct {
 func loadSchedulerConfig() SchedulerConfig {
 	capacitySchedulerEnabled := getEnvBool("SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED", false)
 	return SchedulerConfig{
-		CampaignAudienceReportSchedulerEnabled:   getEnvBool("CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_ENABLED", true),
-		CampaignAudienceReportSchedulerInterval:  getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_INTERVAL", time.Minute),
-		CampaignAudienceReportJobTimeout:         getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_JOB_TIMEOUT", 6*time.Hour),
-		CampaignAudienceReportLeaseDuration:      getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_LEASE_DURATION", 6*time.Hour+15*time.Minute),
-		CampaignAudienceReportStorageRoot:        getEnvString("CAMPAIGN_AUDIENCE_REPORT_STORAGE_ROOT", "data/exports/campaign-audience-reports"),
+		CampaignAudienceReportSchedulerEnabled:  getEnvBool("CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_ENABLED", true),
+		CampaignAudienceReportSchedulerInterval: getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_INTERVAL", time.Minute),
+		CampaignAudienceReportJobTimeout:        getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_JOB_TIMEOUT", 6*time.Hour),
+		CampaignAudienceReportLeaseDuration:     getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_LEASE_DURATION", 6*time.Hour+15*time.Minute),
+		CampaignAudienceReportStorageRoot: getEnvString(
+			"CAMPAIGN_AUDIENCE_REPORT_STORAGE_ROOT",
+			"data/exports/campaign-audience-reports",
+		),
 		CampaignAudienceReportMaxRows:            int64(getEnvInt("CAMPAIGN_AUDIENCE_REPORT_MAX_ROWS", 10_000_000)),
 		CampaignAudienceReportMaxOutputBytes:     int64(getEnvInt("CAMPAIGN_AUDIENCE_REPORT_MAX_OUTPUT_BYTES", 5<<30)),
 		CampaignAudienceReportMaxJobsPerCustomer: int64(getEnvInt("CAMPAIGN_AUDIENCE_REPORT_MAX_JOBS_PER_CUSTOMER", 100)),
@@ -531,19 +534,22 @@ func loadSchedulerConfig() SchedulerConfig {
 		SmartTargetingTestSamplingSchedulerEnabled: getEnvBool("SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED", capacitySchedulerEnabled),
 		// Sampling can be expensive, so retain the original single-worker behavior
 		// unless an operator deliberately provisions more database capacity.
-		SmartTargetingTestSamplingMaxParallelRuns:          getEnvInt("SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS", 1),
-		SmartTargetingExecutionCalculationSchedulerEnabled: getEnvBool("SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED", capacitySchedulerEnabled),
-		SmartTargetingExecutionCalculationMaxParallelRuns:  getEnvInt("SMART_TARGETING_EXECUTION_CALCULATION_MAX_PARALLEL_RUNS", 1),
-		TagTestPerformanceSchedulerEnabled:                 getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
-		TagTestPerformanceSchedulerInterval:                getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
-		TagTestPerformanceSchedulerBatchSize:               getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
-		BundleActionFileSchedulerEnabled:                   getEnvBool("BUNDLE_ACTION_FILE_SCHEDULER_ENABLED", false),
-		BundleActionFileSchedulerInterval:                  getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_INTERVAL", time.Minute),
-		BundleActionFileSchedulerMaxParallelRuns:           getEnvInt("BUNDLE_ACTION_FILE_SCHEDULER_MAX_PARALLEL_RUNS", 2),
-		BundleActionFileSchedulerJobTimeout:                getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_JOB_TIMEOUT", 30*time.Minute),
-		BundleActionFileSchedulerLeaseDuration:             getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_LEASE_DURATION", 35*time.Minute),
-		CampaignRefundReconciliationSchedulerEnabled:       getEnvBool("CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED", false),
-		CampaignRefundReconciliationPollInterval:           getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL", time.Minute),
+		SmartTargetingTestSamplingMaxParallelRuns: getEnvInt("SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS", 1),
+		SmartTargetingExecutionCalculationSchedulerEnabled: getEnvBool(
+			"SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED",
+			capacitySchedulerEnabled,
+		),
+		SmartTargetingExecutionCalculationMaxParallelRuns: getEnvInt("SMART_TARGETING_EXECUTION_CALCULATION_MAX_PARALLEL_RUNS", 1),
+		TagTestPerformanceSchedulerEnabled:                getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
+		TagTestPerformanceSchedulerInterval:               getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
+		TagTestPerformanceSchedulerBatchSize:              getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
+		BundleActionFileSchedulerEnabled:                  getEnvBool("BUNDLE_ACTION_FILE_SCHEDULER_ENABLED", false),
+		BundleActionFileSchedulerInterval:                 getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_INTERVAL", time.Minute),
+		BundleActionFileSchedulerMaxParallelRuns:          getEnvInt("BUNDLE_ACTION_FILE_SCHEDULER_MAX_PARALLEL_RUNS", 2),
+		BundleActionFileSchedulerJobTimeout:               getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_JOB_TIMEOUT", 30*time.Minute),
+		BundleActionFileSchedulerLeaseDuration:            getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_LEASE_DURATION", 35*time.Minute),
+		CampaignRefundReconciliationSchedulerEnabled:      getEnvBool("CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED", false),
+		CampaignRefundReconciliationPollInterval:          getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL", time.Minute),
 		// Keep this beyond the latest scheduled provider status poll (88 hours for
 		// non-Candoo SMS) before financial reconciliation can act on a zero-delivery
 		// result.
@@ -680,23 +686,38 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			CompressionLevel:  getEnvInt("SERVER_COMPRESSION_LEVEL", 6),
 		},
 		Security: SecurityConfig{
-			TLSEnabled:             getEnvBool("TLS_ENABLED", true),
-			TLSCertFile:            getEnvString("TLS_CERT_FILE", "/etc/ssl/certs/yamata.crt"),
-			TLSKeyFile:             getEnvString("TLS_KEY_FILE", "/etc/ssl/private/yamata.key"),
-			TLSMinVersion:          getEnvString("TLS_MIN_VERSION", "1.3"),
-			HSTSMaxAge:             getEnvInt("HSTS_MAX_AGE", 31536000), // 1 year
-			HSTSIncludeSubDoms:     getEnvBool("HSTS_INCLUDE_SUBDOMAINS", true),
-			HSTSPreload:            getEnvBool("HSTS_PRELOAD", true),
-			AllowedOrigins:         getEnvStringSlice("CORS_ALLOWED_ORIGINS", []string{"https://yamata-no-orochi.com", "https://api.yamata-no-orochi.com", "https://wwww.yamata-no-orochi.com", "https://monitoring.yamata-no-orochi.com", "https://admin.yamata-no-orochi.com"}),
-			AllowedMethods:         getEnvStringSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-			AllowedHeaders:         getEnvStringSlice("CORS_ALLOWED_HEADERS", []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With", "X-API-Key"}),
-			AllowCredentials:       getEnvBool("CORS_ALLOW_CREDENTIALS", true),
-			CORSMaxAge:             getEnvInt("CORS_MAX_AGE", 86400),
-			AuthRateLimit:          getEnvInt("AUTH_RATE_LIMIT", 20),
-			GlobalRateLimit:        getEnvInt("GLOBAL_RATE_LIMIT", 2000),
-			RateLimitWindow:        getEnvDuration("RATE_LIMIT_WINDOW", 1*time.Minute),
-			RateLimitMemory:        getEnvInt("RATE_LIMIT_MEMORY", 64), // MB
-			CSPPolicy:              getEnvString("CSP_POLICY", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https:; connect-src 'self' https:; frame-ancestors 'none';"),
+			TLSEnabled:         getEnvBool("TLS_ENABLED", true),
+			TLSCertFile:        getEnvString("TLS_CERT_FILE", "/etc/ssl/certs/yamata.crt"),
+			TLSKeyFile:         getEnvString("TLS_KEY_FILE", "/etc/ssl/private/yamata.key"),
+			TLSMinVersion:      getEnvString("TLS_MIN_VERSION", "1.3"),
+			HSTSMaxAge:         getEnvInt("HSTS_MAX_AGE", 31536000), // 1 year
+			HSTSIncludeSubDoms: getEnvBool("HSTS_INCLUDE_SUBDOMAINS", true),
+			HSTSPreload:        getEnvBool("HSTS_PRELOAD", true),
+			AllowedOrigins: getEnvStringSlice(
+				"CORS_ALLOWED_ORIGINS",
+				[]string{
+					"https://yamata-no-orochi.com",
+					"https://api.yamata-no-orochi.com",
+					"https://wwww.yamata-no-orochi.com",
+					"https://monitoring.yamata-no-orochi.com",
+					"https://admin.yamata-no-orochi.com",
+				},
+			),
+			AllowedMethods: getEnvStringSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
+			AllowedHeaders: getEnvStringSlice(
+				"CORS_ALLOWED_HEADERS",
+				[]string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With", "X-API-Key"},
+			),
+			AllowCredentials: getEnvBool("CORS_ALLOW_CREDENTIALS", true),
+			CORSMaxAge:       getEnvInt("CORS_MAX_AGE", 86400),
+			AuthRateLimit:    getEnvInt("AUTH_RATE_LIMIT", 20),
+			GlobalRateLimit:  getEnvInt("GLOBAL_RATE_LIMIT", 2000),
+			RateLimitWindow:  getEnvDuration("RATE_LIMIT_WINDOW", 1*time.Minute),
+			RateLimitMemory:  getEnvInt("RATE_LIMIT_MEMORY", 64), // MB
+			CSPPolicy: getEnvString(
+				"CSP_POLICY",
+				"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https:; connect-src 'self' https:; frame-ancestors 'none';",
+			),
 			XFrameOptions:          getEnvString("X_FRAME_OPTIONS", "DENY"),
 			XContentTypeOptions:    getEnvString("X_CONTENT_TYPE_OPTIONS", "nosniff"),
 			XSSProtection:          getEnvString("XSS_PROTECTION", "1; mode=block"),
@@ -901,13 +922,31 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			},
 		},
 		Message: MessageConfig{
-			SignupVerificationCodeTemplate:        getEnvString("MESSAGE_SIGNUP_VERIFICATION_CODE_TEMPLATE", "Your verification code is %s"),
-			SigninVerificationCodeTemplate:        getEnvString("MESSAGE_SIGNIN_VERIFICATION_CODE_TEMPLATE", "Your verification code is %s"),
-			OTPResendVerificationCodeTemplate:     getEnvString("MESSAGE_OTP_RESEND_VERIFICATION_CODE_TEMPLATE", "Your new verification code is: %s. Valid for %v minutes."),
-			PasswordResetVerificationCodeTemplate: getEnvString("MESSAGE_PASSWORD_RESET_VERIFICATION_CODE_TEMPLATE", "Your password reset code is: %s. This code will expire in %v minutes."),
-			CampaignRejectedTemplate:              getEnvString("MESSAGE_CAMPAIGN_REJECTED_TEMPLATE", "Your campaign has been rejected."),
-			DepositReceiptSubmittedTemplate:       getEnvString("MESSAGE_DEPOSIT_RECEIPT_SUBMITTED_TEMPLATE", "سلام شارژی در سامانه جاذبه انجام شده است. لطفا از پنل ادمین فاکتور مربوطه را صادر و آپلود نمایید"),
-			InvoiceIssueRequestTemplate:           getEnvString("MESSAGE_INVOICE_ISSUE_REQUEST_TEMPLATE", "درخواست صدور فاکتور ثبت شد. مشتری: %s، شرکت: %s"),
+			SignupVerificationCodeTemplate: getEnvString(
+				"MESSAGE_SIGNUP_VERIFICATION_CODE_TEMPLATE",
+				"Your verification code is %s",
+			),
+			SigninVerificationCodeTemplate: getEnvString(
+				"MESSAGE_SIGNIN_VERIFICATION_CODE_TEMPLATE",
+				"Your verification code is %s",
+			),
+			OTPResendVerificationCodeTemplate: getEnvString(
+				"MESSAGE_OTP_RESEND_VERIFICATION_CODE_TEMPLATE",
+				"Your new verification code is: %s. Valid for %v minutes.",
+			),
+			PasswordResetVerificationCodeTemplate: getEnvString(
+				"MESSAGE_PASSWORD_RESET_VERIFICATION_CODE_TEMPLATE",
+				"Your password reset code is: %s. This code will expire in %v minutes.",
+			),
+			CampaignRejectedTemplate: getEnvString("MESSAGE_CAMPAIGN_REJECTED_TEMPLATE", "Your campaign has been rejected."),
+			DepositReceiptSubmittedTemplate: getEnvString(
+				"MESSAGE_DEPOSIT_RECEIPT_SUBMITTED_TEMPLATE",
+				"سلام شارژی در سامانه جاذبه انجام شده است. لطفا از پنل ادمین فاکتور مربوطه را صادر و آپلود نمایید",
+			),
+			InvoiceIssueRequestTemplate: getEnvString(
+				"MESSAGE_INVOICE_ISSUE_REQUEST_TEMPLATE",
+				"درخواست صدور فاکتور ثبت شد. مشتری: %s، شرکت: %s",
+			),
 		},
 		SmartTagEvaluation: SmartTagEvaluationConfig{
 			Enabled:               smartTagEvaluationEnabled,
@@ -1224,7 +1263,8 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		if strings.TrimSpace(cfg.PayamSMS.Password) == "" {
 			errors = append(errors, "PAYAM_SMS_PASSWORD is required when PAYAM_BALANCE_MONITOR_ENABLED is true")
 		}
-		if cfg.Scheduler.PayamBalanceMonitorThresholdTomans <= 0 || cfg.Scheduler.PayamBalanceMonitorThresholdTomans > 922_337_203_685_477_580 {
+		if cfg.Scheduler.PayamBalanceMonitorThresholdTomans <= 0 ||
+			cfg.Scheduler.PayamBalanceMonitorThresholdTomans > 922_337_203_685_477_580 {
 			errors = append(errors, "PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS must be between 1 and 922337203685477580")
 		}
 	}
@@ -1350,8 +1390,14 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		if cfg.Scheduler.CampaignAudienceReportLeaseDuration <= cfg.Scheduler.CampaignAudienceReportJobTimeout {
 			errors = append(errors, "CAMPAIGN_AUDIENCE_REPORT_LEASE_DURATION must exceed CAMPAIGN_AUDIENCE_REPORT_JOB_TIMEOUT")
 		}
-		if strings.TrimSpace(cfg.Scheduler.CampaignAudienceReportStorageRoot) == "" || cfg.Scheduler.CampaignAudienceReportMaxRows <= 0 || cfg.Scheduler.CampaignAudienceReportMaxOutputBytes <= 0 || cfg.Scheduler.CampaignAudienceReportMaxJobsPerCustomer <= 0 || cfg.Scheduler.CampaignAudienceReportMaxParallelRuns <= 0 {
-			errors = append(errors, "campaign audience report storage root, max rows, max output bytes, max jobs per customer, and max parallel runs must be positive")
+		if strings.TrimSpace(cfg.Scheduler.CampaignAudienceReportStorageRoot) == "" || cfg.Scheduler.CampaignAudienceReportMaxRows <= 0 ||
+			cfg.Scheduler.CampaignAudienceReportMaxOutputBytes <= 0 ||
+			cfg.Scheduler.CampaignAudienceReportMaxJobsPerCustomer <= 0 ||
+			cfg.Scheduler.CampaignAudienceReportMaxParallelRuns <= 0 {
+			errors = append(
+				errors,
+				"campaign audience report storage root, max rows, max output bytes, max jobs per customer, and max parallel runs must be positive",
+			)
 		}
 	}
 	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
@@ -1365,7 +1411,10 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT must be positive")
 		}
 		if cfg.Scheduler.CampaignRefundReconciliationLeaseDuration <= cfg.Scheduler.CampaignRefundReconciliationJobTimeout {
-			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_LEASE_DURATION must be greater than CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT")
+			errors = append(
+				errors,
+				"CAMPAIGN_REFUND_RECONCILIATION_LEASE_DURATION must be greater than CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT",
+			)
 		}
 		if cfg.Scheduler.CampaignRefundReconciliationMaxParallelRuns <= 0 {
 			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_MAX_PARALLEL_RUNS must be positive")
@@ -1376,7 +1425,8 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		if cfg.Scheduler.CampaignRefundReconciliationMaxAttempts <= 0 {
 			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_MAX_ATTEMPTS must be positive")
 		}
-		if cfg.Scheduler.CampaignRefundReconciliationRetryBase <= 0 || cfg.Scheduler.CampaignRefundReconciliationRetryMax < cfg.Scheduler.CampaignRefundReconciliationRetryBase {
+		if cfg.Scheduler.CampaignRefundReconciliationRetryBase <= 0 ||
+			cfg.Scheduler.CampaignRefundReconciliationRetryMax < cfg.Scheduler.CampaignRefundReconciliationRetryBase {
 			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION retry durations must be positive and max must be at least base")
 		}
 	}

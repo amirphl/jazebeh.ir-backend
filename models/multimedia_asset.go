@@ -10,17 +10,17 @@ import (
 
 // MultimediaAsset represents an uploaded image or video stored on disk.
 type MultimediaAsset struct {
-	ID               uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID               uint      `gorm:"primaryKey;autoIncrement"                                 json:"id"`
 	UUID             uuid.UUID `gorm:"type:uuid;uniqueIndex;not null;default:gen_random_uuid()" json:"uuid"`
-	CustomerID       uint      `gorm:"not null;index" json:"customer_id"`
-	OriginalFilename string    `gorm:"type:varchar(255);not null" json:"original_filename"`
-	StoredPath       string    `gorm:"type:text;not null" json:"stored_path"`
-	SizeBytes        int64     `gorm:"type:bigint;not null" json:"size_bytes"`
-	MimeType         string    `gorm:"type:varchar(100);not null" json:"mime_type"`
-	MediaType        string    `gorm:"type:varchar(20);not null;index" json:"media_type"`
-	Extension        string    `gorm:"type:varchar(20);not null" json:"extension"`
-	CreatedAt        time.Time `gorm:"not null;default:CURRENT_TIMESTAMP;index" json:"created_at"`
-	UpdatedAt        time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
+	CustomerID       uint      `gorm:"not null;index"                                           json:"customer_id"`
+	OriginalFilename string    `gorm:"type:varchar(255);not null"                               json:"original_filename"`
+	StoredPath       string    `gorm:"type:text;not null"                                       json:"stored_path"`
+	SizeBytes        int64     `gorm:"type:bigint;not null"                                     json:"size_bytes"`
+	MimeType         string    `gorm:"type:varchar(100);not null"                               json:"mime_type"`
+	MediaType        string    `gorm:"type:varchar(20);not null;index"                          json:"media_type"`
+	Extension        string    `gorm:"type:varchar(20);not null"                                json:"extension"`
+	CreatedAt        time.Time `gorm:"not null;default:CURRENT_TIMESTAMP;index"                 json:"created_at"`
+	UpdatedAt        time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"                       json:"updated_at"`
 
 	Customer *Customer `gorm:"foreignKey:CustomerID;references:ID;constraint:OnDelete:CASCADE" json:"customer,omitempty"`
 }

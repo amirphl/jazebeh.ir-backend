@@ -25,18 +25,18 @@ type RubikaStatusAggregates struct {
 }
 
 type RubikaTrackingResult struct {
-	AudienceProfileUID    *string         `json:"audienceProfileUID" gorm:"column:audience_profile_uid"`
-	PhoneNumber           string          `json:"phoneNumber" gorm:"column:phone_number"`
-	TrackingID            string          `json:"trackingID" gorm:"column:tracking_id"`
-	TotalParts            *int64          `json:"totalParts" gorm:"column:total_parts"`
-	TotalDeliveredParts   *int64          `json:"totalDeliveredParts" gorm:"column:total_delivered_parts"`
+	AudienceProfileUID    *string         `json:"audienceProfileUID"    gorm:"column:audience_profile_uid"`
+	PhoneNumber           string          `json:"phoneNumber"           gorm:"column:phone_number"`
+	TrackingID            string          `json:"trackingID"            gorm:"column:tracking_id"`
+	TotalParts            *int64          `json:"totalParts"            gorm:"column:total_parts"`
+	TotalDeliveredParts   *int64          `json:"totalDeliveredParts"   gorm:"column:total_delivered_parts"`
 	TotalUndeliveredParts *int64          `json:"totalUndeliveredParts" gorm:"column:total_undelivered_parts"`
-	TotalUnknownParts     *int64          `json:"totalUnknownParts" gorm:"column:total_unknown_parts"`
-	Status                *string         `json:"status" gorm:"column:status"`
-	ServerID              *string         `json:"serverID,omitempty" gorm:"column:server_id"`
-	ErrorCode             *string         `json:"errorCode,omitempty" gorm:"column:error_code"`
+	TotalUnknownParts     *int64          `json:"totalUnknownParts"     gorm:"column:total_unknown_parts"`
+	Status                *string         `json:"status"                gorm:"column:status"`
+	ServerID              *string         `json:"serverID,omitempty"    gorm:"column:server_id"`
+	ErrorCode             *string         `json:"errorCode,omitempty"   gorm:"column:error_code"`
 	Description           *string         `json:"description,omitempty" gorm:"column:description"`
-	Metadata              json.RawMessage `json:"metadata,omitempty" gorm:"column:metadata"`
+	Metadata              json.RawMessage `json:"metadata,omitempty"    gorm:"column:metadata"`
 }
 
 func NewRubikaStatusResultRepository(db *gorm.DB) RubikaStatusResultRepository {
@@ -97,7 +97,12 @@ func (r *RubikaStatusResultRepositoryImpl) SaveBatch(ctx context.Context, rows [
 	}).Create(&deduped).Error
 }
 
-func (r *RubikaStatusResultRepositoryImpl) ByFilter(ctx context.Context, _ any, orderBy string, limit, offset int) ([]*models.RubikaStatusResult, error) {
+func (r *RubikaStatusResultRepositoryImpl) ByFilter(
+	ctx context.Context,
+	_ any,
+	orderBy string,
+	limit, offset int,
+) ([]*models.RubikaStatusResult, error) {
 	db := r.getDB(ctx)
 	if orderBy != "" {
 		db = db.Order(orderBy)
@@ -124,7 +129,10 @@ func (r *RubikaStatusResultRepositoryImpl) Count(ctx context.Context, _ any) (in
 	return count, nil
 }
 
-func (r *RubikaStatusResultRepositoryImpl) AggregateByCampaign(ctx context.Context, processedCampaignID uint) (*RubikaStatusAggregates, error) {
+func (r *RubikaStatusResultRepositoryImpl) AggregateByCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+) (*RubikaStatusAggregates, error) {
 	db := r.getDB(ctx)
 	var agg RubikaStatusAggregates
 	if err := db.Table("rubika_status_results").
@@ -142,7 +150,10 @@ func (r *RubikaStatusResultRepositoryImpl) AggregateByCampaign(ctx context.Conte
 	return &agg, nil
 }
 
-func (r *RubikaStatusResultRepositoryImpl) TrackingResultsByCampaign(ctx context.Context, processedCampaignID uint) ([]RubikaTrackingResult, error) {
+func (r *RubikaStatusResultRepositoryImpl) TrackingResultsByCampaign(
+	ctx context.Context,
+	processedCampaignID uint,
+) ([]RubikaTrackingResult, error) {
 	db := r.getDB(ctx)
 	trackingResults := make([]RubikaTrackingResult, 0)
 	if err := db.Table("rubika_status_results AS rsr").

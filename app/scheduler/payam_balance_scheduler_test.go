@@ -47,7 +47,15 @@ func TestPayamBalanceSchedulerExponentiallyDelaysAndResetsWarnings(t *testing.T)
 	now := time.Date(2026, time.September, 7, 12, 0, 0, 0, time.UTC)
 	client := &stubPayamBalanceClient{balance: 999_999_999}
 	notifier := &stubBalanceNotifier{}
-	s := NewPayamBalanceScheduler(client, notifier, config.AdminConfig{Mobiles: []string{"989121234567"}}, log.New(io.Discard, "", 0), 5*time.Minute, 100_000_000, time.Hour)
+	s := NewPayamBalanceScheduler(
+		client,
+		notifier,
+		config.AdminConfig{Mobiles: []string{"989121234567"}},
+		log.New(io.Discard, "", 0),
+		5*time.Minute,
+		100_000_000,
+		time.Hour,
+	)
 	s.now = func() time.Time { return now }
 
 	s.runOnce(context.Background())
@@ -84,7 +92,15 @@ func TestPayamBalanceSchedulerExponentiallyDelaysAndResetsWarnings(t *testing.T)
 func TestPayamBalanceSchedulerDoesNotAdvanceAlertAfterNotificationFailure(t *testing.T) {
 	client := &stubPayamBalanceClient{balance: 1}
 	notifier := &stubBalanceNotifier{err: errors.New("PayamSMS send http status 503: temporary"), failFor: 2}
-	s := NewPayamBalanceScheduler(client, notifier, config.AdminConfig{Mobiles: []string{"989121234567"}}, log.New(io.Discard, "", 0), time.Minute, 100, time.Hour)
+	s := NewPayamBalanceScheduler(
+		client,
+		notifier,
+		config.AdminConfig{Mobiles: []string{"989121234567"}},
+		log.New(io.Discard, "", 0),
+		time.Minute,
+		100,
+		time.Hour,
+	)
 	s.warningRetryDelay = func(int) time.Duration { return 0 }
 
 	s.runOnce(context.Background())
@@ -103,7 +119,15 @@ func TestPayamBalanceSchedulerDoesNotAdvanceAlertAfterNotificationFailure(t *tes
 }
 
 func TestPayamBalanceSchedulerClampsOverflowingThreshold(t *testing.T) {
-	s := NewPayamBalanceScheduler(nil, nil, config.AdminConfig{}, log.New(io.Discard, "", 0), time.Minute, maxPayamBalanceThresholdTomans+1, time.Hour)
+	s := NewPayamBalanceScheduler(
+		nil,
+		nil,
+		config.AdminConfig{},
+		log.New(io.Discard, "", 0),
+		time.Minute,
+		maxPayamBalanceThresholdTomans+1,
+		time.Hour,
+	)
 	if s.thresholdRial != defaultPayamBalanceThresholdTomans*10 {
 		t.Fatalf("thresholdRial = %d, want default %d", s.thresholdRial, defaultPayamBalanceThresholdTomans*10)
 	}

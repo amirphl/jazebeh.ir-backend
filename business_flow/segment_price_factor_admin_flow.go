@@ -15,7 +15,10 @@ import (
 
 // SegmentPriceFactorAdminFlow defines admin operations for segment price factors.
 type SegmentPriceFactorAdminFlow interface {
-	AdminCreateSegmentPriceFactor(ctx context.Context, req *dto.AdminCreateSegmentPriceFactorRequest) (*dto.AdminCreateSegmentPriceFactorResponse, error)
+	AdminCreateSegmentPriceFactor(
+		ctx context.Context,
+		req *dto.AdminCreateSegmentPriceFactorRequest,
+	) (*dto.AdminCreateSegmentPriceFactorResponse, error)
 	AdminListSegmentPriceFactors(ctx context.Context, platform *string) (*dto.AdminListSegmentPriceFactorsResponse, error)
 	AdminListLevel3Options(ctx context.Context) (*dto.AdminListLevel3OptionsResponse, error)
 }
@@ -36,7 +39,10 @@ func NewSegmentPriceFactorFlow(
 }
 
 // AdminCreateSegmentPriceFactor upserts a price factor for a given level3 (latest row wins).
-func (f *SegmentPriceFactorFlowImpl) AdminCreateSegmentPriceFactor(ctx context.Context, req *dto.AdminCreateSegmentPriceFactorRequest) (*dto.AdminCreateSegmentPriceFactorResponse, error) {
+func (f *SegmentPriceFactorFlowImpl) AdminCreateSegmentPriceFactor(
+	ctx context.Context,
+	req *dto.AdminCreateSegmentPriceFactorRequest,
+) (*dto.AdminCreateSegmentPriceFactorResponse, error) {
 	level3 := strings.TrimSpace(req.Level3)
 	if level3 == "" {
 		return nil, NewBusinessError("SEGMENT_PRICE_FACTOR_LEVEL3_REQUIRED", "Level3 is required", ErrLevel3Required)
@@ -69,7 +75,10 @@ func (f *SegmentPriceFactorFlowImpl) AdminCreateSegmentPriceFactor(ctx context.C
 }
 
 // AdminListSegmentPriceFactors returns the latest price factor per level3.
-func (f *SegmentPriceFactorFlowImpl) AdminListSegmentPriceFactors(ctx context.Context, platform *string) (*dto.AdminListSegmentPriceFactorsResponse, error) {
+func (f *SegmentPriceFactorFlowImpl) AdminListSegmentPriceFactors(
+	ctx context.Context,
+	platform *string,
+) (*dto.AdminListSegmentPriceFactorsResponse, error) {
 	normalizedPlatform, err := normalizeAndValidateSegmentPlatform(platform)
 	if err != nil {
 		return nil, err

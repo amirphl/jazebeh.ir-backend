@@ -153,7 +153,12 @@ func (r *AuditLogRepositoryImpl) applyFilter(query *gorm.DB, filter models.Audit
 }
 
 // ByFilter retrieves audit logs based on filter criteria
-func (r *AuditLogRepositoryImpl) ByFilter(ctx context.Context, filter models.AuditLogFilter, orderBy string, limit, offset int) ([]*models.AuditLog, error) {
+func (r *AuditLogRepositoryImpl) ByFilter(
+	ctx context.Context,
+	filter models.AuditLogFilter,
+	orderBy string,
+	limit, offset int,
+) ([]*models.AuditLog, error) {
 	db := r.getDB(ctx)
 	query := db.Model(&models.AuditLog{})
 

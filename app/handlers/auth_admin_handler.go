@@ -112,7 +112,8 @@ func (h *AuthAdminHandler) VerifyLogin(c fiber.Ctx) error {
 		if businessflow.IsInvalidCaptcha(err) {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid captcha", "INVALID_CAPTCHA", nil)
 		}
-		if businessflow.IsAuthenticationFailed(err) || businessflow.IsAdminNotFound(err) || businessflow.IsAdminInactive(err) || businessflow.IsIncorrectPassword(err) {
+		if businessflow.IsAuthenticationFailed(err) || businessflow.IsAdminNotFound(err) || businessflow.IsAdminInactive(err) ||
+			businessflow.IsIncorrectPassword(err) {
 			return h.ErrorResponse(c, fiber.StatusUnauthorized, "Login failed", "LOGIN_FAILED", nil)
 		}
 		log.Println("Admin login failed", err)
@@ -139,7 +140,9 @@ func (h *AuthAdminHandler) VerifyLogin(c fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param request body dto.AdminLoginVerifyOTPRequest true "Admin login OTP verification data"
-// @Success 200 {object} dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,admin=dto.AdminDTO}} "Login successful"
+// @Success 200 {object}
+// dto.APIResponse{data=object{access_token=string,refresh_token=string,token_type=string,expires_in=int,admin=dto.AdminDTO}} "Login
+// successful"
 // @Failure 400 {object} dto.APIResponse "Invalid request body"
 // @Failure 401 {object} dto.APIResponse "Invalid or expired OTP"
 // @Failure 403 {object} dto.APIResponse "Admin inactive"
@@ -167,7 +170,8 @@ func (h *AuthAdminHandler) VerifyLoginOTP(c fiber.Ctx) error {
 		if businessflow.IsRateLimitExceeded(err) {
 			return h.ErrorResponse(c, fiber.StatusTooManyRequests, "Too many attempts", "RATE_LIMITED", nil)
 		}
-		if businessflow.IsAdminNotFound(err) || businessflow.IsIncorrectPassword(err) || businessflow.IsNoValidOTPFound(err) || businessflow.IsInvalidOTPCode(err) {
+		if businessflow.IsAdminNotFound(err) || businessflow.IsIncorrectPassword(err) || businessflow.IsNoValidOTPFound(err) ||
+			businessflow.IsInvalidOTPCode(err) {
 			return h.ErrorResponse(c, fiber.StatusUnauthorized, "Invalid or expired OTP", "INVALID_OTP", nil)
 		}
 		if businessflow.IsAdminInactive(err) {
@@ -186,7 +190,11 @@ func (h *AuthAdminHandler) VerifyLoginOTP(c fiber.Ctx) error {
 	})
 }
 
-func (h *AuthAdminHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
+func (h *AuthAdminHandler) createRequestContextWithTimeout(
+	c fiber.Ctx,
+	endpoint string,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ctx = context.WithValue(ctx, utils.RequestIDKey, c.Get("X-Request-ID"))
 	ctx = context.WithValue(ctx, utils.UserAgentKey, c.Get("User-Agent"))

@@ -67,11 +67,20 @@ func TestExecutionConfigurationUsesRunSnapshot(t *testing.T) {
 		t.Fatalf("expected snapshotted prompts, got persona=%q scoring=%q", got.PersonaAnalysis.SystemPrompt, got.TagScoring.SystemPrompt)
 	}
 	if got.OpenAI.Model != "model-v1" || !got.Validation.RequireExactTagIDs || got.Validation.MaxMissingTagCount != 1 {
-		t.Fatalf("expected snapshotted execution settings, got model=%q exact_ids=%v max_missing=%d", got.OpenAI.Model, got.Validation.RequireExactTagIDs, got.Validation.MaxMissingTagCount)
+		t.Fatalf(
+			"expected snapshotted execution settings, got model=%q exact_ids=%v max_missing=%d",
+			got.OpenAI.Model,
+			got.Validation.RequireExactTagIDs,
+			got.Validation.MaxMissingTagCount,
+		)
 	}
 	if got.OpenAI.ReasoningEffort == nil || *got.OpenAI.ReasoningEffort != reasoningEffort ||
 		got.OpenAI.Temperature == nil || *got.OpenAI.Temperature != temperature {
-		t.Fatalf("expected snapshotted optional settings, got reasoning=%v temperature=%v", got.OpenAI.ReasoningEffort, got.OpenAI.Temperature)
+		t.Fatalf(
+			"expected snapshotted optional settings, got reasoning=%v temperature=%v",
+			got.OpenAI.ReasoningEffort,
+			got.OpenAI.Temperature,
+		)
 	}
 	if got.OpenAI.HTTPProxy == nil || *got.OpenAI.HTTPProxy != currentProxy {
 		t.Fatalf("expected current operational proxy, got %v", got.OpenAI.HTTPProxy)
@@ -148,13 +157,18 @@ func TestRunBatchesConcurrentlyBoundsParallelism(t *testing.T) {
 func TestRunBatchesConcurrentlyPreservesRootError(t *testing.T) {
 	rootErr := errors.New("invalid OpenAI batch response")
 	batches := []*models.BundleTagEvaluationBatch{{BatchNumber: 1}, {BatchNumber: 2}}
-	err := runBundleTagEvaluationBatchesConcurrently(context.Background(), batches, 2, func(ctx context.Context, batch *models.BundleTagEvaluationBatch) error {
-		if batch.BatchNumber == 2 {
-			return rootErr
-		}
-		<-ctx.Done()
-		return ctx.Err()
-	})
+	err := runBundleTagEvaluationBatchesConcurrently(
+		context.Background(),
+		batches,
+		2,
+		func(ctx context.Context, batch *models.BundleTagEvaluationBatch) error {
+			if batch.BatchNumber == 2 {
+				return rootErr
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	)
 	if !errors.Is(err, rootErr) {
 		t.Fatalf("expected root batch error, got %v", err)
 	}
@@ -229,7 +243,11 @@ func TestExecutionConfigurationSnapshotPreservesUnsetOptionalParameters(t *testi
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got.OpenAI.ReasoningEffort != nil || got.OpenAI.Temperature != nil {
-		t.Fatalf("expected unset snapshotted options to remain nil, got reasoning=%v temperature=%v", got.OpenAI.ReasoningEffort, got.OpenAI.Temperature)
+		t.Fatalf(
+			"expected unset snapshotted options to remain nil, got reasoning=%v temperature=%v",
+			got.OpenAI.ReasoningEffort,
+			got.OpenAI.Temperature,
+		)
 	}
 }
 
@@ -249,7 +267,13 @@ func TestBuildOpenAIPayloadOptionalParameters(t *testing.T) {
 		_, hasTemperature := payload["temperature"]
 		_, hasReasoning := payload["reasoning"]
 		if hasTemperature != wantPresent || hasReasoning != wantPresent {
-			t.Fatalf("optional parameter presence: temperature=%v reasoning=%v, want %v; payload=%v", hasTemperature, hasReasoning, wantPresent, payload)
+			t.Fatalf(
+				"optional parameter presence: temperature=%v reasoning=%v, want %v; payload=%v",
+				hasTemperature,
+				hasReasoning,
+				wantPresent,
+				payload,
+			)
 		}
 	}
 

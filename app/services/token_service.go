@@ -82,7 +82,12 @@ type TokenServiceImpl struct {
 }
 
 // NewTokenService creates a new token service
-func NewTokenService(accessTokenTTL, refreshTokenTTL time.Duration, issuer, audience string, useRSAKeys bool, privateKeyPEM, publicKeyPEM, secretKey string) (TokenService, error) {
+func NewTokenService(
+	accessTokenTTL, refreshTokenTTL time.Duration,
+	issuer, audience string,
+	useRSAKeys bool,
+	privateKeyPEM, publicKeyPEM, secretKey string,
+) (TokenService, error) {
 	var privateKey *rsa.PrivateKey
 	var publicKey *rsa.PublicKey
 	var secretKeyBytes []byte

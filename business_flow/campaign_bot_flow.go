@@ -26,7 +26,11 @@ type BotCampaignFlow interface {
 	MoveCampaignToRunning(ctx context.Context, campaignID uint) error
 	MoveCampaignToExecuted(ctx context.Context, campaignID uint) error
 	DownloadTargetAudienceExcelFile(ctx context.Context, campaignID uint) (string, string, []byte, error)
-	UpdateCampaignStatistics(ctx context.Context, campaignID uint, statistics map[string]any) (*dto.BotUpdateCampaignStatisticsResponse, error)
+	UpdateCampaignStatistics(
+		ctx context.Context,
+		campaignID uint,
+		statistics map[string]any,
+	) (*dto.BotUpdateCampaignStatisticsResponse, error)
 	PushCampaignAudienceUIDs(ctx context.Context, campaignID uint, items []dto.BotAudienceUIDItem) error
 }
 
@@ -45,7 +49,11 @@ type BotCampaignFlowImpl struct {
 
 // currentOrFrozenSmartTargetingTestSamplingIntent shares the campaign flow's
 // immutable Test-selection validation with the bot readiness feed.
-func (s *BotCampaignFlowImpl) currentOrFrozenSmartTargetingTestSamplingIntent(ctx context.Context, campaign *models.Campaign, requireSatisfied bool) (*smartTargetingTestSamplingIntent, error) {
+func (s *BotCampaignFlowImpl) currentOrFrozenSmartTargetingTestSamplingIntent(
+	ctx context.Context,
+	campaign *models.Campaign,
+	requireSatisfied bool,
+) (*smartTargetingTestSamplingIntent, error) {
 	resolver := &CampaignFlowImpl{
 		db:                      s.db,
 		selectedTagRepo:         s.selectedTagRepo,
@@ -92,7 +100,11 @@ func (s *BotCampaignFlowImpl) ListReadyCampaigns(ctx context.Context, platform *
 		p := strings.ToLower(strings.TrimSpace(*platform))
 		if p != "" {
 			if !models.IsValidCampaignPlatform(p) {
-				return nil, NewBusinessError("BOT_LIST_READY_CAMPAIGNS_FAILED", "Failed to list ready campaigns", ErrCampaignPlatformInvalid)
+				return nil, NewBusinessError(
+					"BOT_LIST_READY_CAMPAIGNS_FAILED",
+					"Failed to list ready campaigns",
+					ErrCampaignPlatformInvalid,
+				)
 			}
 			cf.Platform = &p
 		}
@@ -122,7 +134,11 @@ func (s *BotCampaignFlowImpl) ListReadyCampaigns(ctx context.Context, platform *
 		if c.Spec.UsesSmartTargeting() && c.Phase == models.CampaignPhaseTest {
 			intent, intentErr := s.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, c, true)
 			if intentErr != nil {
-				return nil, NewBusinessError("BOT_LIST_READY_CAMPAIGNS_FAILED", "Smart Targeting Test sampling intent is invalid", intentErr)
+				return nil, NewBusinessError(
+					"BOT_LIST_READY_CAMPAIGNS_FAILED",
+					"Smart Targeting Test sampling intent is invalid",
+					intentErr,
+				)
 			}
 			smartTestSatisfiedTagIDs = append([]uint(nil), intent.satisfied...)
 			smartTestSelectionID = c.ActiveSmartTargetingTestSelectionID
@@ -276,7 +292,10 @@ func (s *BotCampaignFlowImpl) readPlatformBasePriceFromMetadata(ctx context.Cont
 	return &basePrice, nil
 }
 
-func (s *BotCampaignFlowImpl) loadPlatformSettingsSpecs(ctx context.Context, campaigns []*models.Campaign) (map[uint]*dto.BotCampaignPlatformSettingsSpec, error) {
+func (s *BotCampaignFlowImpl) loadPlatformSettingsSpecs(
+	ctx context.Context,
+	campaigns []*models.Campaign,
+) (map[uint]*dto.BotCampaignPlatformSettingsSpec, error) {
 	ids := make(map[uint]struct{})
 	for _, campaign := range campaigns {
 		if campaign.Spec.PlatformSettingsID == nil || *campaign.Spec.PlatformSettingsID == 0 {
@@ -402,7 +421,11 @@ func (s *BotCampaignFlowImpl) DownloadTargetAudienceExcelFile(ctx context.Contex
 	excelFileUUID := strings.TrimSpace(*campaign.Spec.TargetAudienceExcelFileUUID)
 	asset, err := s.multimediaRepo.ByUUID(ctx, excelFileUUID)
 	if err != nil {
-		return "", "", nil, NewBusinessError("BOT_DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED", "Failed to fetch target audience excel file", err)
+		return "", "", nil, NewBusinessError(
+			"BOT_DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED",
+			"Failed to fetch target audience excel file",
+			err,
+		)
 	}
 	if asset == nil {
 		return "", "", nil, NewBusinessError(
@@ -414,7 +437,11 @@ func (s *BotCampaignFlowImpl) DownloadTargetAudienceExcelFile(ctx context.Contex
 
 	cleanPath, err := sanitizeMultimediaPath(asset.StoredPath)
 	if err != nil {
-		return "", "", nil, NewBusinessError("BOT_DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED", "Failed to resolve target audience excel path", err)
+		return "", "", nil, NewBusinessError(
+			"BOT_DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED",
+			"Failed to resolve target audience excel path",
+			err,
+		)
 	}
 
 	data, err := os.ReadFile(cleanPath)
@@ -426,7 +453,11 @@ func (s *BotCampaignFlowImpl) DownloadTargetAudienceExcelFile(ctx context.Contex
 				ErrCampaignTargetAudienceExcelMediaNotFound,
 			)
 		}
-		return "", "", nil, NewBusinessError("BOT_DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED", "Failed to read target audience excel file", err)
+		return "", "", nil, NewBusinessError(
+			"BOT_DOWNLOAD_TARGET_AUDIENCE_EXCEL_FILE_FAILED",
+			"Failed to read target audience excel file",
+			err,
+		)
 	}
 
 	filename := strings.TrimSpace(asset.OriginalFilename)
@@ -442,7 +473,11 @@ func (s *BotCampaignFlowImpl) DownloadTargetAudienceExcelFile(ctx context.Contex
 }
 
 // UpdateCampaignStatistics updates the statistics JSON field of a campaign
-func (s *BotCampaignFlowImpl) UpdateCampaignStatistics(ctx context.Context, campaignID uint, statistics map[string]any) (*dto.BotUpdateCampaignStatisticsResponse, error) {
+func (s *BotCampaignFlowImpl) UpdateCampaignStatistics(
+	ctx context.Context,
+	campaignID uint,
+	statistics map[string]any,
+) (*dto.BotUpdateCampaignStatisticsResponse, error) {
 	if campaignID == 0 {
 		return nil, NewBusinessError("VALIDATION_ERROR", "campaign_id must be greater than 0", nil)
 	}

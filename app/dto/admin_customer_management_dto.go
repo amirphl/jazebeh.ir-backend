@@ -9,9 +9,9 @@ import (
 // AdminCustomersSharesRequest holds the bounded period and page for the report.
 type AdminCustomersSharesRequest struct {
 	StartDate *string `json:"start_date" validate:"required"`
-	EndDate   *string `json:"end_date" validate:"required"`
-	Page      int     `json:"page" validate:"min=1"`
-	PageSize  int     `json:"page_size" validate:"min=1,max=100"`
+	EndDate   *string `json:"end_date"   validate:"required"`
+	Page      int     `json:"page"       validate:"min=1"`
+	PageSize  int     `json:"page_size"  validate:"min=1,max=100"`
 }
 
 // AdminCustomersSharesItem represents a single row in the report
@@ -125,7 +125,7 @@ type AdminCustomerWithCampaignsResponse struct {
 type AdminCustomerDiscountHistoryItem struct {
 	DiscountRate       float64    `json:"discount_rate"`
 	CreatedAt          time.Time  `json:"created_at"`
-	ExpiresAt          *time.Time `json:"expires_at,omitempty" validate:"omitempty"`
+	ExpiresAt          *time.Time `json:"expires_at,omitempty"  validate:"omitempty"`
 	TotalSent          uint64     `json:"total_sent"`
 	AgencyShareWithTax uint64     `json:"agency_share_with_tax"`
 }

@@ -277,13 +277,19 @@ func (r *FiberRouter) SetupRoutes() {
 	campaigns.Post("/:uuid/smart-targeting/selection/auto", r.campaignHandler.AutoSelectSmartTargetingTags)
 	campaigns.Post("/:uuid/smart-targeting/capacity-calculations", r.campaignHandler.StartSmartTargetingCapacityCalculation)
 	campaigns.Get("/:uuid/smart-targeting/capacity-calculations", r.campaignHandler.GetSmartTargetingCapacityCalculation)
-	campaigns.Get("/:uuid/smart-targeting/capacity-calculations/:calculation_id", r.campaignHandler.GetSmartTargetingCapacityCalculationByID)
+	campaigns.Get(
+		"/:uuid/smart-targeting/capacity-calculations/:calculation_id",
+		r.campaignHandler.GetSmartTargetingCapacityCalculationByID,
+	)
 	campaigns.Post("/:uuid/smart-targeting/test-sampling-preview", r.campaignHandler.PreviewSmartTargetingTestSampling)
 	campaigns.Get("/:uuid/smart-targeting/test-sampling-preview", r.campaignHandler.GetSmartTargetingTestSampling)
 	campaigns.Get("/:uuid/smart-targeting/test-sampling-preview/:calculation_id", r.campaignHandler.GetSmartTargetingTestSamplingByID)
 	campaigns.Post("/:uuid/smart-targeting/execution-audience-calculations", r.campaignHandler.StartSmartTargetingExecutionCalculation)
 	campaigns.Get("/:uuid/smart-targeting/execution-audience-calculations", r.campaignHandler.GetCurrentSmartTargetingExecutionCalculation)
-	campaigns.Get("/:uuid/smart-targeting/execution-audience-calculations/:calculation_id", r.campaignHandler.GetSmartTargetingExecutionCalculation)
+	campaigns.Get(
+		"/:uuid/smart-targeting/execution-audience-calculations/:calculation_id",
+		r.campaignHandler.GetSmartTargetingExecutionCalculation,
+	)
 	campaigns.Post("/:uuid/clone", r.campaignHandler.CloneCampaign)
 	campaigns.Post("/:uuid/test-send", r.campaignHandler.SendCampaignTestMessage)
 	campaigns.Post("/calculate-capacity", r.campaignHandler.CalculateCampaignCapacity)

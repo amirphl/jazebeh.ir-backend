@@ -23,7 +23,10 @@ func NewLineNumberFlow(lineRepo repository.LineNumberRepository) LineNumberFlow 
 }
 
 // ListActiveLineNumbers returns active line numbers for customers
-func (f *LineNumberFlowImpl) ListActiveLineNumbers(ctx context.Context, metadata *ClientMetadata) (*dto.ListActiveLineNumbersResponse, error) {
+func (f *LineNumberFlowImpl) ListActiveLineNumbers(
+	ctx context.Context,
+	metadata *ClientMetadata,
+) (*dto.ListActiveLineNumbersResponse, error) {
 	var err error
 	defer func() {
 		if err != nil {

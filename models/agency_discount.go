@@ -10,17 +10,17 @@ import (
 )
 
 type AgencyDiscount struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
+	ID         uint      `gorm:"primaryKey"                                              json:"id"`
 	UUID       uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:uk_agency_discounts_uuid" json:"uuid"`
-	AgencyID   uint      `gorm:"not null;index:idx_agency_discounts_agency_id" json:"agency_id"`
-	CustomerID uint      `gorm:"not null;index:idx_agency_discounts_customer_id" json:"customer_id"`
+	AgencyID   uint      `gorm:"not null;index:idx_agency_discounts_agency_id"           json:"agency_id"`
+	CustomerID uint      `gorm:"not null;index:idx_agency_discounts_customer_id"         json:"customer_id"`
 	// DiscountRate must be between 0 and 0.5 inclusive
-	DiscountRate float64 `gorm:"type:numeric(5,4);not null" json:"discount_rate"`
+	DiscountRate float64 `gorm:"type:numeric(5,4);not null"                              json:"discount_rate"`
 	// ExpiresAt can be null to indicate the discount does not expire
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	ExpiresAt *time.Time `                                                               json:"expires_at,omitempty"`
 
 	// Optional fields
-	Reason   *string         `gorm:"size:255" json:"reason,omitempty"`
+	Reason   *string         `gorm:"size:255"   json:"reason,omitempty"`
 	Metadata json.RawMessage `gorm:"type:jsonb" json:"metadata,omitempty"`
 
 	CreatedAt time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"created_at"`

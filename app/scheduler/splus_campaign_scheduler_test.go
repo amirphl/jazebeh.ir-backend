@@ -39,7 +39,12 @@ type stubSentSplusMessageRepo struct {
 	listByTrackingIDsFn func(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentSplusMessage, error)
 }
 
-func (s *stubSentSplusMessageRepo) ByFilter(_ context.Context, _ models.SentSplusMessageFilter, _ string, _, _ int) ([]*models.SentSplusMessage, error) {
+func (s *stubSentSplusMessageRepo) ByFilter(
+	_ context.Context,
+	_ models.SentSplusMessageFilter,
+	_ string,
+	_, _ int,
+) ([]*models.SentSplusMessage, error) {
 	return nil, nil
 }
 
@@ -67,7 +72,11 @@ func (s *stubSentSplusMessageRepo) ListByProcessedCampaign(_ context.Context, _ 
 	return nil, nil
 }
 
-func (s *stubSentSplusMessageRepo) ListByTrackingIDs(ctx context.Context, processedCampaignID uint, trackingIDs []string) ([]*models.SentSplusMessage, error) {
+func (s *stubSentSplusMessageRepo) ListByTrackingIDs(
+	ctx context.Context,
+	processedCampaignID uint,
+	trackingIDs []string,
+) ([]*models.SentSplusMessage, error) {
 	if s.listByTrackingIDsFn != nil {
 		return s.listByTrackingIDsFn(ctx, processedCampaignID, trackingIDs)
 	}
@@ -78,7 +87,13 @@ func (s *stubSentSplusMessageRepo) TrackingResultsFromSentRows(_ context.Context
 	return nil, nil
 }
 
-func (s *stubSentSplusMessageRepo) UpdateSendResultByTrackingID(_ context.Context, _ string, _ models.SplusSendStatus, _ int, _, _, _ *string) error {
+func (s *stubSentSplusMessageRepo) UpdateSendResultByTrackingID(
+	_ context.Context,
+	_ string,
+	_ models.SplusSendStatus,
+	_ int,
+	_, _, _ *string,
+) error {
 	return nil
 }
 
@@ -107,20 +122,25 @@ func TestDispatchPendingSplusCampaignsSerializesSameBundle(t *testing.T) {
 		{ID: 3, CustomerID: 10, BundleID: &otherBundleID},
 	}
 
-	s.dispatchPendingSplusCampaigns(parent, "token-1", pending, func(ctx context.Context, token string, c dto.BotGetCampaignResponse) error {
-		if token != "token-1" {
-			t.Errorf("unexpected token: %q", token)
-		}
-		started <- c.ID
-		if c.ID == 1 {
-			select {
-			case <-releaseFirst:
-			case <-ctx.Done():
-				return ctx.Err()
+	s.dispatchPendingSplusCampaigns(
+		parent,
+		"token-1",
+		pending,
+		func(ctx context.Context, token string, c dto.BotGetCampaignResponse) error {
+			if token != "token-1" {
+				t.Errorf("unexpected token: %q", token)
 			}
-		}
-		return nil
-	})
+			started <- c.ID
+			if c.ID == 1 {
+				select {
+				case <-releaseFirst:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		},
+	)
 
 	seen := map[uint]bool{}
 	deadline := time.After(time.Second)
