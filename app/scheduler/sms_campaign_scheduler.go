@@ -1449,7 +1449,11 @@ func (s *SMSCampaignScheduler) handleStatusJob(ctx context.Context, job *models.
 		if pc == nil {
 			return fmt.Errorf("processed campaign not found for processed campaign id=%d", job.ProcessedCampaignID)
 		}
-		if shouldPushCurrentProcessedCampaignStatistics(pc, stats) {
+		publish, err := shouldPublishCurrentProcessedCampaignStatistics(ctx, s.jobRepo, pc, stats)
+		if err != nil {
+			return fmt.Errorf("check PayamSMS delivery statistics finality: %w", err)
+		}
+		if publish {
 			if err := s.botClient.PushCampaignStatistics(ctx, pc.CampaignID, stats); err != nil {
 				return fmt.Errorf("push PayamSMS delivery statistics to campaign API campaign_id=%d: %w", pc.CampaignID, err)
 			}
@@ -2080,7 +2084,11 @@ func (s *SMSCampaignScheduler) publishSMSStatusStatistics(ctx context.Context, p
 	if pc == nil {
 		return fmt.Errorf("processed campaign not found for processed campaign id=%d", processedCampaignID)
 	}
-	if shouldPushCurrentProcessedCampaignStatistics(pc, stats) {
+	publish, err := shouldPublishCurrentProcessedCampaignStatistics(ctx, s.jobRepo, pc, stats)
+	if err != nil {
+		return fmt.Errorf("check SMS delivery statistics finality: %w", err)
+	}
+	if publish {
 		return s.botClient.PushCampaignStatistics(ctx, pc.CampaignID, stats)
 	}
 	return nil
