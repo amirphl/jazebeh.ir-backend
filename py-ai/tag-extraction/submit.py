@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-import os
-import uuid
-import time
 import argparse
+import ast
+import os
+import sys
+import time
+import uuid
+from pathlib import Path
+from urllib.parse import urlsplit
+
 import pandas as pd
 import requests
-import sys
-import ast
 
-# API_URL = "https://jazebeh.ir/api/v1/bot/campaigns/audience-spec"
-API_URL = "http://localhost:8080/api/v1/bot/campaigns/audience-spec"
+PY_AI_ROOT = Path(__file__).resolve().parents[1]
+if str(PY_AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(PY_AI_ROOT))
+from operational_guard import require_confirmed_execution
+
+DEFAULT_API_BASE_URL = os.getenv("JAZEBEH_API_BASE_URL", "http://127.0.0.1:8080")
 ALLOWED_PLATFORMS = {"sms", "rubika", "bale", "splus"}
 
 
@@ -62,7 +69,27 @@ def main():
         default="audience_spec_push_log.csv",
         help="Path to write per-row results (default: audience_spec_push_log.csv)",
     )
+    parser.add_argument("--base-url", default=DEFAULT_API_BASE_URL, help="API base URL")
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="push audience specs; default is a dry run",
+    )
     args = parser.parse_args()
+    parsed_base_url = urlsplit(args.base_url)
+    if (
+        parsed_base_url.scheme not in {"http", "https"}
+        or not parsed_base_url.hostname
+        or parsed_base_url.username
+        or parsed_base_url.password
+        or parsed_base_url.query
+        or parsed_base_url.fragment
+        or parsed_base_url.path not in {"", "/"}
+    ):
+        parser.error(
+            "--base-url must be an HTTP(S) origin without credentials, query, or fragment"
+        )
+    api_url = args.base_url.rstrip("/") + "/api/v1/bot/campaigns/audience-spec"
     platform = clean_str(args.platform).lower()
     if platform not in ALLOWED_PLATFORMS:
         print(
@@ -73,7 +100,7 @@ def main():
 
     # token only from env
     token = os.getenv("JAZEBEH_API_TOKEN", "").strip()
-    if not token:
+    if args.execute and not token:
         print(
             "ERROR: JAZEBEH_API_TOKEN environment variable is missing or empty.",
             file=sys.stderr,
@@ -112,6 +139,12 @@ def main():
 
     # Filter invalid rows
     df = df[(df["level1"] != "") & (df["level2"] != "") & (df["level3"] != "")].copy()
+    if not args.execute:
+        print(
+            f"Dry run: would push {len(df)} audience specs to {api_url}. Pass --execute to push."
+        )
+        return
+    require_confirmed_execution(execute=True, action="Pushing audience specs")
 
     session = requests.Session()
     session.headers.update(
@@ -153,7 +186,7 @@ def main():
 
         try:
             resp = session.post(
-                API_URL,
+                api_url,
                 json=payload,
                 headers={"X-Request-ID": str(uuid.uuid4())},
                 timeout=args.timeout,
