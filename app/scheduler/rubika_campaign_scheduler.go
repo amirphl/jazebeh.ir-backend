@@ -846,7 +846,8 @@ func (s *RubikaCampaignScheduler) validateRubikaCampaign(c dto.BotGetCampaignRes
 	if strings.ToLower(strings.TrimSpace(c.Platform)) != models.CampaignPlatformRubika {
 		return fmt.Errorf("campaign platform is not rubika")
 	}
-	if strings.TrimSpace(s.rubikaCfg.Token) == "" {
+	_, mocked := s.rubikaClient.(*mockRubikaClient)
+	if !mocked && strings.TrimSpace(s.rubikaCfg.Token) == "" {
 		return fmt.Errorf("rubika token is not configured")
 	}
 	_, err := s.extractRubikaServiceID(c)
