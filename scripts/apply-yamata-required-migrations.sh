@@ -188,6 +188,9 @@ if [[ "$MODE" == repair ]]; then
 	# one lock per Bundle. It is safe to reapply and is required before large
 	# reservation or allocation writes are allowed back into production.
 	apply_file "$PROJECT_DIR/migrations/0149_reduce_bundle_claim_lock_contention.sql"
+	# Campaign listings use this safe parser for legacy schedule values. Apply
+	# its migration before the restored API is allowed to serve those listings.
+	apply_file "$PROJECT_DIR/migrations/0152_harden_campaign_refund_reconciliation.sql"
 else
 	log "Verification mode: no migrations will be applied"
 fi
@@ -474,9 +477,11 @@ fi
 		  AND is_generated='ALWAYS'
 	);")" == t ]] ||
 	die "Migration 0132 is incomplete: generated aggregate Test CTR is missing"
+[[ "$(psql_scalar "SELECT to_regprocedure('yamata_try_timestamptz(text)') IS NOT NULL;")" == t ]] ||
+	die "Migration 0152 is incomplete: yamata_try_timestamptz(text) is missing"
 
 if [[ "$MODE" == repair ]]; then
-	advance_migration_tracker '0149_reduce_bundle_claim_lock_contention.sql'
+	advance_migration_tracker '0152_harden_campaign_refund_reconciliation.sql'
 	log "Required schema repaired and verified"
 else
 	log "Required schema verified"
