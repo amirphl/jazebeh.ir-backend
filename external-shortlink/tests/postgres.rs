@@ -186,3 +186,121 @@ async fn postgres_mapping_click_cursor_and_idempotency() {
         .unwrap();
     assert_eq!(retained, 0);
 }
+
+// Exercise real mapping lookup and persisted clicks alongside a local destination.
+#[tokio::test]
+#[ignore = "requires EXTERNAL_SHORTLINK_TEST_DATABASE_URL"]
+async fn automated_visits_track_without_reaching_destination() {
+    use axum::{
+        Router,
+        body::{Body, to_bytes},
+        http::{Request, StatusCode, header},
+        routing::get,
+    };
+    use external_shortlink::server::{AppState, router};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tower::ServiceExt;
+
+    let database_url = env::var("EXTERNAL_SHORTLINK_TEST_DATABASE_URL").unwrap();
+    let pool = PgPool::connect(&database_url).await.unwrap();
+    let hits = Arc::new(AtomicU64::new(0));
+    let count = hits.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let destination = listener.local_addr().unwrap();
+    let destination_app = Router::new().route(
+        "/landing",
+        get(move || {
+            let count = count.clone();
+            async move {
+                count.fetch_add(1, Ordering::Relaxed);
+                "destination"
+            }
+        }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, destination_app).await.unwrap() });
+    let code = format!("preview-{}", Uuid::new_v4().simple());
+    let mut mapping = link(code.clone());
+    mapping.long_url = format!("http://{destination}/landing");
+    Database::new(&settings(database_url.clone()))
+        .unwrap()
+        .upload_links(&[mapping.clone()])
+        .await
+        .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut config = settings(database_url);
+    config.spool_path = directory.path().join("clicks.sqlite3");
+    config.click_insert_timeout = Duration::from_secs(5);
+    config.link_lookup_timeout = Duration::from_secs(5);
+    let state = AppState::initialize(config).await.unwrap();
+    for (index, ua) in [
+        "GoogleMessages",
+        "Mozilla/5.0 Chrome/120",
+        "Twitterbot",
+        "Mozilla/5.0 Safari/604",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let response = router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/{code}"))
+                    .header(header::USER_AGENT, *ua)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        // Follow redirects exactly when the response advertises one.
+        if let Some(location) = response.headers().get(header::LOCATION) {
+            assert_eq!(response.status(), StatusCode::FOUND);
+            assert_eq!(location.to_str().unwrap(), mapping.long_url);
+            let mut stream = tokio::net::TcpStream::connect(destination).await.unwrap();
+            stream
+                .write_all(
+                    format!(
+                        "GET /landing HTTP/1.1\r\nHost: {destination}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut body = Vec::new();
+            stream.read_to_end(&mut body).await.unwrap();
+            assert!(String::from_utf8_lossy(&body).contains("destination"));
+        } else {
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(
+                to_bytes(response.into_body(), 1024)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        assert_eq!(hits.load(Ordering::Relaxed), index.div_ceil(2) as u64);
+    }
+    let clicks: i64 = sqlx::query_scalar("SELECT count(*) FROM clicks WHERE short_code = $1")
+        .bind(&code)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(clicks, 4);
+    let missing = router(state)
+        .oneshot(
+            Request::builder()
+                .uri("/unknown-preview-code")
+                .header(header::USER_AGENT, "Googlebot")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert_eq!(missing.headers()[header::CACHE_CONTROL], "no-store");
+    server.abort();
+}
