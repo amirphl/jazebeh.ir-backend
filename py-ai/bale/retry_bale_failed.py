@@ -6,12 +6,17 @@ failure log and skipping rows where Bale reports the number is not a user.
 """
 
 import argparse
+import mimetypes
 import sys
 import time
 from pathlib import Path
 
 import requests
-import mimetypes
+
+PY_AI_ROOT = Path(__file__).resolve().parents[1]
+if str(PY_AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(PY_AI_ROOT))
+from operational_guard import require_live_production_execution
 
 NOT_USER_SUBSTR = "phone number is not bale user"
 NOT_USER_CODE = '"code":17'
@@ -130,17 +135,10 @@ def main() -> int:
         default=5,
         help="Max retry attempts per number (default 5)",
     )
+    parser.add_argument(
+        "--execute", action="store_true", help="retry sends; default is a dry run"
+    )
     args = parser.parse_args()
-
-    message = read_message(args.message_file)
-
-    media_file_id = None
-    if args.media_file:
-        ok, fid_or_err = upload_file(args.api_base, args.api_key, args.media_file)
-        if not ok:
-            print(f"Media upload failed: {fid_or_err}", file=sys.stderr)
-            return 1
-        media_file_id = fid_or_err
 
     numbers = read_failed_numbers(args.failed_file)
     if not numbers:
@@ -149,6 +147,21 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+
+    if not args.execute:
+        print(
+            f"Dry run: would retry {len(numbers)} Bale recipient(s). Pass --execute in production live mode to send."
+        )
+        return 0
+    require_live_production_execution(execute=True, action="Retrying Bale messages")
+    message = read_message(args.message_file)
+    media_file_id = None
+    if args.media_file:
+        ok, fid_or_err = upload_file(args.api_base, args.api_key, args.media_file)
+        if not ok:
+            print(f"Media upload failed: {fid_or_err}", file=sys.stderr)
+            return 1
+        media_file_id = fid_or_err
 
     print(f"Retrying {len(numbers)} numbers from {args.failed_file} ...")
 
