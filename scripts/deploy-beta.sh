@@ -63,9 +63,6 @@ export_beta_nginx_template_vars() {
 	export MONITORING_DOMAIN="monitoring.$domain"
 	export SENTRY_UI_DOMAIN="sentry.$domain"
 	export PGADMIN_DOMAIN="pg.$domain"
-	export HSTS_MAX_AGE="31536000"
-	export GLOBAL_RATE_LIMIT="1000"
-	export AUTH_RATE_LIMIT="10"
 }
 
 # Validate that every certificate path referenced in yamata-beta.conf exists and is valid
@@ -80,7 +77,7 @@ validate_nginx_certificates() {
 
 	export_beta_nginx_template_vars "$domain"
 
-	if ! envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $PGADMIN_DOMAIN $HSTS_MAX_AGE $GLOBAL_RATE_LIMIT $AUTH_RATE_LIMIT' < "$NGINX_TEMPLATE" > "$tmp_conf"; then
+	if ! envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $PGADMIN_DOMAIN' < "$NGINX_TEMPLATE" > "$tmp_conf"; then
 		rm -f "$tmp_conf"
 		print_error "Failed to render nginx template for certificate validation"
 		exit 1
@@ -114,7 +111,7 @@ validate_pgadmin_certificate_hostname() {
 	fi
 
 	"${privileged[@]}" openssl x509 -in "$certificate" \
-		-checkhost "$pgadmin_domain" -noout >/dev/null 2>&1 || {
+		-checkhost "$pgadmin_domain" -noout 2>/dev/null | grep -Fq 'does match certificate' || {
 		print_error "The existing certificate at $certificate does not cover $pgadmin_domain"
 		print_error "Issue a certificate with pg.$domain as a SAN or use a wildcard certificate before deploying"
 		return 1
@@ -144,13 +141,13 @@ generate_nginx_config() {
 	if [ -f "$NGINX_TEMPLATE" ] && [ -f "$PGADMIN_NGINX_TEMPLATE" ]; then
 		# Process the template with only specific environment variable substitution
 		# Use envsubst with specific variables to avoid interfering with Nginx variables
-		if ! envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $PGADMIN_DOMAIN $HSTS_MAX_AGE $GLOBAL_RATE_LIMIT $AUTH_RATE_LIMIT' < "$NGINX_TEMPLATE" > "$temporary_config"; then
+		if ! envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $PGADMIN_DOMAIN' < "$NGINX_TEMPLATE" > "$temporary_config"; then
 			rm -f -- "$temporary_config"
 			rm -f -- "$temporary_pgadmin_config"
 			print_error "Failed to render nginx configuration"
 			return 1
 		fi
-		if ! envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $PGADMIN_DOMAIN $HSTS_MAX_AGE $GLOBAL_RATE_LIMIT $AUTH_RATE_LIMIT' < "$PGADMIN_NGINX_TEMPLATE" > "$temporary_pgadmin_config"; then
+		if ! envsubst '$DOMAIN $PGADMIN_DOMAIN' < "$PGADMIN_NGINX_TEMPLATE" > "$temporary_pgadmin_config"; then
 			rm -f -- "$temporary_config"
 			rm -f -- "$temporary_pgadmin_config"
 			print_error "Failed to render pgAdmin Nginx configuration"
@@ -349,6 +346,16 @@ check_prerequisites() {
 		print_error "Docker daemon is not running. Please start Docker first."
 		exit 1
 	fi
+	local container project
+	for container in yamata-postgres-beta yamata-app-beta yamata-campaign-scheduler-beta; do
+		if $docker_cmd inspect "$container" >/dev/null 2>&1; then
+			project="$($docker_cmd inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$container")"
+			[[ "$project" != yamata-staging ]] || {
+				print_error "Refusing to deploy production over staging container $container"
+				return 1
+			}
+		fi
+	done
 	
 	print_success "All prerequisites are satisfied"
 }
