@@ -1,0 +1,22 @@
+groups:
+  - name: external-shortlink
+    rules:
+      - alert: ExternalShortlinkDown
+        expr: up{job=~"external_shortlink.*"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "External short-link monitoring target is down" }
+      - alert: ExternalShortlinkRedirectErrors
+        expr: sum(rate(external_shortlink_redirect_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(external_shortlink_redirect_requests_total[5m])), 0.001) > 0.01
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "External short-link 5xx rate exceeds 1%" }
+      - alert: ExternalShortlinkSpoolBacklog
+        expr: external_shortlink_spool_oldest_event_age_seconds > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "External short-link spool has events older than five minutes" }
+      - alert: ExternalShortlinkLostClicks
+        expr: increase(external_shortlink_spool_rejected_total[5m]) > 0
+        labels: { severity: critical }
+        annotations: { summary: "External short-link dropped click events" }
