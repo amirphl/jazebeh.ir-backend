@@ -2,6 +2,8 @@ use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
 
+const MAX_CACHE_ENTRIES: u64 = 200_000;
+
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub bind_addr: SocketAddr,
@@ -50,13 +52,17 @@ impl Settings {
         if pool_min_size > pool_max_size {
             bail!("EXTERNAL_SHORTLINK_POOL_MIN_SIZE cannot exceed EXTERNAL_SHORTLINK_POOL_MAX_SIZE")
         }
-        let cache_max_entries =
-            unsigned("EXTERNAL_SHORTLINK_CACHE_MAX_ENTRIES", 50_000, 1, 100_000)?;
+        let cache_max_entries = unsigned(
+            "EXTERNAL_SHORTLINK_CACHE_MAX_ENTRIES",
+            50_000,
+            1,
+            MAX_CACHE_ENTRIES,
+        )?;
         let cache_preload_entries = unsigned(
             "EXTERNAL_SHORTLINK_CACHE_PRELOAD_ENTRIES",
             25_000,
             0,
-            100_000,
+            MAX_CACHE_ENTRIES,
         )?;
         if cache_preload_entries > cache_max_entries {
             bail!(
@@ -208,6 +214,20 @@ mod tests {
     #[test]
     fn unsigned_enforces_upper_bound() {
         assert!(unsigned("EXTERNAL_SHORTLINK_TEST_UNSIGNED", 10, 1, 5).is_err());
+    }
+
+    #[test]
+    fn cache_entry_limit_allows_requested_capacity() {
+        assert_eq!(
+            unsigned(
+                "EXTERNAL_SHORTLINK_TEST_CACHE_ENTRIES",
+                MAX_CACHE_ENTRIES,
+                1,
+                MAX_CACHE_ENTRIES,
+            )
+            .unwrap(),
+            MAX_CACHE_ENTRIES
+        );
     }
 
     #[test]

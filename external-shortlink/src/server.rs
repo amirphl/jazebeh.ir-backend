@@ -407,7 +407,7 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
     let request_id = request_id(headers);
     if !is_valid_code(&code) {
         state.metrics.unknown_code();
-        warn!(component = logging::COMPONENT, event = "redirect_rejected_invalid_code", request_id = %request_id, code_length = code.len(), "redirect request used an invalid short code");
+        warn!(component = logging::COMPONENT, event = "redirect_rejected_invalid_code", request_id = %request_id, code = %code, code_length = code.len(), "redirect request used an invalid short code");
         return text_response(StatusCode::NOT_FOUND, "not found");
     }
     let link = if let Some(link) = state.cache.get(&code) {
@@ -428,7 +428,7 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
             }
             Ok(Ok(None)) => {
                 state.metrics.unknown_code();
-                warn!(component = logging::COMPONENT, event = "redirect_unknown_code", request_id = %request_id, code_length = code.len(), "redirect request referenced an unknown short code");
+                warn!(component = logging::COMPONENT, event = "redirect_unknown_code", request_id = %request_id, code = %code, code_length = code.len(), "redirect request referenced an unknown short code");
                 return text_response(StatusCode::NOT_FOUND, "not found");
             }
             Ok(Err(error)) => {

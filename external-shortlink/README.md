@@ -363,6 +363,12 @@ defaults. `EXTERNAL_SHORTLINK_BIND_ADDR` defaults to `127.0.0.1:8081`; do not
 bind it publicly. The spool path must be writable by the `external-shortlink`
 service account and live on durable local storage.
 
+`EXTERNAL_SHORTLINK_CACHE_MAX_ENTRIES` and
+`EXTERNAL_SHORTLINK_CACHE_PRELOAD_ENTRIES` may each be set as high as 200,000;
+the preload value must not exceed the cache capacity. On a host with a large
+historical link catalogue, size the cache for the active campaign window rather
+than attempting to preload every historical mapping.
+
 For an existing installation, add
 `EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS=10` to
 `/etc/external-shortlink.env` before deploying this version. This is separate
