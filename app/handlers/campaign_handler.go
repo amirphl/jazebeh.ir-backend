@@ -982,7 +982,9 @@ func (h *CampaignHandler) ExportCampaignAudienceClickReport(c fiber.Ctx) error {
 	}
 
 	metadata := businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent"))
-	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/audience-click-report", 2*time.Minute)
+	// This bounded synchronous export can take longer than ordinary API calls.
+	// Keep its budget below the server and reverse-proxy response timeouts.
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/audience-click-report", 10*time.Minute)
 	defer cancel()
 	data, err := h.campaignFlow.ExportCampaignAudienceClickReport(ctx, req.CampaignIDs, metadata)
 	if err != nil {
