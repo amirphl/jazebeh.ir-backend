@@ -118,9 +118,7 @@ func NewAdminCampaignFlow(
 	}
 }
 
-// ListCampaigns retrieves campaigns for admin using optional filters: customer
-// name, status, and start/end dates. Campaign and bundle title fields are
-// intentionally ignored for now.
+// ListCampaigns retrieves campaigns for admin using optional filters.
 func (s *AdminCampaignFlowImpl) ListCampaigns(ctx context.Context, filter dto.AdminListCampaignsFilter) (*dto.AdminListCampaignsResponse, error) {
 	page := max(1, filter.Page)
 	limit := filter.Limit
@@ -133,9 +131,12 @@ func (s *AdminCampaignFlowImpl) ListCampaigns(ctx context.Context, filter dto.Ad
 	offset := (page - 1) * limit
 
 	cf := models.CampaignFilter{}
-	// TODO: Apply CampaignTitle and BundleTitle when the admin campaign-list
-	// search contract is finalized. The handler and DTO currently accept these
-	// parameters, but this endpoint intentionally does not filter on them yet.
+	if filter.CampaignTitle != nil && *filter.CampaignTitle != "" {
+		cf.CampaignTitle = filter.CampaignTitle
+	}
+	if filter.BundleTitle != nil && *filter.BundleTitle != "" {
+		cf.BundleTitle = filter.BundleTitle
+	}
 	if filter.CustomerName != nil && *filter.CustomerName != "" {
 		cf.CustomerName = filter.CustomerName
 	}
@@ -170,14 +171,14 @@ func (s *AdminCampaignFlowImpl) ListCampaigns(ctx context.Context, filter dto.Ad
 	// fetching, but keeps initiated and in-progress campaigns at the end:
 	// null/empty schedule_at first, then upcoming (>= NOW()) before past,
 	// upcoming sorted soonest-first, past sorted most-recent-first.
-	// The regex guard (RFC3339 prefix) prevents a ::timestamptz cast error on
-	// malformed values; PostgreSQL short-circuits AND before evaluating the cast.
+	// yamata_try_timestamptz keeps malformed legacy values from aborting the
+	// whole listing; those values sort with other unscheduled campaigns.
 	const scheduleAtOrder = `
-		CASE WHEN status IN ('initiated', 'in-progress') THEN 1 ELSE 0 END ASC,
-		CASE WHEN spec->>'schedule_at' IS NULL OR spec->>'schedule_at' = '' THEN 0 ELSE 1 END ASC,
-		CASE WHEN spec->>'schedule_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' AND (spec->>'schedule_at')::timestamptz >= NOW() THEN 0 ELSE 1 END ASC,
-		CASE WHEN spec->>'schedule_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' AND (spec->>'schedule_at')::timestamptz >= NOW() THEN (spec->>'schedule_at')::timestamptz END ASC NULLS LAST,
-		CASE WHEN spec->>'schedule_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' AND (spec->>'schedule_at')::timestamptz < NOW() THEN (spec->>'schedule_at')::timestamptz END DESC NULLS LAST`
+		CASE WHEN campaigns.status IN ('initiated', 'in-progress') THEN 1 ELSE 0 END ASC,
+		CASE WHEN campaigns.spec->>'schedule_at' IS NULL OR campaigns.spec->>'schedule_at' = '' THEN 0 ELSE 1 END ASC,
+		CASE WHEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') >= NOW() THEN 0 ELSE 1 END ASC,
+		CASE WHEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') >= NOW() THEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') END ASC NULLS LAST,
+		CASE WHEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') < NOW() THEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') END DESC NULLS LAST`
 	rows, err := s.campaignRepo.ByFilter(ctx, cf, scheduleAtOrder, limit, offset)
 	if err != nil {
 		logAdminAction(ctx, s.auditRepo, models.AuditActionAdminCampaignList, "Admin listed campaigns", false, nil, map[string]any{
