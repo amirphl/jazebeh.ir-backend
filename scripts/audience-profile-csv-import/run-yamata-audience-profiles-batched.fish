@@ -46,7 +46,8 @@ function batch_timeout_ms
         set cutoff (env TZ=Asia/Tehran date -d 'today 08:00' +%s)
     end
     set -l now (date +%s)
-    math "$cutoff - $now - 30"
+    # PostgreSQL's statement_timeout numeric form is milliseconds.
+    math "($cutoff - $now - 30) * 1000"
 end
 
 function write_state --argument-names state_file csv_sha csv_bytes header_sha last_batch next_line completed_rows
@@ -220,6 +221,22 @@ test "$active_imports" = 0; or die 'Another batch importer is already active.'
 log "Starting from batch="(math "$last_batch + 1")" source_line=$next_line completed_rows=$completed_rows batch_size=$BATCH_SIZE"
 log 'The API and scheduler are not stopped. They must not insert audience_profiles or consume its ID sequence; newer live profile updates are preserved and identity conflicts or serialization failures stop the run.'
 
+# Fish functions do not inherit caller-local variables. Export the immutable
+# worker context explicitly so open_batch_file and commit_batch cannot fall
+# back to empty paths or PostgreSQL's default role.
+set -g IMPORT_PROJECT_DIR "$project_dir"
+set -g IMPORT_HEADER "$header"
+set -g IMPORT_PREFIX_SQL "$prefix_sql"
+set -g IMPORT_SUFFIX_SQL "$suffix_sql"
+set -g IMPORT_POSTGRES_CONTAINER "$POSTGRES_CONTAINER"
+set -g IMPORT_APP_NAME "$APP_NAME"
+set -g IMPORT_DB_USER "$db_user"
+set -g IMPORT_DB_NAME "$db_name"
+set -g IMPORT_STATE_FILE "$state_file"
+set -g IMPORT_CSV_SHA "$csv_sha"
+set -g IMPORT_CSV_BYTES "$csv_bytes"
+set -g IMPORT_HEADER_SHA "$header_sha"
+
 # CSV fields in this export have no embedded newlines. A physical line is thus
 # one CSV record; COPY remains PostgreSQL's CSV parser and validates every field.
 tail -n +"$next_line" -- "$csv_file" | begin
@@ -234,9 +251,9 @@ tail -n +"$next_line" -- "$csv_file" | begin
     set -g IMPORT_COMPLETED_ROWS "$completed_rows"
 
     function open_batch_file
-        set -g IMPORT_BATCH_FILE (mktemp "$project_dir/var/audience-batch.XXXXXXXX"); or die 'Could not create batch file.'
+        set -g IMPORT_BATCH_FILE (mktemp "$IMPORT_PROJECT_DIR/var/audience-batch.XXXXXXXX"); or die 'Could not create batch file.'
         set -g CURRENT_BATCH_FILE "$IMPORT_BATCH_FILE"
-        printf '%s\n' "$header" >"$IMPORT_BATCH_FILE"; or die "Could not write batch file: $IMPORT_BATCH_FILE"
+        printf '%s\n' "$IMPORT_HEADER" >"$IMPORT_BATCH_FILE"; or die "Could not write batch file: $IMPORT_BATCH_FILE"
     end
 
     function commit_batch
@@ -249,12 +266,12 @@ tail -n +"$next_line" -- "$csv_file" | begin
         set -l result_file "$IMPORT_BATCH_FILE.result"
         log "BATCH_START batch=$IMPORT_BATCH_NUMBER rows=$IMPORT_ROWS_IN_BATCH source_lines=$IMPORT_LINE_NUMBER-"(math "$IMPORT_LINE_NUMBER + $IMPORT_ROWS_IN_BATCH - 1")" timeout_ms=$timeout_ms"
         begin
-            cat -- "$prefix_sql"
+            cat -- "$IMPORT_PREFIX_SQL"
             cat -- "$IMPORT_BATCH_FILE"
             printf '\\.\n'
-            cat -- "$suffix_sql"
-        end | docker exec -i -e "PGAPPNAME=$APP_NAME" "$POSTGRES_CONTAINER" \
-            psql -X -v ON_ERROR_STOP=1 -v "batch_timeout_ms=$timeout_ms" -U "$db_user" -d "$db_name" >"$result_file"
+            cat -- "$IMPORT_SUFFIX_SQL"
+        end | docker exec -i -e "PGAPPNAME=$IMPORT_APP_NAME" "$IMPORT_POSTGRES_CONTAINER" \
+            psql -X -v ON_ERROR_STOP=1 -v "batch_timeout_ms=$timeout_ms" -U "$IMPORT_DB_USER" -d "$IMPORT_DB_NAME" >"$result_file"
         set -l pipeline_status $pipestatus
         for pipeline_exit in $pipeline_status
             if test "$pipeline_exit" -ne 0
@@ -284,7 +301,7 @@ tail -n +"$next_line" -- "$csv_file" | begin
         set -g IMPORT_LAST_BATCH "$IMPORT_BATCH_NUMBER"
         set -g IMPORT_COMPLETED_ROWS (math "$IMPORT_COMPLETED_ROWS + $IMPORT_ROWS_IN_BATCH")
         set -g IMPORT_LINE_NUMBER (math "$IMPORT_LINE_NUMBER + $IMPORT_ROWS_IN_BATCH")
-        write_state "$state_file" "$csv_sha" "$csv_bytes" "$header_sha" "$IMPORT_LAST_BATCH" "$IMPORT_LINE_NUMBER" "$IMPORT_COMPLETED_ROWS"
+        write_state "$IMPORT_STATE_FILE" "$IMPORT_CSV_SHA" "$IMPORT_CSV_BYTES" "$IMPORT_HEADER_SHA" "$IMPORT_LAST_BATCH" "$IMPORT_LINE_NUMBER" "$IMPORT_COMPLETED_ROWS"
         log "BATCH_SUCCESS batch=$IMPORT_LAST_BATCH rows=$IMPORT_ROWS_IN_BATCH completed_rows=$IMPORT_COMPLETED_ROWS next_source_line=$IMPORT_LINE_NUMBER $plan_line"
         rm -f -- "$result_file" "$IMPORT_BATCH_FILE"
         set -e CURRENT_BATCH_FILE
