@@ -19,6 +19,7 @@ type LineNumberAdminHandlerInterface interface {
 	CreateLineNumber(c fiber.Ctx) error
 	ListLineNumbers(c fiber.Ctx) error
 	UpdateLineNumbersBatch(c fiber.Ctx) error
+	UpdateLineNumberPriceFactor(c fiber.Ctx) error
 	GetLineNumbersReport(c fiber.Ctx) error
 }
 
@@ -143,6 +144,51 @@ func (h *LineNumberAdminHandler) UpdateLineNumbersBatch(c fiber.Ctx) error {
 		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Batch update failed", "LINE_NUMBER_BATCH_UPDATE_FAILED", nil)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Line numbers updated", fiber.Map{"updated": true})
+}
+
+// UpdateLineNumberPriceFactor updates the price factor of one line number (admin).
+// @Summary Update Line Number Price Factor (Admin)
+// @Description Update the price factor for a line number identified by its value.
+// @Tags Admin Line Numbers
+// @Accept json
+// @Produce json
+// @Param request body dto.AdminUpdateLineNumberPriceFactorRequest true "Price factor update payload"
+// @Success 200 {object} dto.APIResponse{data=dto.AdminLineNumberDTO}
+// @Failure 400 {object} dto.APIResponse "Invalid request or validation error"
+// @Failure 404 {object} dto.APIResponse "Line number not found"
+// @Failure 500 {object} dto.APIResponse "Price factor update failed"
+// @Router /api/v1/admin/line-numbers/price-factor [put]
+func (h *LineNumberAdminHandler) UpdateLineNumberPriceFactor(c fiber.Ctx) error {
+	var req dto.AdminUpdateLineNumberPriceFactorRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", "INVALID_REQUEST", err.Error())
+	}
+	if err := h.validator.Struct(&req); err != nil {
+		var validationErrors []string
+		for _, e := range err.(validator.ValidationErrors) {
+			validationErrors = append(validationErrors, e.Error())
+		}
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Validation failed", "VALIDATION_ERROR", validationErrors)
+	}
+
+	metadata := businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent"))
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/admin/line-numbers/price-factor", 30*time.Second)
+	defer cancel()
+	res, err := h.flow.UpdatePriceFactor(ctx, &req, metadata)
+	if err != nil {
+		if businessflow.IsLineNumberValueRequired(err) {
+			return h.ErrorResponse(c, fiber.StatusBadRequest, "Line number is required", "LINE_NUMBER_VALUE_REQUIRED", nil)
+		}
+		if businessflow.IsPriceFactorInvalid(err) {
+			return h.ErrorResponse(c, fiber.StatusBadRequest, "Price factor must be greater than zero", "PRICE_FACTOR_INVALID", nil)
+		}
+		if businessflow.IsLineNumberNotFound(err) {
+			return h.ErrorResponse(c, fiber.StatusNotFound, "Line number not found", "LINE_NUMBER_NOT_FOUND", nil)
+		}
+		log.Println("Update line number price factor failed:", err)
+		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Update line number price factor failed", "LINE_NUMBER_PRICE_FACTOR_UPDATE_FAILED", nil)
+	}
+	return h.SuccessResponse(c, fiber.StatusOK, "Line number price factor updated", res)
 }
 
 // GetLineNumbersReport returns aggregate report for line numbers (admin)
