@@ -1,0 +1,17 @@
+{
+  "title": "External Short-link",
+  "uid": "external-shortlink",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "tags": ["external-shortlink", "production"],
+  "panels": [
+    {"type":"timeseries","title":"Redirect rate by status","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"refId":"A","expr":"sum by (status) (rate(external_shortlink_redirect_requests_total[5m]))"}]},
+    {"type":"timeseries","title":"Redirect latency p50 / p95 / p99","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"refId":"A","expr":"histogram_quantile(0.50, sum by (le) (rate(external_shortlink_redirect_latency_seconds_bucket[5m])))"},{"refId":"B","expr":"histogram_quantile(0.95, sum by (le) (rate(external_shortlink_redirect_latency_seconds_bucket[5m])))"},{"refId":"C","expr":"histogram_quantile(0.99, sum by (le) (rate(external_shortlink_redirect_latency_seconds_bucket[5m])))"}]},
+    {"type":"timeseries","title":"5xx error rate (%)","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"refId":"A","expr":"100 * sum(rate(external_shortlink_redirect_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(external_shortlink_redirect_requests_total[5m])), 0.001)"}]},
+    {"type":"timeseries","title":"Spool backlog and oldest event age","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"refId":"A","expr":"external_shortlink_spool_events"},{"refId":"B","expr":"external_shortlink_spool_oldest_event_age_seconds"},{"refId":"C","expr":"sum by (reason) (rate(external_shortlink_spool_rejected_total[5m]))"}]},
+    {"type":"timeseries","title":"PostgreSQL errors and pool timeouts","gridPos":{"h":8,"w":12,"x":0,"y":16},"targets":[{"refId":"A","expr":"sum by (operation) (rate(external_shortlink_postgres_errors_total[5m]))"},{"refId":"B","expr":"rate(external_shortlink_postgres_pool_timeouts_total[5m])"}]},
+    {"type":"timeseries","title":"Host CPU / memory available","gridPos":{"h":8,"w":12,"x":12,"y":16},"targets":[{"refId":"A","expr":"100 - (avg by (instance) (rate(node_cpu_seconds_total{job=\"external_shortlink_node\",mode=\"idle\"}[5m])) * 100)"},{"refId":"B","expr":"node_memory_MemAvailable_bytes{job=\"external_shortlink_node\"}"}]}
+  ]
+}
