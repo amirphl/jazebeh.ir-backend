@@ -82,6 +82,28 @@ func readCampaignAudienceUIDs(campaignID uint) ([]string, map[string]string, err
 	return readCampaignAudienceUIDsBounded(campaignID, 0)
 }
 
+// openCampaignAudienceUIDSnapshot returns an open file and the exact byte
+// boundary of a completed JSONL snapshot. The campaign lock is held only while
+// opening/statting the file, so appendCampaignAudienceUIDs cannot start a write
+// between the size capture and release. Readers then process only those bytes
+// without blocking campaign push-statistics writers.
+func openCampaignAudienceUIDSnapshot(campaignID uint) (*os.File, int64, error) {
+	lock := campaignAudienceUIDLock(campaignID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	f, err := os.Open(campaignAudienceUIDsFilePath(campaignID))
+	if err != nil {
+		return nil, 0, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, 0, err
+	}
+	return f, info.Size(), nil
+}
+
 // readCampaignAudienceUIDsBounded reads at most maxUIDs distinct UIDs. A
 // non-positive limit preserves the unbounded behavior used by legacy exports.
 // The bound is enforced while scanning so an oversized file cannot make a
@@ -91,13 +113,7 @@ func readCampaignAudienceUIDsBounded(campaignID uint, maxUIDs int) ([]string, ma
 		return nil, nil, fmt.Errorf("campaign id must be greater than 0")
 	}
 
-	lock := campaignAudienceUIDLock(campaignID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	path := campaignAudienceUIDsFilePath(campaignID)
-
-	f, err := os.Open(path)
+	f, size, err := openCampaignAudienceUIDSnapshot(campaignID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -105,7 +121,42 @@ func readCampaignAudienceUIDsBounded(campaignID uint, maxUIDs int) ([]string, ma
 		_ = f.Close()
 	}()
 
-	return collectCampaignAudienceUIDs(f, maxUIDs)
+	return collectCampaignAudienceUIDs(io.LimitReader(f, size), maxUIDs)
+}
+
+// visitCampaignAudienceUIDs reads the durable mapping one record at a time.
+// Large asynchronous exports use it to stage records in bounded batches rather
+// than retaining an entire campaign's audience map in memory.
+func visitCampaignAudienceUIDs(campaignID uint, visit func(campaignAudienceUIDRecord) error) error {
+	if campaignID == 0 {
+		return fmt.Errorf("campaign id must be greater than 0")
+	}
+	f, size, err := openCampaignAudienceUIDSnapshot(campaignID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	// LimitReader excludes records appended after the snapshot boundary. This
+	// makes the report deterministic while allowing campaign pushes to continue.
+	scanner := bufio.NewScanner(io.LimitReader(f, size))
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var record campaignAudienceUIDRecord
+		if err := json.Unmarshal(line, &record); err != nil {
+			return err
+		}
+		if record.UID == "" {
+			continue
+		}
+		if err := visit(record); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
 }
 
 func collectCampaignAudienceUIDs(reader io.Reader, maxUIDs int) ([]string, map[string]string, error) {
