@@ -28,11 +28,13 @@ func NewShortLinkHandler(flow businessflow.ShortLinkVisitFlow) ShortLinkHandlerI
 // @Tags ShortLinks
 // @Produce json
 // @Param uid path string true "Short link UID"
+// @Success 200 {string} string "Empty response for automated traffic"
 // @Success 302 {string} string "Redirect"
 // @Failure 404 {object} any
 // @Failure 500 {object} any
 // @Router /s/{uid} [get]
 func (h *ShortLinkHandler) Visit(c fiber.Ctx) error {
+	c.Set("Cache-Control", "no-store")
 	uid := c.Params("uid")
 	if uid == "" {
 		return c.Status(fiber.StatusBadRequest).SendString("invalid short link")
@@ -50,9 +52,10 @@ func (h *ShortLinkHandler) Visit(c fiber.Ctx) error {
 		log.Println("Visit short link failed", err)
 		return c.Status(fiber.StatusInternalServerError).SendString("internal error")
 	}
-	// Preserve an ordinary, bodyless redirect. Canonical and og:url tags on a
-	// synthetic document do not make unfurlers fetch the destination's metadata,
-	// and can hide previews that clients would obtain by following the redirect.
+	// Track automated visits normally, but do not expose the destination to preview clients.
+	if utils.IsAutomatedShortLinkRequest(ua, ip) {
+		return c.Status(fiber.StatusOK).Send(nil)
+	}
 	return c.Redirect().Status(fiber.StatusFound).To(link)
 }
 
