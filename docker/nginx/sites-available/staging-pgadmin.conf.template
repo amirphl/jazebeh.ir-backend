@@ -1,0 +1,20 @@
+upstream pgadmin_ui { server 172.31.0.10:5050; }
+server {
+    listen 14433 ssl;
+    http2 on;
+    server_name staging.jazebeh.ir;
+    ssl_certificate /etc/letsencrypt/live/${STAGING_CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${STAGING_CERT_NAME}/privkey.pem;
+    auth_basic "Restricted pgAdmin access";
+    auth_basic_user_file /run/secrets/pgadmin_nginx_htpasswd;
+    client_max_body_size 25m;
+    location /pgadmin/ {
+        rewrite ^/pgadmin/(.*)$ /$1 break;
+        proxy_pass http://pgadmin_ui;
+        include /etc/nginx/proxy.conf;
+        proxy_set_header X-Script-Name /pgadmin;
+        proxy_set_header X-Scheme https;
+        include /etc/nginx/staging-vendor-security.conf;
+        proxy_read_timeout 300s;
+    }
+}
