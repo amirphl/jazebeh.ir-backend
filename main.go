@@ -1044,6 +1044,8 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			log.Default(),
 			cfg.Scheduler.BundleActionFileSchedulerInterval,
 			cfg.Scheduler.BundleActionFileSchedulerMaxParallelRuns,
+			cfg.Scheduler.BundleActionFileSchedulerJobTimeout,
+			cfg.Scheduler.BundleActionFileSchedulerLeaseDuration,
 		)
 		stopFuncs = append(stopFuncs, bundleActionScheduler.Start(context.Background()))
 	}
