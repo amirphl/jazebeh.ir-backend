@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_campaign_audience_report_jobs_terminal_purge;
+DROP TABLE IF EXISTS campaign_audience_report_job_rows;
