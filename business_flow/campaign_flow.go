@@ -104,7 +104,7 @@ const (
 	maxCampaignBudget            = uint64(160_000_000)
 	defaultSegmentPriceFactor    = 1.0
 	defaultLineNumberPriceFactor = 1.0
-	undeliveredRefundDelay       = 72 * time.Hour
+	undeliveredRefundDelay       = 96 * time.Hour
 	audienceGradeA               = "A"
 	audienceGradeB               = "B"
 	audienceGradeC               = "C"
@@ -1106,9 +1106,12 @@ func (s *CampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.CancelCa
 		return nil, NewBusinessError("CANCEL_CAMPAIGN_VALIDATION_FAILED", "campaign_id is required", ErrCampaignNotFound)
 	}
 
-	if !s.tryAcquireFlowLock(ctx, fmt.Sprintf("cancel_campaign:%d", req.CustomerID), 20*time.Second) {
+	lockSuffix := fmt.Sprintf("cancel_campaign:%d", req.CampaignID)
+	lockToken := uuid.NewString()
+	if !s.tryAcquireFlowLock(ctx, lockSuffix, lockToken, 20*time.Second) {
 		return nil, NewBusinessError("CANCEL_CAMPAIGN_BUSY", "cancel campaign request is already in progress", ErrInvalidState)
 	}
+	defer s.releaseFlowLock(lockSuffix, lockToken)
 
 	var campaign *models.Campaign
 
@@ -4298,17 +4301,29 @@ func campaignRefundManualReview(err error) error {
 	return fmt.Errorf("%w: %v", repository.ErrCampaignRefundReconciliationManualReview, err)
 }
 
-func (s *CampaignFlowImpl) tryAcquireFlowLock(ctx context.Context, suffix string, ttl time.Duration) bool {
+func (s *CampaignFlowImpl) tryAcquireFlowLock(ctx context.Context, suffix, token string, ttl time.Duration) bool {
 	if s.rc == nil {
 		return true
 	}
 	lockKey := redisKey(s.cacheConfig, "flow_lock:"+suffix)
-	ok, err := s.rc.SetNX(ctx, lockKey, "1", ttl).Result()
+	ok, err := s.rc.SetNX(ctx, lockKey, token, ttl).Result()
 	if err != nil {
 		// Best-effort idempotency lock: continue when redis is unavailable.
 		return true
 	}
 	return ok
+}
+
+func (s *CampaignFlowImpl) releaseFlowLock(suffix, token string) {
+	if s.rc == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	lockKey := redisKey(s.cacheConfig, "flow_lock:"+suffix)
+	// Delete only our own token. An expired lease could have been acquired by a
+	// later cancellation while this request was finishing.
+	_ = s.rc.Eval(ctx, `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`, []string{lockKey}, token).Err()
 }
 
 func parseAggregatedTotalSent(stats json.RawMessage) (uint64, bool) {
