@@ -42,7 +42,7 @@ type BundleTagEvaluationFlowImpl struct {
 	db                 *gorm.DB
 	cfg                config.SmartTagEvaluationConfig
 	newClient          openAIClientFactory
-	requestPacer       *openAIRequestPacer
+	requestPacer       *bundleTagEvaluationRequestPacer
 }
 
 type BundleTagEvaluationConflictError struct {
@@ -109,19 +109,19 @@ type snapshotBatchingConfig struct {
 	MaxParallelBatches *int `json:"max_parallel_batches,omitempty"`
 }
 
-type openAIRequestPacer struct {
+type bundleTagEvaluationRequestPacer struct {
 	mu            sync.Mutex
 	interval      time.Duration
 	nextRequestAt time.Time
 	pauseUntil    time.Time
 }
 
-type pacedOpenAIClient struct {
+type bundleTagEvaluationPacedOpenAIClient struct {
 	delegate services.SmartTagOpenAIClient
-	pacer    *openAIRequestPacer
+	pacer    *bundleTagEvaluationRequestPacer
 }
 
-func newOpenAIRequestPacer(maxRequestsPerMinute int) *openAIRequestPacer {
+func newBundleTagEvaluationRequestPacer(maxRequestsPerMinute int) *bundleTagEvaluationRequestPacer {
 	if maxRequestsPerMinute <= 0 {
 		return nil
 	}
@@ -129,10 +129,10 @@ func newOpenAIRequestPacer(maxRequestsPerMinute int) *openAIRequestPacer {
 	if interval <= 0 {
 		interval = time.Nanosecond
 	}
-	return &openAIRequestPacer{interval: interval}
+	return &bundleTagEvaluationRequestPacer{interval: interval}
 }
 
-func (p *openAIRequestPacer) Wait(ctx context.Context) error {
+func (p *bundleTagEvaluationRequestPacer) Wait(ctx context.Context) error {
 	if p == nil || p.interval <= 0 {
 		return nil
 	}
@@ -173,7 +173,7 @@ func (p *openAIRequestPacer) Wait(ctx context.Context) error {
 	}
 }
 
-func (p *openAIRequestPacer) Pause(delay time.Duration) {
+func (p *bundleTagEvaluationRequestPacer) Pause(delay time.Duration) {
 	if p == nil || delay <= 0 {
 		return
 	}
@@ -185,7 +185,7 @@ func (p *openAIRequestPacer) Pause(delay time.Duration) {
 	}
 }
 
-func (c *pacedOpenAIClient) CallResponsesAPI(ctx context.Context, payload map[string]any) (*services.SmartTagOpenAIResult, error) {
+func (c *bundleTagEvaluationPacedOpenAIClient) CallResponsesAPI(ctx context.Context, payload map[string]any) (*services.SmartTagOpenAIResult, error) {
 	if c == nil || c.delegate == nil {
 		return nil, fmt.Errorf("OpenAI client is not configured")
 	}
@@ -238,7 +238,7 @@ func NewBundleTagEvaluationFlow(
 		db:                 db,
 		cfg:                cfg,
 		newClient:          services.NewSmartTagOpenAIClient,
-		requestPacer:       newOpenAIRequestPacer(cfg.OpenAI.MaxRequestsPerMinute),
+		requestPacer:       newBundleTagEvaluationRequestPacer(cfg.OpenAI.MaxRequestsPerMinute),
 	}
 }
 
@@ -292,10 +292,10 @@ func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(ctx context.Con
 	}
 
 	if err := repository.WithTransaction(ctx, f.db, func(txCtx context.Context) error {
-		if err := lockCustomerEvaluationRequest(txCtx, f.db, bundle.CustomerID); err != nil {
+		if err := lockBundleTagEvaluationCustomerRequest(txCtx, f.db, bundle.CustomerID); err != nil {
 			return err
 		}
-		if err := lockBundleEvaluationRequest(txCtx, f.db, bundle.ID); err != nil {
+		if err := lockBundleTagEvaluationRequest(txCtx, f.db, bundle.ID); err != nil {
 			return err
 		}
 
@@ -316,7 +316,7 @@ func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(ctx context.Con
 			}
 		}
 
-		dayStart, nextDayStart := utcDayBounds(now)
+		dayStart, nextDayStart := bundleTagEvaluationUTCDayBounds(now)
 		submittedCount, err := f.runRepo.CountByCustomerIDCreatedBetween(txCtx, bundle.CustomerID, dayStart, nextDayStart)
 		if err != nil {
 			return err
@@ -490,7 +490,7 @@ func (f *BundleTagEvaluationFlowImpl) ExecuteBundleTagEvaluationRun(ctx context.
 		return fmt.Errorf("bundle tag evaluation run %d not found", runID)
 	}
 
-	releaseLock, err := acquireBundleEvaluationLock(ctx, f.db, run.BundleID)
+	releaseLock, err := acquireBundleTagEvaluationLock(ctx, f.db, run.BundleID)
 	if err != nil {
 		return err
 	}
@@ -528,7 +528,7 @@ func (f *BundleTagEvaluationFlowImpl) ExecuteBundleTagEvaluationRun(ctx context.
 	if err != nil {
 		return f.failRunUnlessCanceled(ctx, run.ID, err)
 	}
-	client = &pacedOpenAIClient{delegate: client, pacer: f.requestPacer}
+	client = &bundleTagEvaluationPacedOpenAIClient{delegate: client, pacer: f.requestPacer}
 
 	personaAnalysisText, err := f.ensurePersonaAnalysis(ctx, run, executionCfg, client)
 	if err != nil {
@@ -590,12 +590,12 @@ func (f *BundleTagEvaluationFlowImpl) processBatchesConcurrently(
 	executionCfg config.SmartTagEvaluationConfig,
 	client services.SmartTagOpenAIClient,
 ) error {
-	return runBatchesConcurrently(ctx, batches, executionCfg.Batching.MaxParallelBatches, func(workerCtx context.Context, batch *models.BundleTagEvaluationBatch) error {
+	return runBundleTagEvaluationBatchesConcurrently(ctx, batches, executionCfg.Batching.MaxParallelBatches, func(workerCtx context.Context, batch *models.BundleTagEvaluationBatch) error {
 		return f.processBatch(workerCtx, run, batch, personaAnalysisText, executionCfg, client)
 	})
 }
 
-func runBatchesConcurrently(
+func runBundleTagEvaluationBatchesConcurrently(
 	ctx context.Context,
 	batches []*models.BundleTagEvaluationBatch,
 	maxParallel int,
@@ -653,8 +653,8 @@ func runBatchesConcurrently(
 		if result.err == nil {
 			continue
 		}
-		if selected == nil || (isContextError(selected.err) && !isContextError(result.err)) ||
-			(isContextError(selected.err) == isContextError(result.err) && result.batchNumber < selected.batchNumber) {
+		if selected == nil || (isBundleTagEvaluationContextError(selected.err) && !isBundleTagEvaluationContextError(result.err)) ||
+			(isBundleTagEvaluationContextError(selected.err) == isBundleTagEvaluationContextError(result.err) && result.batchNumber < selected.batchNumber) {
 			copy := result
 			selected = &copy
 		}
@@ -665,7 +665,7 @@ func runBatchesConcurrently(
 	return ctx.Err()
 }
 
-func isContextError(err error) bool {
+func isBundleTagEvaluationContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
@@ -739,7 +739,7 @@ func (f *BundleTagEvaluationFlowImpl) ensurePersonaAnalysis(ctx context.Context,
 			if !shouldRetryOpenAIError(callErr) {
 				return "", callErr
 			}
-			if err := waitBeforeOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
+			if err := waitBeforeBundleTagEvaluationOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
 				return "", err
 			}
 			continue
@@ -796,7 +796,7 @@ func (f *BundleTagEvaluationFlowImpl) ensurePersonaAnalysis(ctx context.Context,
 			}
 			return *extractedPtr, nil
 		}
-		if err := waitBeforeOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
+		if err := waitBeforeBundleTagEvaluationOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
 			return "", err
 		}
 	}
@@ -1024,7 +1024,7 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 			if !shouldRetryOpenAIError(callErr) {
 				return callErr
 			}
-			if err := waitBeforeOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
+			if err := waitBeforeBundleTagEvaluationOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
 				return err
 			}
 			continue
@@ -1048,7 +1048,7 @@ func (f *BundleTagEvaluationFlowImpl) processBatch(ctx context.Context, run *mod
 				Payload:         f.mustMarshalJSON(map[string]any{"batch_number": batch.BatchNumber, "attempt_number": attemptNumber, "message": parseErr.Error()}),
 				CreatedAt:       time.Now().UTC(),
 			})
-			if err := waitBeforeOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
+			if err := waitBeforeBundleTagEvaluationOpenAIRetry(ctx, result, attemptNumber, maxAttempts); err != nil {
 				return err
 			}
 			continue
@@ -1107,7 +1107,7 @@ func (f *BundleTagEvaluationFlowImpl) ensureBatchTagsRemainActive(ctx context.Co
 	return fmt.Errorf("tag catalog changed during evaluation; inactive or missing tags would be sent to OpenAI: %v", inactiveIDs)
 }
 
-func waitBeforeOpenAIRetry(ctx context.Context, result *services.SmartTagOpenAIResult, attemptNumber, maxAttempts int) error {
+func waitBeforeBundleTagEvaluationOpenAIRetry(ctx context.Context, result *services.SmartTagOpenAIResult, attemptNumber, maxAttempts int) error {
 	if attemptNumber >= maxAttempts {
 		return nil
 	}
@@ -1574,18 +1574,18 @@ func cleanupJSONText(text string) string {
 	return strings.TrimSpace(trimmed)
 }
 
-func normalizePersona(text string) string {
+func normalizeBundleTagEvaluationPersona(text string) string {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"))
 	return norm.NFC.String(trimmed)
 }
 
-func utcDayBounds(now time.Time) (time.Time, time.Time) {
+func bundleTagEvaluationUTCDayBounds(now time.Time) (time.Time, time.Time) {
 	utcNow := now.UTC()
 	dayStart := time.Date(utcNow.Year(), utcNow.Month(), utcNow.Day(), 0, 0, 0, 0, time.UTC)
 	return dayStart, dayStart.AddDate(0, 0, 1)
 }
 
-func lockCustomerEvaluationRequest(ctx context.Context, db *gorm.DB, customerID uint) error {
+func lockBundleTagEvaluationCustomerRequest(ctx context.Context, db *gorm.DB, customerID uint) error {
 	tx := db.WithContext(ctx)
 	if contextTx, ok := ctx.Value(repository.TxContextKey).(*gorm.DB); ok && contextTx != nil {
 		tx = contextTx
@@ -1601,7 +1601,7 @@ func lockCustomerEvaluationRequest(ctx context.Context, db *gorm.DB, customerID 
 	return nil
 }
 
-func lockBundleEvaluationRequest(ctx context.Context, db *gorm.DB, bundleID uint) error {
+func lockBundleTagEvaluationRequest(ctx context.Context, db *gorm.DB, bundleID uint) error {
 	tx := db.WithContext(ctx)
 	if contextTx, ok := ctx.Value(repository.TxContextKey).(*gorm.DB); ok && contextTx != nil {
 		tx = contextTx
@@ -1617,7 +1617,7 @@ func lockBundleEvaluationRequest(ctx context.Context, db *gorm.DB, bundleID uint
 	return nil
 }
 
-func acquireBundleEvaluationLock(ctx context.Context, db *gorm.DB, bundleID uint) (func(), error) {
+func acquireBundleTagEvaluationLock(ctx context.Context, db *gorm.DB, bundleID uint) (func(), error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
