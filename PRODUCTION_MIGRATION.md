@@ -1,6 +1,6 @@
 # Production migration runbook
 
-This is the canonical procedure for moving the existing beta production stack
+This is the canonical procedure for moving the existing production stack
 to a fresh server. The API always has `CAMPAIGN_EXECUTION_ENABLED=false`,
 `SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED=true`, and smart-tag evaluation
 scheduling enabled. All campaign schedulers run only in
@@ -90,12 +90,14 @@ database. It is not an atomically frozen whole-server image: frequently changing
 volumes (for example Prometheus data and logs) are not globally atomic. Do not use
 `--leave-stopped`; it is kept only for compatibility and is ignored.
 
-Transfer these three files to the destination:
+Transfer these files to the destination, preserving the `scripts/` directory
+relative to the restore script:
 
 ```text
 yamata-backup-YYYYMMDDTHHMMSSZ.tar.gz
 yamata-backup-YYYYMMDDTHHMMSSZ.tar.gz.sha256
 restore-yamata-backup.sh
+scripts/guard-environment.sh
 ```
 
 Verify the transfer:
@@ -112,9 +114,10 @@ main-database recovery point from the separately downloaded dump.
 
 ```bash
 chmod +x restore-yamata-backup.sh
-./restore-yamata-backup.sh \
+APP_ENV=production EXTERNAL_SERVICES_MODE=live ./restore-yamata-backup.sh \
   "$HOME/yamata-backup-YYYYMMDDTHHMMSSZ.tar.gz" \
   --main-db-backup /absolute/path/to/yamata-main.dump \
+  --confirm-production-restore \
   /srv/yamata
 ```
 
