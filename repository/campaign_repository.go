@@ -340,7 +340,7 @@ func (r *CampaignRepositoryImpl) GetScheduledCampaigns(ctx context.Context, from
 	return r.ByFilter(ctx, filter, "schedule_at ASC", 0, 0)
 }
 
-const automatedClickUserAgentPattern = `bot|crawler|spider|facebookexternalhit|facebot|twitterbot|googlemessages|telegrambot|whatsapp|preview|linkpreview|curl|wget|python-requests|okhttp|postman|v2raytun`
+const automatedClickUserAgentPattern = utils.AutomatedClickUserAgentPattern
 
 // nonAutomatedClickTrafficSQL implements the bot-filtering rules used for all
 // click-derived metrics. tableAlias may be empty or name the short-link-click
