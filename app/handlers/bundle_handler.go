@@ -187,7 +187,7 @@ func (h *BundleHandler) GetActionTagMetrics(c fiber.Ctx) error {
 	}
 	items := make([]dto.BundleActionTagMetricItem, 0, len(rows))
 	for _, x := range rows {
-		items = append(items, dto.BundleActionTagMetricItem{TagID: x.TagID, TestActionCount: x.TestActionCount, TestEligibleDeliveredCount: x.TestEligibleDeliveredCount, TestPhaseAvgATR: x.TestPhaseAvgATR, OverallActionCount: x.OverallActionCount, OverallEligibleDeliveredCount: x.OverallEligibleDeliveredCount, OverallAvgATR: x.OverallAvgATR})
+		items = append(items, dto.BundleActionTagMetricItem{TagID: x.TagID, TagDisplayName: x.TagDisplayName, TestActionCount: x.TestActionCount, TestEligibleDeliveredCount: x.TestEligibleDeliveredCount, TestPhaseAvgATR: x.TestPhaseAvgATR, OverallActionCount: x.OverallActionCount, OverallEligibleDeliveredCount: x.OverallEligibleDeliveredCount, OverallAvgATR: x.OverallAvgATR})
 	}
 	return h.SuccessResponse(c, 200, "Tag action metrics retrieved", items)
 }
