@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import sys
+from guard_environment import environment_banner, require_production_confirmation
 from datetime import datetime, timezone
 
 from script_common import (
@@ -77,7 +78,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Compute fake stats but do not push to Jazebeh",
     )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="confirm production publish; default is dry-run",
+    )
     args = parser.parse_args()
+    if args.execute and args.dry_run:
+        parser.error("--execute and --dry-run cannot be combined")
+    args.dry_run = not args.execute
+    if args.execute:
+        require_production_confirmation(True)
+    else:
+        environment_banner()
     if args.parts_per_recipient <= 0:
         parser.error("--parts-per-recipient must be greater than zero")
     args.jazebeh_domain = validate_https_origin(
