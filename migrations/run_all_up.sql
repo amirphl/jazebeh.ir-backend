@@ -496,5 +496,8 @@
 \echo 'Running 0158_cascade_bundle_overall_tag_ctr_summary.sql...'
 \i migrations/0158_cascade_bundle_overall_tag_ctr_summary.sql
 
+\echo 'Running 0163_create_short_link_uid_allocator.sql...'
+\i migrations/0163_create_short_link_uid_allocator.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
