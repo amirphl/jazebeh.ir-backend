@@ -91,13 +91,17 @@ func (s *NotificationServiceImpl) SendEmail(email, subject, message string) erro
 	return s.emailProvider.SendEmail(email, subject, message)
 }
 
-type MockEmailProvider struct{}
+type MockEmailProvider struct{ redact bool }
 
-func NewMockEmailProvider() EmailProvider {
-	return &MockEmailProvider{}
+func NewMockEmailProvider(redact ...bool) EmailProvider {
+	return &MockEmailProvider{redact: len(redact) > 0 && redact[0]}
 }
 
 func (p *MockEmailProvider) SendEmail(email, subject, message string) error {
+	if p.redact {
+		log.Print("mock provider=email action=send")
+		return nil
+	}
 	log.Printf("Email sent to %s [%s]: %s", email, subject, message)
 	return nil
 }
