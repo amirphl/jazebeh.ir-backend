@@ -246,11 +246,11 @@ func TestScheduleStatusCheckJobsSchedulesCandooThirdCheckAt12Hours(t *testing.T)
 	if len(repo.batched) != 1 {
 		t.Fatalf("Candoo status job batches = %d, want 1", len(repo.batched))
 	}
-	if got := len(repo.batched[0]); got != 3 {
-		t.Fatalf("Candoo status jobs = %d, want 3", got)
+	if got := len(repo.batched[0]); got != 5 {
+		t.Fatalf("Candoo status jobs = %d, want 5", got)
 	}
-	if got := repo.batched[0][2].ScheduledAt.Sub(repo.batched[0][2].CreatedAt); got != 12*time.Hour {
-		t.Fatalf("Candoo third status job delay = %s, want 12h", got)
+	if got := repo.batched[0][4].ScheduledAt.Sub(repo.batched[0][4].CreatedAt); got != 12*time.Hour {
+		t.Fatalf("Candoo final status job delay = %s, want 12h", got)
 	}
 }
 
@@ -264,11 +264,11 @@ func TestScheduleStatusCheckJobsKeeps24HourPayamSMSCheck(t *testing.T) {
 	if len(repo.batched) != 1 {
 		t.Fatalf("PayamSMS status job batches = %d, want 1", len(repo.batched))
 	}
-	if got := len(repo.batched[0]); got != 3 {
-		t.Fatalf("PayamSMS status jobs = %d, want 3", got)
+	if got := len(repo.batched[0]); got != 5 {
+		t.Fatalf("PayamSMS status jobs = %d, want 5", got)
 	}
-	if got := repo.batched[0][2].ScheduledAt.Sub(repo.batched[0][2].CreatedAt); got != 24*time.Hour {
-		t.Fatalf("PayamSMS third status job delay = %s, want 24h", got)
+	if got := repo.batched[0][4].ScheduledAt.Sub(repo.batched[0][4].CreatedAt); got != 24*time.Hour {
+		t.Fatalf("PayamSMS final status job delay = %s, want 24h", got)
 	}
 }
 
