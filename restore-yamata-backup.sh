@@ -5,6 +5,10 @@
 set -Eeuo pipefail
 umask 077
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/guard-environment.sh
+source "$script_dir/scripts/guard-environment.sh"
+
 readonly SCRIPT_NAME="$(basename "$0")"
 
 log() {
@@ -25,6 +29,8 @@ usage() {
 Usage: $SCRIPT_NAME BACKUP.tar.gz [PROJECT_DIR]
        $SCRIPT_NAME BACKUP.tar.gz --main-db-backup MAIN.dump [PROJECT_DIR]
 
+Requires APP_ENV=production and --confirm-production-restore.
+
 Archives created by the current backup script exclude only the main PostgreSQL
 dump, so --main-db-backup is required for those archives. The Sentry/GlitchTip
 dump remains embedded. Older archives continue to use their embedded main dump.
@@ -36,30 +42,37 @@ BACKUP_ARCHIVE=""
 PROJECT_DIR="/srv/yamata"
 MAIN_DB_BACKUP=""
 SENTRY_DB_BACKUP=""
+CONFIRM_PRODUCTION_RESTORE=false
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		--main-db-backup)
-			[[ $# -ge 2 ]] || usage
-			MAIN_DB_BACKUP="$2"
-			shift 2
-			;;
-		--help|-h)
+	--confirm-production-restore)
+		CONFIRM_PRODUCTION_RESTORE=true
+		shift
+		;;
+	--main-db-backup)
+		[[ $# -ge 2 ]] || usage
+		MAIN_DB_BACKUP="$2"
+		shift 2
+		;;
+	--help | -h)
+		usage
+		;;
+	*)
+		if [[ -z "$BACKUP_ARCHIVE" ]]; then
+			BACKUP_ARCHIVE="$1"
+		elif [[ "$PROJECT_DIR" == /srv/yamata ]]; then
+			PROJECT_DIR="$1"
+		else
 			usage
-			;;
-		*)
-			if [[ -z "$BACKUP_ARCHIVE" ]]; then
-				BACKUP_ARCHIVE="$1"
-			elif [[ "$PROJECT_DIR" == /srv/yamata ]]; then
-				PROJECT_DIR="$1"
-			else
-				usage
-			fi
-			shift
-			;;
+		fi
+		shift
+		;;
 	esac
 done
 
 [[ -n "$BACKUP_ARCHIVE" ]] || usage
+[[ "$CONFIRM_PRODUCTION_RESTORE" == true ]] || die 'Pass --confirm-production-restore to authorize the restore'
+refuse_mock_production_operation || exit 1
 
 BACKUP_ARCHIVE="$(readlink -f "$BACKUP_ARCHIVE")"
 readonly BACKUP_ARCHIVE PROJECT_DIR
@@ -67,7 +80,7 @@ readonly BACKUP_ARCHIVE PROJECT_DIR
 [[ -f "$BACKUP_ARCHIVE" ]] || die "Backup archive not found: $BACKUP_ARCHIVE"
 [[ "$PROJECT_DIR" == /* ]] || die "PROJECT_DIR must be an absolute path"
 case "$PROJECT_DIR" in
-	/|/srv|/home|/root|/usr|/var) die "Unsafe PROJECT_DIR: $PROJECT_DIR" ;;
+/ | /srv | /home | /root | /usr | /var) die "Unsafe PROJECT_DIR: $PROJECT_DIR" ;;
 esac
 [[ ! -e "$PROJECT_DIR" ]] || die "PROJECT_DIR already exists: $PROJECT_DIR"
 
@@ -113,7 +126,7 @@ if ip route show 2>/dev/null | grep -Eq '(^|[[:space:]])172\.30\.0\.0/24([[:spac
 	die "172.30.0.0/24 conflicts with an existing host route"
 fi
 
-WORK_ROOT="${RESTORE_WORK_ROOT:-$(dirname "$BACKUP_ARCHIVE")}" 
+WORK_ROOT="${RESTORE_WORK_ROOT:-$(dirname "$BACKUP_ARCHIVE")}"
 mkdir -p "$WORK_ROOT"
 WORK_DIR="$(mktemp -d "$WORK_ROOT/.yamata-restore.XXXXXX")"
 readonly WORK_DIR
@@ -134,18 +147,18 @@ readonly BACKUP_DIR
 
 SOURCE_ARCHITECTURE="amd64"
 if [[ -f "$BACKUP_DIR/manifests/image-architecture.txt" ]]; then
-	SOURCE_ARCHITECTURE="$(tr -d '[:space:]' < "$BACKUP_DIR/manifests/image-architecture.txt")"
+	SOURCE_ARCHITECTURE="$(tr -d '[:space:]' <"$BACKUP_DIR/manifests/image-architecture.txt")"
 elif [[ -f "$BACKUP_DIR/manifests/host-architecture.txt" ]]; then
-	SOURCE_ARCHITECTURE="$(tr -d '[:space:]' < "$BACKUP_DIR/manifests/host-architecture.txt")"
+	SOURCE_ARCHITECTURE="$(tr -d '[:space:]' <"$BACKUP_DIR/manifests/host-architecture.txt")"
 fi
 case "$SOURCE_ARCHITECTURE" in
-	x86_64) SOURCE_ARCHITECTURE=amd64 ;;
-	aarch64) SOURCE_ARCHITECTURE=arm64 ;;
+x86_64) SOURCE_ARCHITECTURE=amd64 ;;
+aarch64) SOURCE_ARCHITECTURE=arm64 ;;
 esac
 TARGET_ARCHITECTURE="$(uname -m)"
 case "$TARGET_ARCHITECTURE" in
-	x86_64) TARGET_ARCHITECTURE=amd64 ;;
-	aarch64) TARGET_ARCHITECTURE=arm64 ;;
+x86_64) TARGET_ARCHITECTURE=amd64 ;;
+aarch64) TARGET_ARCHITECTURE=arm64 ;;
 esac
 [[ "$SOURCE_ARCHITECTURE" == "$TARGET_ARCHITECTURE" ]] ||
 	die "Backup architecture $SOURCE_ARCHITECTURE does not match target $TARGET_ARCHITECTURE"
@@ -164,7 +177,7 @@ done
 if [[ -z "$MAIN_DB_BACKUP" && -f "$BACKUP_DIR/db/yamata-main.dump" ]]; then
 	MAIN_DB_BACKUP="$BACKUP_DIR/db/yamata-main.dump"
 fi
-[[ -n "$MAIN_DB_BACKUP" ]] || \
+[[ -n "$MAIN_DB_BACKUP" ]] ||
 	die "Main PostgreSQL dump is absent from this archive; provide --main-db-backup"
 MAIN_DB_BACKUP="$(readlink -f "$MAIN_DB_BACKUP")"
 [[ -f "$MAIN_DB_BACKUP" ]] || die "Main PostgreSQL dump not found: $MAIN_DB_BACKUP"
@@ -195,9 +208,9 @@ log "Using Compose project/volume prefix: $COMPOSE_PROJECT_NAME"
 
 while IFS= read -r existing_volume; do
 	case "$existing_volume" in
-		"${COMPOSE_PROJECT_NAME}"_*)
-			die "Target volume already exists; target must be fresh: $existing_volume"
-			;;
+	"${COMPOSE_PROJECT_NAME}"_*)
+		die "Target volume already exists; target must be fresh: $existing_volume"
+		;;
 	esac
 done < <("${DOCKER[@]}" volume ls --format '{{.Name}}')
 
@@ -207,7 +220,7 @@ awk '
 	$2 != "./SHA256SUMS" &&
 	$2 != "SHA256SUMS"
 ' \
-	"$BACKUP_DIR/SHA256SUMS" > "$WORK_DIR/SHA256SUMS.payload"
+	"$BACKUP_DIR/SHA256SUMS" >"$WORK_DIR/SHA256SUMS.payload"
 (
 	cd "$BACKUP_DIR"
 	sha256sum -c "$WORK_DIR/SHA256SUMS.payload"
@@ -230,17 +243,8 @@ for image_archive in "$BACKUP_DIR"/images/*.tar.gz; do
 	gzip -dc "$image_archive" | "${DOCKER[@]}" load
 done
 
-for image_name in \
-	postgres:15-alpine redis:8.0.3-alpine glitchtip/glitchtip:latest \
-	python:3.12-alpine prom/prometheus:v3.5.0 \
-	grafana/grafana:12.1.0-ubuntu \
-	quay.io/prometheuscommunity/postgres-exporter:v0.15.0 \
-	prom/node-exporter:v1.10.2 gcr.io/cadvisor/cadvisor:v0.49.2 \
-	yamata-no-orochi yamata-nginx-beta yamata-cert-monitor-beta \
-	yamata-frontend-beta; do
-	"${DOCKER[@]}" image inspect "$image_name" >/dev/null 2>&1 || \
-		die "Required image was not loaded: $image_name"
-done
+"${DOCKER[@]}" image inspect postgres:15-alpine >/dev/null 2>&1 ||
+	die "PostgreSQL image was not loaded"
 
 log "Validating PostgreSQL dumps"
 "${DOCKER[@]}" run --rm --entrypoint pg_restore \
@@ -292,8 +296,10 @@ cd "$PROJECT_DIR"
 
 # shellcheck disable=SC1091
 source "$PROJECT_DIR/scripts/load-yamata-env.sh"
-load_yamata_env_file "$PROJECT_DIR/.env.beta" || \
+load_yamata_env_file "$PROJECT_DIR/.env.beta" ||
 	die "Could not safely parse $PROJECT_DIR/.env.beta"
+[[ "${APP_ENV:-}" == production && "${EXTERNAL_SERVICES_MODE:-}" == live ]] ||
+	die "Backup environment must specify APP_ENV=production and EXTERNAL_SERVICES_MODE=live"
 
 # Campaign execution belongs exclusively to the isolated scheduler container.
 if grep -q '^CAMPAIGN_EXECUTION_ENABLED=' .env.beta; then
@@ -328,11 +334,12 @@ fi
 : "${DOMAIN:?DOMAIN is missing from .env.beta}"
 : "${MONITORING_DOMAIN:?MONITORING_DOMAIN is missing from .env.beta}"
 : "${SENTRY_UI_DOMAIN:?SENTRY_UI_DOMAIN is missing from .env.beta}"
+: "${PGADMIN_DOMAIN:?PGADMIN_DOMAIN is missing from .env.beta}"
 
 if grep -q '^COMPOSE_PROJECT_NAME=' .env.beta; then
 	sed -i "s/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME/" .env.beta
 else
-	printf '\nCOMPOSE_PROJECT_NAME=%s\n' "$COMPOSE_PROJECT_NAME" >> .env.beta
+	printf '\nCOMPOSE_PROJECT_NAME=%s\n' "$COMPOSE_PROJECT_NAME" >>.env.beta
 fi
 export COMPOSE_PROJECT_NAME
 
@@ -344,11 +351,13 @@ for prompt_file in \
 done
 
 log "Generating runtime PostgreSQL and Nginx files"
-mkdir -p docker/nginx/sites-available/generated/beta docker/prometheus/rules
+mkdir -p docker/nginx/sites-available/generated/beta docker/nginx/sites-available/generated/pgadmin docker/prometheus/rules
 bash docker/postgres/process-init-beta.sh
-envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $HSTS_MAX_AGE $GLOBAL_RATE_LIMIT $AUTH_RATE_LIMIT' \
-	< docker/nginx/sites-available/yamata-beta.conf \
-	> docker/nginx/sites-available/generated/beta/yamata.conf
+envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $PGADMIN_DOMAIN' \
+	<docker/nginx/sites-available/yamata-beta.conf \
+	>docker/nginx/sites-available/generated/beta/yamata.conf
+envsubst '$DOMAIN $PGADMIN_DOMAIN' <docker/nginx/sites-available/pgadmin-beta.conf \
+	>docker/nginx/sites-available/generated/pgadmin/pgadmin.conf
 
 find docker -type d -exec chmod 755 {} +
 find docker -type f -exec chmod 644 {} +
@@ -387,19 +396,19 @@ while IFS= read -r certificate_path; do
 	if [[ $EUID -eq 0 ]]; then
 		test -f "$certificate_path" || die "Certificate file is missing: $certificate_path"
 		if [[ "$certificate_path" == *privkey* ]]; then
-			openssl pkey -in "$certificate_path" -check -noout >/dev/null 2>&1 || \
+			openssl pkey -in "$certificate_path" -check -noout >/dev/null 2>&1 ||
 				die "Private key is invalid: $certificate_path"
 		else
-			openssl x509 -in "$certificate_path" -checkend 0 -noout >/dev/null 2>&1 || \
+			openssl x509 -in "$certificate_path" -checkend 0 -noout >/dev/null 2>&1 ||
 				die "Certificate is invalid or expired: $certificate_path"
 		fi
 	else
 		sudo test -f "$certificate_path" || die "Certificate file is missing: $certificate_path"
 		if [[ "$certificate_path" == *privkey* ]]; then
-			sudo openssl pkey -in "$certificate_path" -check -noout >/dev/null 2>&1 || \
+			sudo openssl pkey -in "$certificate_path" -check -noout >/dev/null 2>&1 ||
 				die "Private key is invalid: $certificate_path"
 		else
-			sudo openssl x509 -in "$certificate_path" -checkend 0 -noout >/dev/null 2>&1 || \
+			sudo openssl x509 -in "$certificate_path" -checkend 0 -noout >/dev/null 2>&1 ||
 				die "Certificate is invalid or expired: $certificate_path"
 		fi
 	fi
@@ -414,6 +423,11 @@ COMPOSE=("${DOCKER[@]}" compose --env-file "$PROJECT_DIR/.env.beta" -f "$PROJECT
 readonly COMPOSE
 
 "${COMPOSE[@]}" config -q
+images="$("${COMPOSE[@]}" config --images)" || die "Could not determine required Compose images"
+while IFS= read -r image_name; do
+	[[ -z "$image_name" ]] && continue
+	"${DOCKER[@]}" image inspect "$image_name" >/dev/null 2>&1 || die "Required image was not loaded: $image_name"
+done <<<"$images"
 
 log "Creating empty Compose containers and named volumes"
 "${COMPOSE[@]}" create
@@ -500,7 +514,7 @@ log "Restoring main PostgreSQL database"
 	createdb -T template0 -U "$DB_USER" -O "$DB_USER" "$DB_NAME"
 "${DOCKER[@]}" exec -i yamata-postgres-beta pg_restore \
 	--exit-on-error --no-owner --no-privileges \
-	-U "$DB_USER" -d "$DB_NAME" < "$MAIN_DB_BACKUP"
+	-U "$DB_USER" -d "$DB_NAME" <"$MAIN_DB_BACKUP"
 
 log "Applying schema changes required by selective data imports and current app"
 bash "$PROJECT_DIR/scripts/apply-yamata-required-migrations.sh" --repair "$PROJECT_DIR"
@@ -514,13 +528,19 @@ log "Restoring Sentry/GlitchTip PostgreSQL database"
 "${DOCKER[@]}" exec -i yamata-sentry-postgres-beta pg_restore \
 	--exit-on-error --no-owner --no-privileges \
 	-U "$SENTRY_POSTGRES_USER" -d "$SENTRY_POSTGRES_DB" \
-	< "$SENTRY_DB_BACKUP"
+	<"$SENTRY_DB_BACKUP"
 
 "${DOCKER[@]}" exec yamata-postgres-beta \
 	vacuumdb -U "$DB_USER" -d "$DB_NAME" --analyze-in-stages
 
 log "Starting infrastructure"
 export SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED=false
+export SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED=false
+export SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED=false
+export TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED=false
+export CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_ENABLED=false
+export BUNDLE_ACTION_FILE_SCHEDULER_ENABLED=false
+export CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED=false
 export SMART_TAG_EVALUATION_SCHEDULER_ENABLED=false
 
 "${COMPOSE[@]}" up -d \
