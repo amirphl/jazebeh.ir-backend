@@ -4,6 +4,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -1289,6 +1290,7 @@ func (s *SMSCampaignScheduler) processSMSStatusJobGroup(parent context.Context, 
 		if parent.Err() != nil {
 			return
 		}
+		startedAt := time.Now()
 		var err error
 		providerName, providerErr := statusJobProvider(job)
 		if providerErr != nil {
@@ -1298,7 +1300,7 @@ func (s *SMSCampaignScheduler) processSMSStatusJobGroup(parent context.Context, 
 			payamToken, tokenErr := s.getPayamStatusToken(tokenCtx)
 			tokenCancel()
 			if tokenErr != nil {
-				err = fmt.Errorf("PayamSMS token for status jobs: %w", tokenErr)
+				err = fmt.Errorf("get PayamSMS status token: %w", tokenErr)
 			} else {
 				jobCtx, jobCancel := context.WithTimeout(parent, 2*time.Minute)
 				err = s.handleStatusJob(jobCtx, job, payamToken)
@@ -1311,7 +1313,19 @@ func (s *SMSCampaignScheduler) processSMSStatusJobGroup(parent context.Context, 
 		}
 
 		if err != nil {
-			s.logger.Printf("SMS scheduler: handle status job id=%d failed: %v", job.ID, err)
+			// Keep this line safe for the broadly visible scheduler log: identifiers
+			// and counts are enough to correlate a failing job without exposing
+			// recipient phone numbers, tokens, or provider response bodies.
+			s.logger.Printf("SMS scheduler: handle status job failed job_id=%d processed_campaign_id=%d provider=%q tracking_id_count=%d retry_count=%d elapsed=%s deadline_exceeded=%t error=%v",
+				job.ID,
+				job.ProcessedCampaignID,
+				providerName,
+				len(job.TrackingIDs),
+				job.RetryCount,
+				time.Since(startedAt).Round(time.Millisecond),
+				errors.Is(err, context.DeadlineExceeded),
+				err,
+			)
 			if job.RetryCount >= smsStatusJobMaxRetry {
 				s.notifyAdmin(fmt.Sprintf("SMS scheduler: status job id=%d has failed %d times with error: %v", job.ID, job.RetryCount, err))
 			}
@@ -1353,9 +1367,15 @@ func (s *SMSCampaignScheduler) handleStatusJob(ctx context.Context, job *models.
 	if providerName != models.SMSProviderPayamSMS {
 		return s.handleExternalSMSStatusJob(ctx, job, providerName)
 	}
+	fetchStartedAt := time.Now()
 	statusResult, fetchErr := s.smsClient.FetchStatus(ctx, jazzAccessToken, []string(job.TrackingIDs))
 	job.RawProviderResponse = statusResult.RawResponse
 	if fetchErr != nil {
+		fetchErr = fmt.Errorf("fetch PayamSMS delivery status tracking_id_count=%d elapsed=%s: %w",
+			len(job.TrackingIDs),
+			time.Since(fetchStartedAt).Round(time.Millisecond),
+			fetchErr,
+		)
 		now := utils.UTCNow()
 		job.RetryCount++
 		msg := fetchErr.Error()
@@ -1367,7 +1387,10 @@ func (s *SMSCampaignScheduler) handleStatusJob(ctx context.Context, job *models.
 			job.ExecutedAt = nil
 		}
 		if err := s.jobRepo.Update(ctx, job); err != nil {
-			return err
+			// A deadline can expire just before this update. Preserve the original
+			// provider failure in the returned error instead of replacing it with
+			// the less useful database/context error.
+			return fmt.Errorf("%w; persist failed status-job retry state: %v", fetchErr, err)
 		}
 		return fetchErr
 	}
@@ -1410,25 +1433,25 @@ func (s *SMSCampaignScheduler) handleStatusJob(ctx context.Context, job *models.
 		return s.jobRepo.Update(txCtx, job)
 	})
 	if txErr != nil {
-		return txErr
+		return fmt.Errorf("persist PayamSMS delivery status results: %w", txErr)
 	}
 
 	stats, err := s.updateProcessedCampaignStats(ctx, job.ProcessedCampaignID)
 	if err != nil {
-		return err
+		return fmt.Errorf("calculate PayamSMS delivery statistics: %w", err)
 	}
 
 	if stats != nil {
 		pc, err := s.pcRepo.ByID(ctx, job.ProcessedCampaignID)
 		if err != nil {
-			return err
+			return fmt.Errorf("load processed campaign for PayamSMS statistics: %w", err)
 		}
 		if pc == nil {
 			return fmt.Errorf("processed campaign not found for processed campaign id=%d", job.ProcessedCampaignID)
 		}
 		if shouldPushCurrentProcessedCampaignStatistics(pc, stats) {
 			if err := s.botClient.PushCampaignStatistics(ctx, pc.CampaignID, stats); err != nil {
-				return err
+				return fmt.Errorf("push PayamSMS delivery statistics to campaign API campaign_id=%d: %w", pc.CampaignID, err)
 			}
 		}
 	}
@@ -1834,7 +1857,7 @@ func (s *SMSCampaignScheduler) handleExternalSMSStatusJob(ctx context.Context, j
 	}
 	rows, err := s.sentRepo.ListByTrackingIDs(ctx, job.ProcessedCampaignID, []string(job.TrackingIDs))
 	if err != nil {
-		return err
+		return fmt.Errorf("load %s sent messages for delivery-status lookup: %w", providerName, err)
 	}
 	byLookupID := make(map[string]*models.SentSMS, len(rows))
 	lookupIDs := make([]string, 0, len(rows))
@@ -1856,9 +1879,16 @@ func (s *SMSCampaignScheduler) handleExternalSMSStatusJob(ctx context.Context, j
 		return s.markSMSStatusJobExecuted(ctx, job, nil)
 	}
 
+	fetchStartedAt := time.Now()
 	statusResult, fetchErr := provider.FetchStatus(ctx, lookupIDs)
 	job.RawProviderResponse = statusResult.RawResponse
 	if fetchErr != nil {
+		fetchErr = fmt.Errorf("fetch %s delivery status lookup_id_count=%d elapsed=%s: %w",
+			providerName,
+			len(lookupIDs),
+			time.Since(fetchStartedAt).Round(time.Millisecond),
+			fetchErr,
+		)
 		return s.markSMSStatusJobFailure(ctx, job, fetchErr)
 	}
 	missingLookupIDs := missingExternalSMSStatusLookupIDs(providerName, lookupIDs, statusResult.Items)
@@ -1946,9 +1976,12 @@ func (s *SMSCampaignScheduler) handleExternalSMSStatusJob(ctx context.Context, j
 		job.UpdatedAt = now
 		return s.jobRepo.Update(txCtx, job)
 	}); err != nil {
-		return err
+		return fmt.Errorf("persist %s delivery status results: %w", providerName, err)
 	}
 	statisticsErr := s.publishSMSStatusStatistics(ctx, job.ProcessedCampaignID)
+	if statisticsErr != nil {
+		statisticsErr = fmt.Errorf("publish %s delivery statistics: %w", providerName, statisticsErr)
+	}
 	if partialStatusErr != nil {
 		smsProviderStatusJobFailuresTotal.WithLabelValues(string(providerName)).Inc()
 		if statisticsErr != nil {
@@ -2022,7 +2055,7 @@ func (s *SMSCampaignScheduler) markSMSStatusJobFailure(ctx context.Context, job 
 		job.ExecutedAt = nil
 	}
 	if err := s.jobRepo.Update(ctx, job); err != nil {
-		return err
+		return fmt.Errorf("%w; persist failed status-job retry state: %v", fetchErr, err)
 	}
 	return fetchErr
 }
