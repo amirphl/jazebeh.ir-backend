@@ -51,3 +51,83 @@ func TestParseBundleActionXLSXStreamsRowsAndPreservesCounts(t *testing.T) {
 		t.Errorf("uids = %#v, want %#v", uids, want)
 	}
 }
+
+func TestParseBundleActionXLSXAcceptsUIDsWithoutHeader(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "headerless-actions.xlsx")
+	xl := excelize.NewFile()
+	sheet := xl.GetSheetName(0)
+	for cell, value := range map[string]string{
+		"A1": " uid-a ",
+		"A2": "uid-a",
+		"A3": "uid-b",
+	} {
+		if err := xl.SetCellValue(sheet, cell, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := xl.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := xl.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	uids, total, duplicates, invalid, err := parseBundleActionXLSX(path)
+	if err != nil {
+		t.Fatalf("parseBundleActionXLSX() error = %v", err)
+	}
+	if got, want := total, int64(3); got != want {
+		t.Errorf("total = %d, want %d", got, want)
+	}
+	if got, want := duplicates, int64(1); got != want {
+		t.Errorf("duplicates = %d, want %d", got, want)
+	}
+	if got, want := invalid, int64(0); got != want {
+		t.Errorf("invalid = %d, want %d", got, want)
+	}
+	if want := []string{"uid-a", "uid-b"}; !reflect.DeepEqual(uids, want) {
+		t.Errorf("uids = %#v, want %#v", uids, want)
+	}
+}
+
+func TestParseBundleActionXLSXAcceptsUIDHeaderWithWhitespaceAndCase(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "headered-actions.xlsx")
+	xl := excelize.NewFile()
+	sheet := xl.GetSheetName(0)
+	for cell, value := range map[string]string{
+		"A1": " UID ",
+		"A2": "uid-a",
+		"A3": "uid-b",
+	} {
+		if err := xl.SetCellValue(sheet, cell, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := xl.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := xl.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	uids, total, duplicates, invalid, err := parseBundleActionXLSX(path)
+	if err != nil {
+		t.Fatalf("parseBundleActionXLSX() error = %v", err)
+	}
+	if got, want := total, int64(2); got != want {
+		t.Errorf("total = %d, want %d", got, want)
+	}
+	if got, want := duplicates, int64(0); got != want {
+		t.Errorf("duplicates = %d, want %d", got, want)
+	}
+	if got, want := invalid, int64(0); got != want {
+		t.Errorf("invalid = %d, want %d", got, want)
+	}
+	if want := []string{"uid-a", "uid-b"}; !reflect.DeepEqual(uids, want) {
+		t.Errorf("uids = %#v, want %#v", uids, want)
+	}
+}
