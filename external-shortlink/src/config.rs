@@ -124,7 +124,7 @@ impl Settings {
             )?,
             spool_replay_batch_size: usize::try_from(unsigned(
                 "EXTERNAL_SHORTLINK_SPOOL_REPLAY_BATCH_SIZE",
-                500,
+                250,
                 1,
                 3_000,
             )?)?,
@@ -135,7 +135,7 @@ impl Settings {
             )?,
             spool_operation_timeout: seconds(
                 "EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS",
-                2.0,
+                30.0,
                 0.01,
             )?,
             acknowledged_retention_days: i64::try_from(unsigned(
