@@ -544,18 +544,21 @@ func loadSchedulerConfig() SchedulerConfig {
 		BundleActionFileSchedulerLeaseDuration:             getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_LEASE_DURATION", 35*time.Minute),
 		CampaignRefundReconciliationSchedulerEnabled:       getEnvBool("CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED", false),
 		CampaignRefundReconciliationPollInterval:           getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL", time.Minute),
-		CampaignRefundReconciliationEligibilityDelay:       getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY", 72*time.Hour),
-		CampaignRefundReconciliationJobTimeout:             getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT", 30*time.Second),
-		CampaignRefundReconciliationLeaseDuration:          getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_LEASE_DURATION", 2*time.Minute),
-		CampaignRefundReconciliationDiscoveryBatchSize:     getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_DISCOVERY_BATCH_SIZE", 250),
-		CampaignRefundReconciliationMaxParallelRuns:        getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_MAX_PARALLEL_RUNS", 1),
-		CampaignRefundReconciliationMaxAttempts:            getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_MAX_ATTEMPTS", 8),
-		CampaignRefundReconciliationRetryBase:              getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_RETRY_BASE", time.Minute),
-		CampaignRefundReconciliationRetryMax:               getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_RETRY_MAX", time.Hour),
-		PayamBalanceMonitorEnabled:                         getEnvBool("PAYAM_BALANCE_MONITOR_ENABLED", true),
-		PayamBalanceMonitorInterval:                        getEnvDuration("PAYAM_BALANCE_MONITOR_INTERVAL", 5*time.Minute),
-		PayamBalanceMonitorThresholdTomans:                 getEnvInt64("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", 100_000_000),
-		PayamBalanceMonitorMaxAlertInterval:                getEnvDuration("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", time.Hour),
+		// Keep this beyond the latest scheduled provider status poll (88 hours for
+		// non-Candoo SMS) before financial reconciliation can act on a zero-delivery
+		// result.
+		CampaignRefundReconciliationEligibilityDelay:   getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY", 96*time.Hour),
+		CampaignRefundReconciliationJobTimeout:         getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT", 30*time.Second),
+		CampaignRefundReconciliationLeaseDuration:      getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_LEASE_DURATION", 2*time.Minute),
+		CampaignRefundReconciliationDiscoveryBatchSize: getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_DISCOVERY_BATCH_SIZE", 250),
+		CampaignRefundReconciliationMaxParallelRuns:    getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_MAX_PARALLEL_RUNS", 1),
+		CampaignRefundReconciliationMaxAttempts:        getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_MAX_ATTEMPTS", 8),
+		CampaignRefundReconciliationRetryBase:          getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_RETRY_BASE", time.Minute),
+		CampaignRefundReconciliationRetryMax:           getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_RETRY_MAX", time.Hour),
+		PayamBalanceMonitorEnabled:                     getEnvBool("PAYAM_BALANCE_MONITOR_ENABLED", true),
+		PayamBalanceMonitorInterval:                    getEnvDuration("PAYAM_BALANCE_MONITOR_INTERVAL", 5*time.Minute),
+		PayamBalanceMonitorThresholdTomans:             getEnvInt64("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", 100_000_000),
+		PayamBalanceMonitorMaxAlertInterval:            getEnvDuration("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", time.Hour),
 	}
 }
 
