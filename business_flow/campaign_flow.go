@@ -136,9 +136,17 @@ type CampaignFlowImpl struct {
 	rubikaConfig            config.RubikaConfig
 	splusConfig             config.SplusConfig
 	irHTTPSProxy            string
+	mockExternal            bool
+	mockShortLinkDomain     string
 	shortLinkPublisher      ShortLinkMappingPublisher
 	rc                      *redis.Client
 	db                      *gorm.DB
+}
+
+// SetMockExternalServices must be called before the flow is used.
+func (s *CampaignFlowImpl) SetMockExternalServices(enabled bool, shortLinkDomain string) {
+	s.mockExternal = enabled
+	s.mockShortLinkDomain = shortLinkDomain
 }
 
 const (
@@ -251,7 +259,7 @@ func (s *CampaignFlowImpl) CreateCampaign(
 		return nil, NewBusinessError("CUSTOMER_LOOKUP_FAILED", "Failed to lookup customer", err)
 	}
 
-	shortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
+	shortLinkDomain, err := s.sanitizeShortLinkDomain(req.ShortLinkDomain)
 	if err != nil {
 		return nil, NewBusinessError("SHORT_LINK_DOMAIN_INVALID", "Invalid short link domain", err)
 	}
@@ -383,7 +391,7 @@ func (s *CampaignFlowImpl) UpdateCampaign(
 
 	ensureCampaignSpecDefaults(&campaign.Spec)
 	if req.ShortLinkDomain != nil && strings.TrimSpace(*req.ShortLinkDomain) != "" {
-		sanitizedShortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
+		sanitizedShortLinkDomain, err := s.sanitizeShortLinkDomain(req.ShortLinkDomain)
 		if err != nil {
 			return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
 		}
@@ -3464,7 +3472,7 @@ func (s *CampaignFlowImpl) validateCreateCampaignRequest(ctx context.Context, re
 		req.AudienceGrades = normalizedGrades
 	}
 
-	if _, err := sanitizeShortLinkDomain(req.ShortLinkDomain); err != nil {
+	if _, err := s.sanitizeShortLinkDomain(req.ShortLinkDomain); err != nil {
 		return err
 	}
 
@@ -3500,7 +3508,7 @@ func (s *CampaignFlowImpl) createCampaign(
 	req *dto.CreateCampaignRequest,
 	customer *models.Customer,
 ) (*models.Campaign, error) {
-	shortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
+	shortLinkDomain, err := s.sanitizeShortLinkDomain(req.ShortLinkDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -3991,7 +3999,7 @@ func (s *CampaignFlowImpl) canFinalizeCampaign(ctx context.Context, campaign *mo
 	if err := validateCampaignFinalizationBudget(campaign); err != nil {
 		return err
 	}
-	if _, err := sanitizeShortLinkDomain(campaign.Spec.ShortLinkDomain); err != nil {
+	if _, err := s.sanitizeShortLinkDomain(campaign.Spec.ShortLinkDomain); err != nil {
 		return err
 	}
 	if _, _, err := sanitizeCategoryAndJob(customer.AccountType.TypeName, campaign.Spec.Category, campaign.Spec.Job, true); err != nil {
@@ -5053,6 +5061,16 @@ func sanitizeShortLinkDomain(domain *string) (*string, error) {
 		return nil, ErrInvalidShortLinkDomain
 	}
 	return &trimmed, nil
+}
+
+func (s *CampaignFlowImpl) sanitizeShortLinkDomain(domain *string) (*string, error) {
+	if s.mockExternal && domain != nil {
+		if strings.TrimSpace(*domain) == "" || s.mockShortLinkDomain == "" {
+			return nil, ErrInvalidShortLinkDomain
+		}
+		return &s.mockShortLinkDomain, nil
+	}
+	return sanitizeShortLinkDomain(domain)
 }
 
 func sanitizeCategoryAndJob(accountType string, category, job *string, isMandatoryForAgency bool) (*string, *string, error) {
