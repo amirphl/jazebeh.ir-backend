@@ -1340,6 +1340,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/line-numbers/price-factor": {
+            "put": {
+                "description": "Update the price factor for a line number identified by its value.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin Line Numbers"
+                ],
+                "summary": "Update Line Number Price Factor (Admin)",
+                "parameters": [
+                    {
+                        "description": "Price factor update payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AdminUpdateLineNumberPriceFactorRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.AdminLineNumberDTO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Line number not found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Price factor update failed",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/line-numbers/report": {
             "get": {
                 "description": "Retrieve report per line number (totals)",
@@ -4772,7 +4836,7 @@ const docTemplate = `{
         },
         "/api/v1/campaigns/audience-click-report": {
             "post": {
-                "description": "Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.",
+                "description": "Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for selected campaigns owned by the authenticated customer. This synchronous compatibility endpoint supports at most 250,000 rows. For larger reports, create an asynchronous job at POST /api/v1/campaigns/audience-click-report/jobs, poll its status, then download the completed XLSX. Delivery status is unavailable in the stored audience mapping and is reported as unknown.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4827,6 +4891,144 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/campaigns/audience-click-report/jobs": {
+            "post": {
+                "description": "Queues a large audience report. Poll the returned job and download it after completion; completed files expire after 24 hours.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Create Campaign Audience Report Job",
+                "parameters": [
+                    {
+                        "description": "Campaign IDs to export",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ExportCampaignAudienceClickReportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.CampaignAudienceReportJobResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "429": {
+                        "description": "Too many active report jobs",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/campaigns/audience-click-report/jobs/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Get Campaign Audience Report Job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Report job UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.CampaignAudienceReportJobResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/campaigns/audience-click-report/jobs/{id}/download": {
+            "get": {
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Download Campaign Audience Report Job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Report job UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Excel file",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Report job or output file not found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Report is not ready",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Report expired",
                         "schema": {
                             "$ref": "#/definitions/dto.APIResponse"
                         }
@@ -10526,6 +10728,23 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AdminUpdateLineNumberPriceFactorRequest": {
+            "type": "object",
+            "required": [
+                "line_number",
+                "price_factor"
+            ],
+            "properties": {
+                "line_number": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 3
+                },
+                "price_factor": {
+                    "type": "number"
+                }
+            }
+        },
         "dto.AdminUpdateLineNumbersRequest": {
             "type": "object",
             "required": [
@@ -11512,6 +11731,50 @@ const docTemplate = `{
                 },
                 "eligible_delivered_count": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.CampaignAudienceReportJobResponse": {
+            "type": "object",
+            "properties": {
+                "byte_size": {
+                    "type": "integer"
+                },
+                "campaign_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "sheet_count": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },
