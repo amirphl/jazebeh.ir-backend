@@ -3,6 +3,12 @@
 
 \set ON_ERROR_STOP on
 
+\echo 'Running 0168_add_campaign_audience_report_customer_limit_index_down.sql...'
+\i migrations/0168_add_campaign_audience_report_customer_limit_index_down.sql
+
+\echo 'Running 0167_harden_campaign_audience_report_jobs_down.sql...'
+\i migrations/0167_harden_campaign_audience_report_jobs_down.sql
+
 \echo 'Running 0166_create_campaign_audience_report_jobs_down.sql...'
 \i migrations/0166_create_campaign_audience_report_jobs_down.sql
 
