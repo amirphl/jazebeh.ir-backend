@@ -30,41 +30,6 @@ type BotLoginResponse struct {
 	Session BotSessionDTO `json:"session"`
 }
 
-// Short Link creation DTOs for bot
-
-type ShortLinkDTO struct {
-	ID          uint    `json:"id"`
-	UID         string  `json:"uid"`
-	CampaignID  *uint   `json:"campaign_id,omitempty"`
-	ClientID    *uint   `json:"client_id,omitempty"`
-	PhoneNumber *string `json:"phone_number,omitempty"`
-	LongLink    string  `json:"long_link"`
-	ShortLink   string  `json:"short_link"`
-}
-
-type BotCreateShortLinkRequest struct {
-	UID         string  `json:"uid" validate:"required,max=64"`
-	CampaignID  *uint   `json:"campaign_id" validate:"omitempty"`
-	ClientID    *uint   `json:"client_id" validate:"omitempty"`
-	PhoneNumber *string `json:"phone_number" validate:"omitempty,max=20"`
-	LongLink    string  `json:"long_link" validate:"required"`
-	ShortLink   string  `json:"short_link" validate:"required"`
-}
-
-type BotCreateShortLinkResponse struct {
-	Message string       `json:"message"`
-	Item    ShortLinkDTO `json:"item"`
-}
-
-type BotCreateShortLinksRequest struct {
-	Items []BotCreateShortLinkRequest `json:"items" validate:"required,min=1,dive"`
-}
-
-type BotCreateShortLinksResponse struct {
-	Message string         `json:"message"`
-	Items   []ShortLinkDTO `json:"items"`
-}
-
 // PhoneWithAdLink pairs a phone number with its specific ad link for short link allocation.
 type PhoneWithAdLink struct {
 	Phone  string  `json:"phone" validate:"required,max=20"`
