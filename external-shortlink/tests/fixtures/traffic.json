@@ -1,0 +1,212 @@
+[
+  {
+    "name": "bot",
+    "ua": "Example/BOT/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "crawler",
+    "ua": "Example/CRAWLER/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "spider",
+    "ua": "Example/SPIDER/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "facebookexternalhit",
+    "ua": "Example/FACEBOOKEXTERNALHIT/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "facebot",
+    "ua": "Example/FACEBOT/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "twitterbot",
+    "ua": "Example/TWITTERBOT/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "googlemessages",
+    "ua": "Example/GOOGLEMESSAGES/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "telegrambot",
+    "ua": "Example/TELEGRAMBOT/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "whatsapp",
+    "ua": "Example/WHATSAPP/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "preview",
+    "ua": "Example/PREVIEW/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "linkpreview",
+    "ua": "Example/LINKPREVIEW/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "curl",
+    "ua": "Example/CURL/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "wget",
+    "ua": "Example/WGET/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "python-requests",
+    "ua": "Example/PYTHON-REQUESTS/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "okhttp",
+    "ua": "Example/OKHTTP/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "postman",
+    "ua": "Example/POSTMAN/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "v2raytun",
+    "ua": "Example/V2RAYTUN/1.0",
+    "ip": "203.0.113.4",
+    "bot": true
+  },
+  {
+    "name": "ip 66.249.0.0",
+    "ua": "",
+    "ip": "66.249.0.0",
+    "bot": true
+  },
+  {
+    "name": "ip 66.249.255.255",
+    "ua": "",
+    "ip": "66.249.255.255",
+    "bot": true
+  },
+  {
+    "name": "ip 74.125.0.0",
+    "ua": "",
+    "ip": "74.125.0.0",
+    "bot": true
+  },
+  {
+    "name": "ip 74.125.255.255",
+    "ua": "",
+    "ip": "74.125.255.255",
+    "bot": true
+  },
+  {
+    "name": "ip 66.248.255.255",
+    "ua": "",
+    "ip": "66.248.255.255",
+    "bot": false
+  },
+  {
+    "name": "ip 66.250.0.0",
+    "ua": "",
+    "ip": "66.250.0.0",
+    "bot": false
+  },
+  {
+    "name": "ip 74.124.255.255",
+    "ua": "",
+    "ip": "74.124.255.255",
+    "bot": false
+  },
+  {
+    "name": "ip 74.126.0.0",
+    "ua": "",
+    "ip": "74.126.0.0",
+    "bot": false
+  },
+  {
+    "name": "ip 66.249.invalid",
+    "ua": "",
+    "ip": "66.249.invalid",
+    "bot": false
+  },
+  {
+    "name": "ip ::ffff:66.249.1.1",
+    "ua": "",
+    "ip": "::ffff:66.249.1.1",
+    "bot": false
+  },
+  {
+    "name": "ip 2001:db8::1",
+    "ua": "",
+    "ip": "2001:db8::1",
+    "bot": false
+  },
+  {
+    "name": "ip ",
+    "ua": "",
+    "ip": "",
+    "bot": false
+  },
+  {
+    "name": "browser ",
+    "ua": "",
+    "ip": "203.0.113.4",
+    "bot": false
+  },
+  {
+    "name": "browser Mozilla/5.0 (Linux; Android 14) Chrome/120",
+    "ua": "Mozilla/5.0 (Linux; Android 14) Chrome/120",
+    "ip": "203.0.113.4",
+    "bot": false
+  },
+  {
+    "name": "browser Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604",
+    "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604",
+    "ip": "203.0.113.4",
+    "bot": false
+  },
+  {
+    "name": "browser Mozilla/5.0 (Windows NT 10.0) Chrome/120",
+    "ua": "Mozilla/5.0 (Windows NT 10.0) Chrome/120",
+    "ip": "203.0.113.4",
+    "bot": false
+  },
+  {
+    "name": "browser Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/120",
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/120",
+    "ip": "203.0.113.4",
+    "bot": false
+  },
+  {
+    "name": "browser Mozilla/5.0 (X11; Linux x86_64) Chrome/120",
+    "ua": "Mozilla/5.0 (X11; Linux x86_64) Chrome/120",
+    "ip": "203.0.113.4",
+    "bot": false
+  }
+]
