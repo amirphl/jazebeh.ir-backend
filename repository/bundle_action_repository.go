@@ -298,13 +298,13 @@ func refreshBundleActionMetrics(tx *gorm.DB, bundleID uint, at time.Time) error 
 		return tx.Exec(`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) VALUES (?,false,0,0,?) ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=false,action_count=0,eligible_delivered_count=0,updated_at=EXCLUDED.updated_at`, bundleID, at).Error
 	}
 	base := eligibleActionAudienceSQL
-	if err := tx.Exec(base+` INSERT INTO bundle_action_campaign_metrics(bundle_id,campaign_id,action_count,eligible_delivered_count,updated_at) SELECT ?,campaign_id,COUNT(*) FILTER (WHERE action),COUNT(*),? FROM marked GROUP BY campaign_id`, bundleID, bundleID, at).Error; err != nil {
+	if err := tx.Exec(base+` INSERT INTO bundle_action_campaign_metrics(bundle_id,campaign_id,action_count,eligible_delivered_count,updated_at) SELECT ?,campaign_id,COUNT(*) FILTER (WHERE action),COUNT(*),? FROM marked GROUP BY campaign_id`, bundleID, bundleID, bundleID, at).Error; err != nil {
 		return fmt.Errorf("refresh campaign atr: %w", err)
 	}
-	if err := tx.Exec(base+` INSERT INTO bundle_action_tag_metrics(bundle_id,tag_id,test_action_count,test_eligible_delivered_count,overall_action_count,overall_eligible_delivered_count,updated_at) SELECT ?,tag_id,COUNT(*) FILTER(WHERE phase='test' AND action),COUNT(*) FILTER(WHERE phase='test'),COUNT(*) FILTER(WHERE action),COUNT(*),? FROM marked GROUP BY tag_id`, bundleID, bundleID, at).Error; err != nil {
+	if err := tx.Exec(base+` INSERT INTO bundle_action_tag_metrics(bundle_id,tag_id,test_action_count,test_eligible_delivered_count,overall_action_count,overall_eligible_delivered_count,updated_at) SELECT ?,tag_id,COUNT(*) FILTER(WHERE phase='test' AND action),COUNT(*) FILTER(WHERE phase='test'),COUNT(*) FILTER(WHERE action),COUNT(*),? FROM marked GROUP BY tag_id`, bundleID, bundleID, bundleID, at).Error; err != nil {
 		return fmt.Errorf("refresh tag atr: %w", err)
 	}
-	return tx.Exec(base+` INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) SELECT ?,true,COUNT(*) FILTER(WHERE action),COUNT(*),? FROM marked ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=true,action_count=EXCLUDED.action_count,eligible_delivered_count=EXCLUDED.eligible_delivered_count,updated_at=EXCLUDED.updated_at`, bundleID, bundleID, at).Error
+	return tx.Exec(base+` INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) SELECT ?,true,COUNT(*) FILTER(WHERE action),COUNT(*),? FROM marked ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=true,action_count=EXCLUDED.action_count,eligible_delivered_count=EXCLUDED.eligible_delivered_count,updated_at=EXCLUDED.updated_at`, bundleID, bundleID, bundleID, at).Error
 }
 func (r *BundleActionRepositoryImpl) Summary(ctx context.Context, bundleID uint) (*models.BundleActionSummary, error) {
 	var x models.BundleActionSummary
@@ -324,7 +324,13 @@ func (r *BundleActionRepositoryImpl) CampaignMetric(ctx context.Context, bundleI
 }
 func (r *BundleActionRepositoryImpl) TagMetrics(ctx context.Context, bundleID uint) ([]*models.BundleActionTagMetric, error) {
 	var x []*models.BundleActionTagMetric
-	return x, r.getDB(ctx).Where("bundle_id=?", bundleID).Order("tag_id").Find(&x).Error
+	return x, r.getDB(ctx).
+		Table("bundle_action_tag_metrics AS metric").
+		Select("metric.*, tags.display_title AS tag_display_name").
+		Joins("JOIN tags ON tags.id = metric.tag_id").
+		Where("metric.bundle_id=?", bundleID).
+		Order("metric.tag_id").
+		Find(&x).Error
 }
 func (r *BundleActionRepositoryImpl) ActiveUIDSet(ctx context.Context, bundleID uint, uids []string) (map[string]bool, error) {
 	out := map[string]bool{}
