@@ -27,6 +27,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from script_common import require_live_provider_mode
 
 try:
     from zoneinfo import ZoneInfo
@@ -42,7 +43,9 @@ MAX_XLSX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
 LOGGER = logging.getLogger("torobpay_resend")
 
 PAYAM_SMS = {
-    "token_url": os.getenv("PAYAM_SMS_TOKEN_URL", "https://www.payamsms.com/auth/oauth/token"),
+    "token_url": os.getenv(
+        "PAYAM_SMS_TOKEN_URL", "https://www.payamsms.com/auth/oauth/token"
+    ),
     "system_name": os.getenv("PAYAM_SMS_SYSTEM_NAME", ""),
     "username": os.getenv("PAYAM_SMS_USERNAME", ""),
     "password": os.getenv("PAYAM_SMS_PASSWORD", ""),
@@ -440,7 +443,9 @@ def validate_xlsx_archive(zf: zipfile.ZipFile) -> None:
 def parse_xlsx_xml(raw: bytes, member_name: str) -> ET.Element:
     uppercase = raw[:4096].upper()
     if b"<!DOCTYPE" in uppercase or b"<!ENTITY" in uppercase:
-        raise ValueError(f"XLSX member {member_name} contains a forbidden XML declaration")
+        raise ValueError(
+            f"XLSX member {member_name} contains a forbidden XML declaration"
+        )
     return ET.fromstring(raw)
 
 
@@ -690,7 +695,10 @@ def build_candidates(
             )
             continue
         key = row_key(row_id, recipient, corrected_text)
-        if key in sent_keys or legacy_row_key(row_id, recipient, corrected_text) in sent_keys:
+        if (
+            key in sent_keys
+            or legacy_row_key(row_id, recipient, corrected_text) in sent_keys
+        ):
             skipped_sent_count += 1
             continue
         if len(candidates) >= selection_limit:
@@ -767,7 +775,9 @@ def main() -> int:
     if args.timeout <= 0:
         raise SystemExit("--timeout must be greater than zero")
     if args.test_phone and not re.fullmatch(r"\+?[0-9]{7,16}", args.test_phone.strip()):
-        raise SystemExit("--test-phone must contain 7 to 16 digits with an optional leading +")
+        raise SystemExit(
+            "--test-phone must contain 7 to 16 digits with an optional leading +"
+        )
 
     input_path = Path(args.input_path)
     if not input_path.is_file():
@@ -854,6 +864,7 @@ def main() -> int:
         LOGGER.info("dry-run complete selected_rows=%d", len(candidates))
         return 0
 
+    require_live_provider_mode()
     validate_send_config()
     LOGGER.info("requesting PayamSMS token")
     token = get_token(args.timeout)
@@ -891,7 +902,9 @@ def main() -> int:
                 {
                     "ok": ok,
                     "http_status": status,
-                    "provider_response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+                    "provider_response_sha256": hashlib.sha256(
+                        raw.encode("utf-8")
+                    ).hexdigest(),
                     "payamsms_send_date": send_date,
                     "payamsms_send_date_timezone": "Asia/Tehran",
                     "payamsms_send_date_delay_seconds": args.send_date_delay_seconds,
