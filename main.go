@@ -10,11 +10,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"sync"
 	"syscall"
 	"time"
@@ -43,6 +46,27 @@ import (
 
 	"github.com/amirphl/Yamata-no-Orochi/app/scheduler"
 )
+
+var (
+	databaseLogURLPattern   = regexp.MustCompile(`(?i)postgres(?:ql)?://[^\s]+`)
+	databaseLogFieldPattern = regexp.MustCompile(`(?i)\b(user(?:name)?|password|dbname|database|host|port)\s*=\s*(?:'[^']*'|"[^"]*"|\x60[^\x60]*\x60|[^\s,;:)\x60]+)`)
+)
+
+// redactingLogWriter prevents database driver diagnostics from leaking
+// connection identifiers into application logs. Some drivers include the user,
+// database, host, and even a URI in connection errors before gorm returns them.
+type redactingLogWriter struct{ writer io.Writer }
+
+func (w redactingLogWriter) Write(p []byte) (int, error) {
+	redacted := redactDatabaseLogMessage(string(p))
+	_, err := w.writer.Write([]byte(redacted))
+	return len(p), err
+}
+
+func redactDatabaseLogMessage(message string) string {
+	message = databaseLogURLPattern.ReplaceAllString(message, "[redacted database URL]")
+	return databaseLogFieldPattern.ReplaceAllString(message, "$1=[redacted]")
+}
 
 // Application represents the main application structure
 type Application struct {
@@ -241,7 +265,7 @@ func initializeDatabase(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	if cfg.SlowQueryLog {
 		logLevel = gormlogger.Warn
 	}
-	gormLog := gormlogger.New(log.New(log.Writer(), "", log.Flags()), gormlogger.Config{
+	gormLog := gormlogger.New(log.New(redactingLogWriter{writer: log.Writer()}, "", log.Flags()), gormlogger.Config{
 		SlowThreshold: cfg.SlowQueryTime,
 		LogLevel:      logLevel,
 		// Several repositories intentionally use First to perform optional
@@ -257,13 +281,16 @@ func initializeDatabase(cfg config.DatabaseConfig) (*gorm.DB, error) {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormLog})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		// The pgx/gorm error string can contain connection identifiers. Gorm has
+		// already emitted a redacted diagnostic through redactingLogWriter; keep
+		// the error returned to the startup logger free of raw driver details.
+		return nil, errors.New("database connection initialization failed")
 	}
 
 	// Get underlying sql.DB for connection pooling configuration
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+		return nil, errors.New("database connection pool initialization failed")
 	}
 
 	// Configure connection pooling
@@ -274,7 +301,7 @@ func initializeDatabase(cfg config.DatabaseConfig) (*gorm.DB, error) {
 
 	// Test the connection
 	if err := sqlDB.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, errors.New("database connectivity check failed")
 	}
 
 	log.Printf("Database connection established with %d max open connections, %d max idle connections",
