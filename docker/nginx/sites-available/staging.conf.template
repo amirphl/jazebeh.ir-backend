@@ -1,0 +1,45 @@
+upstream yamata_backend { server app-beta:8080; }
+upstream staging_frontend { server frontend-beta:80; }
+upstream staging_sentry { server sentry-beta:8000; }
+upstream staging_grafana { server grafana-beta:3000; }
+
+server {
+    listen 80;
+    server_name staging.jazebeh.ir;
+    return 301 https://staging.jazebeh.ir$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name staging.jazebeh.ir;
+    ssl_certificate /etc/letsencrypt/live/${STAGING_CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${STAGING_CERT_NAME}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/${STAGING_CERT_NAME}/chain.pem;
+    client_max_body_size 256m;
+    limit_conn conn_limit_per_ip 100;
+    if ($block_proxy_method) { return 405; }
+    if ($block_absolute_uri) { return 400; }
+    if ($has_proxy_header) { return 400; }
+    location = /health { proxy_pass http://yamata_backend/api/v1/health; include /etc/nginx/proxy.conf; }
+    location ^~ /api/v1/auth/ { limit_req zone=auth burst=5 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; }
+    location ^~ /api/v1/admin/auth/ { limit_req zone=auth burst=5 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; }
+    location = /api/v1/admin/short-links/upload-csv { client_max_body_size 50m; limit_req zone=api burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; }
+    location = /api/v1/campaigns/audience-click-report { client_max_body_size 256m; limit_req zone=api burst=20 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 30s; proxy_send_timeout 12m; proxy_read_timeout 12m; }
+    location = /api/v1/bot/short-links/allocate { client_max_body_size 100m; limit_req zone=api burst=20 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 30s; proxy_send_timeout 55m; proxy_read_timeout 55m; }
+    location = /api/v1/media/upload { client_max_body_size 100m; limit_req zone=api burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 30s; proxy_send_timeout 300s; proxy_read_timeout 300s; }
+    location ^~ /api/v1/media/ { limit_req zone=api burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 30s; proxy_send_timeout 300s; proxy_read_timeout 300s; }
+    location ~ ^/api/v1/campaigns/[^/]+/smart-targeting/test-sampling-preview$ { limit_req zone=api burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 10s; proxy_send_timeout 150s; proxy_read_timeout 150s; }
+    location ~ ^/api/v1/campaigns/[^/]+/click-report$ { limit_req zone=api burst=10 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 10s; proxy_send_timeout 120s; proxy_read_timeout 120s; proxy_max_temp_file_size 0; }
+    location ~ ^/api/v1/campaigns/[^/]+$ { limit_req zone=api burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 10s; proxy_send_timeout 60s; proxy_read_timeout 60s; }
+    location ~ ^/api/v1/bot/campaigns/[^/]+/audience-uids$ { client_max_body_size 100m; limit_req zone=api burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; proxy_connect_timeout 30s; proxy_send_timeout 300s; proxy_read_timeout 300s; }
+    location ~ ^/api/ { limit_req zone=api burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; }
+    location ^~ /s/ { limit_req zone=general burst=100 nodelay; proxy_pass http://yamata_backend; include /etc/nginx/proxy.conf; }
+    location = /grafana { return 301 /grafana/; }
+    location ^~ /grafana/ { limit_req zone=grafana burst=300 nodelay; proxy_pass http://staging_grafana; include /etc/nginx/proxy.conf; include /etc/nginx/staging-vendor-security.conf; }
+    location = /sentry { return 301 /sentry/; }
+    location ^~ /sentry/ { limit_req zone=general burst=100 nodelay; proxy_pass http://staging_sentry; include /etc/nginx/proxy.conf; include /etc/nginx/staging-vendor-security.conf; }
+    location = /pgadmin { return 404; }
+    location ^~ /pgadmin/ { return 404; }
+    location / { limit_req zone=general burst=100 nodelay; proxy_pass http://staging_frontend; include /etc/nginx/proxy.conf; }
+}
