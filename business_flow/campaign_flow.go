@@ -2841,8 +2841,12 @@ func (s *CampaignFlowImpl) ListCampaigns(ctx context.Context, req *dto.ListCampa
 	// which appends the schedule_at secondary ordering to each of them.
 	orderBy := "default_schedule_at"
 	switch req.OrderBy {
-	case "oldest", "newest", "phase_test_first", "phase_execution_first", "highest_click_rate", "lowest_click_rate":
+	case "oldest", "newest", "phase_test_first", "phase_execution_first", "highest_click_rate", "lowest_click_rate", "schedule_at_asc", "schedule_at_desc":
 		orderBy = req.OrderBy
+	case "schedule_time_asc":
+		orderBy = "schedule_at_asc"
+	case "schedule_time_desc":
+		orderBy = "schedule_at_desc"
 	}
 
 	// Count total
