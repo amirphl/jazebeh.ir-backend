@@ -39,6 +39,12 @@ type AdminUpdateLineNumbersRequest struct {
 	Items []AdminUpdateLineNumberItem `json:"items" validate:"required,min=1,dive"`
 }
 
+// AdminUpdateLineNumberPriceFactorRequest updates the price factor of an existing line number.
+type AdminUpdateLineNumberPriceFactorRequest struct {
+	LineNumber  string  `json:"line_number" validate:"required,min=3,max=50"`
+	PriceFactor float64 `json:"price_factor" validate:"required,gt=0"`
+}
+
 // AdminLineNumberReportItem is the report row for admin listing
 // Values should be computed from message/campaign delivery data
 // All numeric fields represent totals for the time range (future extension)
