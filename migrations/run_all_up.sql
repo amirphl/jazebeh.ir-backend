@@ -499,5 +499,14 @@
 \echo 'Running 0163_create_short_link_uid_allocator.sql...'
 \i migrations/0163_create_short_link_uid_allocator.sql
 
+\echo 'Running 0164_add_campaign_audience_click_report_audit_actions.sql...'
+\i migrations/0164_add_campaign_audience_click_report_audit_actions.sql
+
+\echo 'Running 0165_optimize_bundle_action_metric_refresh.sql...'
+\i migrations/0165_optimize_bundle_action_metric_refresh.sql
+
+\echo 'Running 0166_create_campaign_audience_report_jobs.sql...'
+\i migrations/0166_create_campaign_audience_report_jobs.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
