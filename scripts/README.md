@@ -100,7 +100,10 @@ Key rules:
   The operation validates CSV headers and tag/reference identities before one
   atomic merge. `src_layer_all_stats` is replaced in full because its schema
   has no stable key; `tags` and `src_reference` are upserted by `id`, and rows
-  absent from those two CSVs are preserved.
+  absent from those two CSVs are preserved. The default requires both writers
+  to be stopped. `--allow-online-import` is an explicit override for a
+  production-load run; it can block writers and fails if it cannot acquire its
+  table locks within five seconds.
 - Do not use `init-beta-database.sh` for the initial restored production database.
 - Use `apply-yamata-required-migrations.sh --repair` only for the documented
   restore/repair workflow with both application writers stopped. Routine

@@ -2,7 +2,7 @@
 
 # Launch the reference-data CSV import as a detached transient systemd service.
 # Usage:
-#   run-yamata-reference-data-csv-import.sh STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window
+#   run-yamata-reference-data-csv-import.sh STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window [--allow-online-import]
 
 set -Eeuo pipefail
 
@@ -12,15 +12,17 @@ TAGS_CSV="${3:-}"
 PROJECT_DIR="/srv/yamata"
 REQUESTED_UNIT=""
 CONFIRMATION=""
+ALLOW_ONLINE_IMPORT=false
 project_dir_set=false
 
 die() { printf '[reference-data-csv-import-launcher] ERROR: %s\n' "$*" >&2; exit 1; }
-[[ -n "$STATS_CSV" && -n "$REFERENCE_CSV" && -n "$TAGS_CSV" ]] || die "Usage: $(basename "$0") STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window"
+[[ -n "$STATS_CSV" && -n "$REFERENCE_CSV" && -n "$TAGS_CSV" ]] || die "Usage: $(basename "$0") STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window [--allow-online-import]"
 shift 3
 while (($# > 0)); do
     case "$1" in
         --confirm-maintenance-window) CONFIRMATION="$1" ;;
-        --help|-h) printf 'Usage: %s STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window\n' "$(basename "$0")"; exit 0 ;;
+        --allow-online-import) ALLOW_ONLINE_IMPORT=true ;;
+        --help|-h) printf 'Usage: %s STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window [--allow-online-import]\n' "$(basename "$0")"; exit 0 ;;
         --*) die "Unknown option: $1" ;;
         *)
             if [[ "$project_dir_set" == false ]]; then PROJECT_DIR="$1"; project_dir_set=true
@@ -47,9 +49,14 @@ if [[ $EUID -eq 0 ]]; then SYSTEM=()
 else command -v sudo >/dev/null 2>&1 || die 'sudo is required to start the system service'; sudo -v; SYSTEM=(sudo)
 fi
 
+HELPER_OPTIONS=(--confirm-maintenance-window)
+if [[ "$ALLOW_ONLINE_IMPORT" == true ]]; then
+    HELPER_OPTIONS+=(--allow-online-import)
+fi
+
 "${SYSTEM[@]}" systemd-run --unit="$unit" --description='Yamata reference-data CSV import' \
     --property=Type=exec --property=Restart=no --property=TimeoutStartSec=infinity \
-    "$HELPER" "$STATS_CSV" "$REFERENCE_CSV" "$TAGS_CSV" "$PROJECT_DIR" --confirm-maintenance-window
+    "$HELPER" "$STATS_CSV" "$REFERENCE_CSV" "$TAGS_CSV" "$PROJECT_DIR" "${HELPER_OPTIONS[@]}"
 
 printf '[reference-data-csv-import-launcher] Started %s.service\n' "$unit"
 printf '[reference-data-csv-import-launcher] Follow: sudo journalctl -u %s -f -o cat\n' "$unit"

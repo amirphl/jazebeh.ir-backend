@@ -9,6 +9,8 @@ DO $validate_reference_data$
 DECLARE
     tag_name_conflicts bigint;
     missing_tag_references bigint;
+    active_reference_stats_gaps bigint;
+    active_reference_stats_gap_ids text;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM tmp_src_layer_all_stats) THEN
         RAISE EXCEPTION 'src_layer_all_stats CSV contains no data rows';
@@ -28,11 +30,51 @@ BEGIN
     LEFT JOIN public.tags AS existing_tag ON existing_tag.id = reference.id
     WHERE staged_tag.id IS NULL AND existing_tag.id IS NULL;
 
-    IF tag_name_conflicts > 0 OR missing_tag_references > 0 THEN
+    -- src_layer_all_stats is replaced in full below, while tags and
+    -- src_reference retain rows absent from the incoming CSV. Validate the
+    -- resulting effective catalog now, so an active tag can never reference a
+    -- hierarchy omitted from the replacement statistics snapshot.
+    SELECT
+        count(*),
+        string_agg(reference.id::text, ', ' ORDER BY reference.id)
+    INTO active_reference_stats_gaps, active_reference_stats_gap_ids
+    FROM (
+        SELECT id, layer1_category, layer2_category, layer3_category
+        FROM tmp_src_reference
+        UNION ALL
+        SELECT target.id, target.layer1_category, target.layer2_category, target.layer3_category
+        FROM public.src_reference AS target
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM tmp_src_reference AS source
+            WHERE source.id = target.id
+        )
+    ) AS reference
+    JOIN (
+        SELECT id, is_active
+        FROM tmp_tags
+        UNION ALL
+        SELECT target.id, target.is_active
+        FROM public.tags AS target
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM tmp_tags AS source
+            WHERE source.id = target.id
+        )
+    ) AS tag ON tag.id = reference.id
+    LEFT JOIN tmp_src_layer_all_stats AS stats
+      ON stats.layer1_category = reference.layer1_category
+     AND stats.layer2_category = reference.layer2_category
+     AND stats.layer3_category = reference.layer3_category
+    WHERE tag.is_active IS TRUE
+      AND stats.layer1_category IS NULL;
+
+    IF tag_name_conflicts > 0 OR missing_tag_references > 0 OR active_reference_stats_gaps > 0 THEN
         RAISE EXCEPTION
-            'reference-data validation failed: tag_name_conflicts=% missing_tag_references=%',
-            tag_name_conflicts, missing_tag_references
-            USING HINT = 'Resolve tag id/name identity conflicts and ensure every src_reference id exists in tags.';
+            'reference-data validation failed: tag_name_conflicts=% missing_tag_references=% active_reference_stats_gaps=% tag_ids=%',
+            tag_name_conflicts, missing_tag_references,
+            active_reference_stats_gaps, COALESCE(active_reference_stats_gap_ids, '')
+            USING HINT = 'Resolve tag id/name identity conflicts, ensure every src_reference id exists in tags, and include an exact src_layer_all_stats hierarchy row for every active tag reference.';
     END IF;
 END
 $validate_reference_data$;

@@ -5,7 +5,7 @@
 # replaced because it has no stable database key.
 #
 # Usage:
-#   import-yamata-reference-data-csv.sh STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] --confirm-maintenance-window
+#   import-yamata-reference-data-csv.sh STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] --confirm-maintenance-window [--allow-online-import]
 
 set -Eeuo pipefail
 umask 077
@@ -15,6 +15,7 @@ REFERENCE_ARGUMENT="${2:-}"
 TAGS_ARGUMENT="${3:-}"
 PROJECT_DIR="/srv/yamata"
 CONFIRMATION=""
+ALLOW_ONLINE_IMPORT=false
 readonly POSTGRES_CONTAINER="yamata-postgres-beta"
 readonly APP_NAME="yamata-reference-data-csv-import"
 
@@ -24,9 +25,11 @@ die() { printf '[reference-data-csv-import] ERROR: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'EOF'
 Usage:
-  import-yamata-reference-data-csv.sh STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] --confirm-maintenance-window
+  import-yamata-reference-data-csv.sh STATS_CSV REFERENCE_CSV TAGS_CSV [PROJECT_DIR] --confirm-maintenance-window [--allow-online-import]
 
-The API and campaign scheduler must remain stopped for the entire run.
+The API and campaign scheduler must remain stopped for the entire run unless
+--allow-online-import is supplied explicitly. Online imports can block writers
+and may fail after the five-second table-lock timeout under production load.
 EOF
 }
 
@@ -38,6 +41,7 @@ shift 3
 while (($# > 0)); do
     case "$1" in
         --confirm-maintenance-window) CONFIRMATION="$1" ;;
+        --allow-online-import) ALLOW_ONLINE_IMPORT=true ;;
         --help|-h) usage; exit 0 ;;
         --*) die "Unknown option: $1" ;;
         *) [[ "$PROJECT_DIR" == /srv/yamata ]] || die 'Multiple project directories supplied'; PROJECT_DIR="$1" ;;
@@ -84,7 +88,11 @@ readonly DOCKER
 for container in yamata-campaign-scheduler-beta yamata-app-beta; do
     if "${DOCKER[@]}" inspect "$container" >/dev/null 2>&1 &&
         [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$container")" == true ]]; then
-        die "Stop $container before this import and keep it stopped until it completes"
+        if [[ "$ALLOW_ONLINE_IMPORT" == true ]]; then
+            log "WARNING: continuing online while $container is running; writers can block and the import can fail under load"
+        else
+            die "Stop $container before this import and keep it stopped until it completes, or explicitly pass --allow-online-import"
+        fi
     fi
 done
 
