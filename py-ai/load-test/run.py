@@ -4,14 +4,20 @@ import asyncio
 import csv
 import json
 import random
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from statistics import StatisticsError, mean, median, variance
+from typing import Any, Dict, List, Tuple
 
 import aiohttp
-from statistics import mean, median, variance
-from statistics import StatisticsError
+
+PY_AI_ROOT = Path(__file__).resolve().parents[1]
+if str(PY_AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(PY_AI_ROOT))
+from operational_guard import require_confirmed_execution
+
 
 def parse_uids_file(path: Path) -> List[str]:
     """
@@ -27,6 +33,7 @@ def parse_uids_file(path: Path) -> List[str]:
     # keep duplicates allowed? Generally not needed; we dedupe.
     return list(dict.fromkeys(raw))  # dedupe preserving order
 
+
 def pct(values: List[float], p: float) -> float:
     """
     Simple percentile (p in [0,100]) using nearest-rank on sorted data.
@@ -38,7 +45,8 @@ def pct(values: List[float], p: float) -> float:
     if p >= 100:
         return values[-1]
     k = max(1, int(round(p / 100 * len(values))))
-    return values[sorted(range(len(values)), key=lambda i: values[i])[k-1]]
+    return values[sorted(range(len(values)), key=lambda i: values[i])[k - 1]]
+
 
 async def fetch_one(
     session: aiohttp.ClientSession,
@@ -59,6 +67,7 @@ async def fetch_one(
         dt = time.perf_counter() - t0
         return dt, 0, str(e)
 
+
 async def run_second(
     session: aiohttp.ClientSession,
     base_url: str,
@@ -77,43 +86,57 @@ async def run_second(
     now_iso = datetime.utcnow().isoformat() + "Z"
     results = []
     for uid, url, (lat, status, err) in zip(chosen, urls, done):
-        results.append({
-            "ts_utc": now_iso,
-            "uid": uid,
-            "url": url,
-            "latency_sec": lat,
-            "status": status,
-            "error": err,
-        })
+        results.append(
+            {
+                "ts_utc": now_iso,
+                "uid": uid,
+                "url": url,
+                "latency_sec": lat,
+                "status": status,
+                "error": err,
+            }
+        )
     return results
+
 
 def summarize(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Compute summary stats for all responses and for successes only.
     """
     lat_all = [r["latency_sec"] for r in results]
-    lat_ok = [r["latency_sec"] for r in results if r["status"] and 200 <= r["status"] < 400]
+    lat_ok = [
+        r["latency_sec"] for r in results if r["status"] and 200 <= r["status"] < 400
+    ]
     n_total = len(results)
     n_ok = len(lat_ok)
     n_err = n_total - n_ok
 
-    def safe_mean(x): 
-        try: return mean(x)
-        except StatisticsError: return float("nan")
+    def safe_mean(x):
+        try:
+            return mean(x)
+        except StatisticsError:
+            return float("nan")
+
     def safe_var(x):
         try:
             # sample variance; if only one sample, return 0 to avoid error
             return 0.0 if len(x) < 2 else variance(x)
         except StatisticsError:
             return float("nan")
-    def safe_med(x): 
-        try: return median(x)
-        except StatisticsError: return float("nan")
-    def safe_min(x): 
+
+    def safe_med(x):
+        try:
+            return median(x)
+        except StatisticsError:
+            return float("nan")
+
+    def safe_min(x):
         return min(x) if x else float("nan")
-    def safe_max(x): 
+
+    def safe_max(x):
         return max(x) if x else float("nan")
-    def q(x, p): 
+
+    def q(x, p):
         return pct(sorted(x), p) if x else float("nan")
 
     stats_all = {
@@ -156,6 +179,7 @@ def summarize(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         "latency_success": stats_ok,
     }
 
+
 async def main_async(args):
     uids = parse_uids_file(Path(args.uids_file))
     if not uids:
@@ -179,9 +203,12 @@ async def main_async(args):
 
     results: List[Dict[str, Any]] = []
     started = time.perf_counter()
+    started_utc = datetime.utcnow().isoformat() + "Z"
     deadline = started + args.duration_sec
 
-    async with aiohttp.ClientSession(timeout=timeout, connector=connector, headers=headers) as session:
+    async with aiohttp.ClientSession(
+        timeout=timeout, connector=connector, headers=headers
+    ) as session:
         # CSV writer (streaming to avoid large RAM use)
         with raw_path.open("w", newline="", encoding="utf-8") as fcsv:
             writer = csv.writer(fcsv)
@@ -203,7 +230,16 @@ async def main_async(args):
                 )
                 # write batch rows
                 for r in batch_results:
-                    writer.writerow([r["ts_utc"], r["uid"], r["url"], f"{r['latency_sec']:.6f}", r["status"], r["error"]])
+                    writer.writerow(
+                        [
+                            r["ts_utc"],
+                            r["uid"],
+                            r["url"],
+                            f"{r['latency_sec']:.6f}",
+                            r["status"],
+                            r["error"],
+                        ]
+                    )
                 results.extend(batch_results)
 
                 # sleep until next second boundary (best effort)
@@ -213,32 +249,86 @@ async def main_async(args):
     # Compute summary
     total_time = time.perf_counter() - started
     summary = summarize(results)
-    summary.update({
-        "run_started_utc": datetime.utcnow().isoformat() + "Z",
-        "base_url": args.base_url,
-        "batch_size_per_second": args.batch_size,
-        "duration_sec_requested": args.duration_sec,
-        "duration_sec_actual": total_time,
-        "requests_per_second_avg": (summary["total_requests"] / total_time) if total_time > 0 else 0.0,
-        "output_raw_csv": str(raw_path),
-    })
+    summary.update(
+        {
+            "run_started_utc": started_utc,
+            "base_url": args.base_url,
+            "batch_size_per_second": args.batch_size,
+            "duration_sec_requested": args.duration_sec,
+            "duration_sec_actual": total_time,
+            "requests_per_second_avg": (summary["total_requests"] / total_time)
+            if total_time > 0
+            else 0.0,
+            "output_raw_csv": str(raw_path),
+        }
+    )
 
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Done. Summary: {summary_path}")
     print(f"Raw results: {raw_path}")
 
+
 def main():
-    p = argparse.ArgumentParser(description="Simple rate-based load tester for jo1n.ir using pre-generated UIDs.")
-    p.add_argument("--uids-file", required=True, help="Path to comma-separated or newline-separated UIDs")
-    p.add_argument("--base-url", default="https://jo1n.ir", help="Base URL (default: https://jo1n.ir)")
-    p.add_argument("--batch-size", type=int, default=100, help="Requests per second (default: 100)")
-    p.add_argument("--duration-sec", type=int, default=300, help="Run duration in seconds (default: 300 = 5 minutes)")
-    p.add_argument("--request-timeout-sec", type=float, default=5.0, help="Per-request timeout seconds (default: 5)")
-    p.add_argument("--max-connections", type=int, default=1000, help="Max concurrent TCP connections (default: 1000)")
-    p.add_argument("--user-agent", default="MonstractLoadTester/1.0", help="Optional User-Agent header")
-    p.add_argument("--output-dir", default="loadtest_out", help="Directory to write results (default: loadtest_out)")
+    p = argparse.ArgumentParser(
+        description="Explicitly-confirmed rate-based load tester using pre-generated UIDs."
+    )
+    p.add_argument(
+        "--uids-file",
+        required=True,
+        help="Path to comma-separated or newline-separated UIDs",
+    )
+    p.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8080",
+        help="Base URL (default: local API)",
+    )
+    p.add_argument(
+        "--batch-size", type=int, default=10, help="Requests per second (default: 10)"
+    )
+    p.add_argument(
+        "--duration-sec",
+        type=int,
+        default=30,
+        help="Run duration in seconds (default: 30)",
+    )
+    p.add_argument(
+        "--request-timeout-sec",
+        type=float,
+        default=5.0,
+        help="Per-request timeout seconds (default: 5)",
+    )
+    p.add_argument(
+        "--max-connections",
+        type=int,
+        default=1000,
+        help="Max concurrent TCP connections (default: 1000)",
+    )
+    p.add_argument(
+        "--user-agent",
+        default="MonstractLoadTester/1.0",
+        help="Optional User-Agent header",
+    )
+    p.add_argument(
+        "--output-dir",
+        default="loadtest_out",
+        help="Directory to write results (default: loadtest_out)",
+    )
+    p.add_argument(
+        "--execute", action="store_true", help="perform requests; default is a dry run"
+    )
     args = p.parse_args()
+    if args.batch_size <= 0 or args.duration_sec <= 0:
+        p.error("--batch-size and --duration-sec must be greater than zero")
+    if args.request_timeout_sec <= 0 or args.max_connections <= 0:
+        p.error("--request-timeout-sec and --max-connections must be greater than zero")
+    if not args.execute:
+        print(
+            f"Dry run: would send up to {args.batch_size * args.duration_sec} requests to {args.base_url}. Pass --execute to run."
+        )
+        return
+    require_confirmed_execution(execute=True, action="Running a load test")
     asyncio.run(main_async(args))
+
 
 if __name__ == "__main__":
     main()
