@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Iterable, Tuple
 
@@ -17,6 +18,11 @@ import numpy as np
 import pandas as pd
 from psycopg2 import connect
 from psycopg2.extras import execute_values
+
+PY_AI_ROOT = Path(__file__).resolve().parents[1]
+if str(PY_AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(PY_AI_ROOT))
+from operational_guard import require_live_production_execution
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,6 +78,11 @@ def parse_args() -> argparse.Namespace:
         default=1000,
         help="DB insert batch size.",
     )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="write price factors; default is a dry run",
+    )
     return parser.parse_args()
 
 
@@ -120,7 +131,9 @@ def main() -> None:
 
     platforms = [p.strip() for p in args.platforms.split(",") if p.strip()]
     if not platforms:
-        raise SystemExit("No platforms provided. Use --platforms or SEGMENT_PRICE_PLATFORMS.")
+        raise SystemExit(
+            "No platforms provided. Use --platforms or SEGMENT_PRICE_PLATFORMS."
+        )
 
     missing_conn_fields = [
         name
@@ -142,6 +155,15 @@ def main() -> None:
         for platform in platforms
         for lvl in unique_levels
     ]
+    if not args.execute:
+        print(
+            f"Dry run: would insert {len(rows)} segment price factors into "
+            f"{args.dbname}@{args.host}:{args.port}. Pass --execute in production live mode to write."
+        )
+        return
+    require_live_production_execution(
+        execute=True, action="Writing segment price factors"
+    )
 
     insert_price_factors(
         rows,
