@@ -57,9 +57,14 @@ Customer history and balance views use `TransactionRepository.ByCustomerID`/`Get
 | `ByDepositAddress(address, memo)` | Fallback lookup for provider callbacks lacking a track ID. |
 | crypto-deposit `ByTxHash` / `Save` / `Update` | Upsert every blockchain transaction so duplicate webhooks update confirmations rather than create a second deposit. |
 | crypto-request `Update` | Persist mapped invoice status/reason. |
-| `creditOnConfirmed` wallet, snapshot, transaction, and discount queries | Once-only credit path, guarded by both deposit and request `CreditedAt` checks. |
+| Request row lock and `creditOnConfirmed` ledger queries | Serialize settlement and cancellation per request; detect existing ledger entries before crediting. |
 
 The important boundary is that provider confirmation becomes a local deposit first; wallet credit is a subsequent, guarded transaction. Campaign funding and later refunds therefore share the same wallet/snapshot/transaction accounting model.
+
+Known limitations requiring reconciliation:
+
+- Failed settlement attempts roll back and can be retried when the provider reports the invoice paid. Historical requests with existing ledger entries but no completed credit require reconciliation before retry; they are not credited automatically.
+- The mock OxaPay provider keeps its invoices and poll progress in process memory. Restarting the process loses pending mock invoices even though their local requests remain in PostgreSQL; those requests cannot progress through the mock provider after restart. Create a new mock request for further testing.
 
 ## 2. Pricing, sender eligibility, and audience vocabulary
 
