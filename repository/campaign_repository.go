@@ -366,6 +366,13 @@ AND NOT (
 }
 
 func excludeAutomatedClickTraffic(db *gorm.DB) *gorm.DB {
+	return ExcludeAutomatedClickTraffic(db)
+}
+
+// ExcludeAutomatedClickTraffic applies the canonical reporting filter for
+// short-link clicks. Keep every click-derived report on this scope so bot and
+// test-click handling cannot drift between synchronous and asynchronous paths.
+func ExcludeAutomatedClickTraffic(db *gorm.DB) *gorm.DB {
 	return db.Where(nonAutomatedClickTrafficSQL(""))
 }
 
