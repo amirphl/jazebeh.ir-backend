@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
+	"github.com/amirphl/Yamata-no-Orochi/app/observability"
 	"github.com/amirphl/Yamata-no-Orochi/app/services"
 	"github.com/amirphl/Yamata-no-Orochi/config"
 	"github.com/amirphl/Yamata-no-Orochi/models"
@@ -45,6 +46,7 @@ type TicketFlowImpl struct {
 	ticketRepo   repository.TicketRepository
 	notifier     services.NotificationService
 	adminCfg     config.AdminConfig
+	mockExternal bool
 }
 
 func NewTicketFlow(
@@ -52,8 +54,10 @@ func NewTicketFlow(
 	ticketRepo repository.TicketRepository,
 	notifier services.NotificationService,
 	adminCfg config.AdminConfig,
+	mockExternal ...bool,
 ) TicketFlow {
-	return &TicketFlowImpl{customerRepo: customerRepo, ticketRepo: ticketRepo, notifier: notifier, adminCfg: adminCfg}
+	mock := len(mockExternal) > 0 && mockExternal[0]
+	return &TicketFlowImpl{customerRepo: customerRepo, ticketRepo: ticketRepo, notifier: notifier, adminCfg: adminCfg, mockExternal: mock}
 }
 
 const (
@@ -548,6 +552,10 @@ func (f *TicketFlowImpl) DownloadTicketAttachment(
 // saveFileToDisk downloads a file from a URL and stores it under data/uploads/tickets/YYYY-MM-DD/
 // It enforces allowed extensions and a 10MB size limit and returns the relative stored path
 func (f *TicketFlowImpl) saveFileToDisk(ctx context.Context, urlStr string, originalFilename *string) (string, error) {
+	if f.mockExternal {
+		observability.RecordMockOperation("ticket", "remote_fetch", "blocked", 1)
+		return "", NewBusinessError("FILE_DOWNLOAD_DISABLED", "remote attachment downloads are disabled in mock mode", nil)
+	}
 	// Determine extension from original name or URL path
 	ext := ""
 	if originalFilename != nil {
