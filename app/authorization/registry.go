@@ -51,6 +51,7 @@ var RoutePermissionRegistry = []RoutePermission{
 	{"GET", "/api/v1/admin/line-numbers", PermissionLineNumberRead, "List line numbers"},
 	{"POST", "/api/v1/admin/line-numbers", PermissionLineNumberWrite, "Create line number"},
 	{"PUT", "/api/v1/admin/line-numbers", PermissionLineNumberWrite, "Batch update line numbers"},
+	{"PUT", "/api/v1/admin/line-numbers/price-factor", PermissionLineNumberWrite, "Update line number price factor"},
 
 	// Tickets (support)
 	{"GET", "/api/v1/admin/tickets", PermissionTicketRead, "List tickets"},
