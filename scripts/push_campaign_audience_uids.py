@@ -25,6 +25,7 @@ interactive prompts. Secrets are never accepted on the command line.
 import argparse
 import os
 import sys
+from guard_environment import environment_banner, require_production_confirmation
 
 from script_common import (
     read_secret,
@@ -66,7 +67,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Compute UID/code pairs but do not push to Jazebeh",
     )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="confirm production publish; default is dry-run",
+    )
     args = parser.parse_args()
+    if args.execute and args.dry_run:
+        parser.error("--execute and --dry-run cannot be combined")
+    args.dry_run = not args.execute
+    if args.execute:
+        require_production_confirmation(True)
+    else:
+        environment_banner()
     args.jazebeh_domain = validate_https_origin(
         parser, "--jazebeh-domain", args.jazebeh_domain
     )
@@ -273,7 +286,10 @@ def main() -> None:
 
         uids = [uid_map[aid] for aid in audience_ids]
         if any(not isinstance(uid, str) or not uid for uid in uids):
-            print("  ERROR: one or more audience profiles have an empty UID", file=sys.stderr)
+            print(
+                "  ERROR: one or more audience profiles have an empty UID",
+                file=sys.stderr,
+            )
             error_count += 1
             continue
         codes = list(audience_codes)
