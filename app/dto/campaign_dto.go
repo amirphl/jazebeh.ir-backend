@@ -242,7 +242,7 @@ type ListCampaignsRequest struct {
 	CustomerID uint                 `json:"-"`
 	Page       int                  `json:"page" validate:"omitempty,min=1,max=100"`
 	Limit      int                  `json:"limit" validate:"omitempty,min=1,max=100"`
-	OrderBy    string               `json:"orderby" validate:"omitempty,oneof=newest oldest phase_test_first phase_execution_first highest_click_rate lowest_click_rate"`
+	OrderBy    string               `json:"orderby" validate:"omitempty,oneof=newest oldest phase_test_first phase_execution_first highest_click_rate lowest_click_rate schedule_at_asc schedule_at_desc schedule_time_asc schedule_time_desc"`
 	Filter     *ListCampaignsFilter `json:"filter,omitempty" validate:"omitempty"`
 }
 
