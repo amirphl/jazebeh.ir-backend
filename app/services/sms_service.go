@@ -6,9 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/amirphl/Yamata-no-Orochi/app/observability"
 	"github.com/amirphl/Yamata-no-Orochi/config"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 )
@@ -118,7 +123,16 @@ func (s *SMSServiceImpl) SendBulk(ctx context.Context, recipients []string, mess
 
 // MockSMSService implements SMSService for testing
 type MockSMSService struct {
+	mu           sync.Mutex
+	redact       bool
+	otpOutbox    string
 	SentMessages []MockSMSMessage
+}
+
+// NewMockOTPService writes simulated OTP messages to a private operator-only
+// outbox rather than putting authentication codes in application logs.
+func NewMockOTPService(path string) SMSService {
+	return &MockSMSService{redact: true, otpOutbox: path, SentMessages: make([]MockSMSMessage, 0)}
 }
 
 // MockSMSMessage represents a mock SMS message
@@ -130,23 +144,61 @@ type MockSMSMessage struct {
 }
 
 // NewMockSMSService creates a new mock SMS service
-func NewMockSMSService() SMSService {
+func NewMockSMSService(redact ...bool) SMSService {
 	return &MockSMSService{
+		redact:       len(redact) > 0 && redact[0],
 		SentMessages: make([]MockSMSMessage, 0),
 	}
 }
 
 // SendOTP sends a mock OTP message
 func (m *MockSMSService) SendOTP(ctx context.Context, recipient, message string, customerID *int64) error {
-	return m.SendSMS(ctx, recipient, message, customerID)
+	if m.otpOutbox != "" {
+		m.mu.Lock()
+		err := m.writeOTPOutbox(recipient, message)
+		m.mu.Unlock()
+		if err != nil {
+			log.Printf("mock provider=sms action=otp_outbox error=%v", err)
+		}
+	}
+	return m.send(ctx, []string{recipient}, message, customerID, "otp")
+}
+
+func (m *MockSMSService) writeOTPOutbox(recipient, message string) error {
+	if err := os.MkdirAll(filepath.Dir(m.otpOutbox), 0700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(m.otpOutbox); err == nil && !info.Mode().IsRegular() {
+		return fmt.Errorf("outbox is not a regular file")
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	file, err := os.OpenFile(m.otpOutbox, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if err = file.Chmod(0600); err != nil {
+		return err
+	}
+	return json.NewEncoder(file).Encode(map[string]any{"recipient": recipient, "message": message, "time": time.Now().UTC()})
 }
 
 // SendSMS sends a mock SMS message
 func (m *MockSMSService) SendSMS(ctx context.Context, recipient, message string, customerID *int64) error {
-	return m.SendBulk(ctx, []string{recipient}, message, customerID)
+	return m.send(ctx, []string{recipient}, message, customerID, "send")
 }
 
 func (m *MockSMSService) SendBulk(ctx context.Context, recipients []string, message string, customerID *int64) error {
+	return m.send(ctx, recipients, message, customerID, "send")
+}
+
+func (m *MockSMSService) send(ctx context.Context, recipients []string, message string, customerID *int64, action string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, r := range recipients {
 		mockMessage := MockSMSMessage{
 			Recipient:  r,
@@ -154,18 +206,34 @@ func (m *MockSMSService) SendBulk(ctx context.Context, recipients []string, mess
 			CustomerID: customerID,
 			SentAt:     utils.UTCNow(),
 		}
-		fmt.Println("Mock SMS message sent:", mockMessage)
+		if m.redact {
+			fmt.Printf("mock provider=sms action=send recipient=***%s\n", maskMockRecipient(r))
+		} else {
+			fmt.Println("Mock SMS message sent:", mockMessage)
+		}
 		m.SentMessages = append(m.SentMessages, mockMessage)
 	}
+	observability.RecordMockOperation("sms", action, "accepted", len(recipients))
 	return nil
+}
+
+func maskMockRecipient(recipient string) string {
+	if len(recipient) <= 4 {
+		return ""
+	}
+	return recipient[len(recipient)-4:]
 }
 
 // GetSentMessages returns all sent mock messages
 func (m *MockSMSService) GetSentMessages() []MockSMSMessage {
-	return m.SentMessages
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]MockSMSMessage(nil), m.SentMessages...)
 }
 
 // ClearSentMessages clears the sent messages list
 func (m *MockSMSService) ClearSentMessages() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.SentMessages = make([]MockSMSMessage, 0)
 }
