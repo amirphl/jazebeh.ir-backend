@@ -250,10 +250,10 @@ chmod 600 "$PROJECT_DIR/.env.beta"
 
 cd "$PROJECT_DIR"
 
-set -a
 # shellcheck disable=SC1091
-source .env.beta
-set +a
+source "$PROJECT_DIR/scripts/load-yamata-env.sh"
+load_yamata_env_file "$PROJECT_DIR/.env.beta" || \
+	die "Could not safely parse $PROJECT_DIR/.env.beta"
 
 # Campaign execution belongs exclusively to the isolated scheduler container.
 if grep -q '^CAMPAIGN_EXECUTION_ENABLED=' .env.beta; then

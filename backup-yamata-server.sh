@@ -111,10 +111,10 @@ readonly DOCKER
 "${DOCKER[@]}" compose version >/dev/null 2>&1 || die "Docker Compose v2 is unavailable"
 
 cd "$PROJECT_DIR"
-set -a
 # shellcheck disable=SC1091
-source .env.beta
-set +a
+source "$PROJECT_DIR/scripts/load-yamata-env.sh"
+load_yamata_env_file "$PROJECT_DIR/.env.beta" || \
+	die "Could not safely parse $PROJECT_DIR/.env.beta"
 
 : "${DB_NAME:?DB_NAME is missing from .env.beta}"
 : "${DB_USER:?DB_USER is missing from .env.beta}"
