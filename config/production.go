@@ -442,6 +442,15 @@ type SplusConfig struct {
 }
 
 type SchedulerConfig struct {
+	CampaignAudienceReportSchedulerEnabled             bool          `json:"campaign_audience_report_scheduler_enabled"`
+	CampaignAudienceReportSchedulerInterval            time.Duration `json:"campaign_audience_report_scheduler_interval"`
+	CampaignAudienceReportJobTimeout                   time.Duration `json:"campaign_audience_report_job_timeout"`
+	CampaignAudienceReportLeaseDuration                time.Duration `json:"campaign_audience_report_lease_duration"`
+	CampaignAudienceReportStorageRoot                  string        `json:"campaign_audience_report_storage_root"`
+	CampaignAudienceReportMaxRows                      int64         `json:"campaign_audience_report_max_rows"`
+	CampaignAudienceReportMaxOutputBytes               int64         `json:"campaign_audience_report_max_output_bytes"`
+	CampaignAudienceReportMaxJobsPerCustomer           int64         `json:"campaign_audience_report_max_jobs_per_customer"`
+	CampaignAudienceReportMaxParallelRuns              int           `json:"campaign_audience_report_max_parallel_runs"`
 	CampaignExecutionEnabled                           bool          `json:"campaign_execution_enabled"`
 	CampaignExecutionInterval                          time.Duration `json:"campaign_execution_interval"`
 	CampaignExecutionMaxParallelRuns                   int           `json:"campaign_execution_max_parallel_runs"`
@@ -498,8 +507,17 @@ type ExternalShortLinkConfig struct {
 func loadSchedulerConfig() SchedulerConfig {
 	capacitySchedulerEnabled := getEnvBool("SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED", false)
 	return SchedulerConfig{
-		CampaignExecutionEnabled:  getEnvBool("CAMPAIGN_EXECUTION_ENABLED", true),
-		CampaignExecutionInterval: getEnvDuration("CAMPAIGN_EXECUTION_INTERVAL", 1*time.Minute),
+		CampaignAudienceReportSchedulerEnabled:   getEnvBool("CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_ENABLED", true),
+		CampaignAudienceReportSchedulerInterval:  getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_SCHEDULER_INTERVAL", time.Minute),
+		CampaignAudienceReportJobTimeout:         getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_JOB_TIMEOUT", 6*time.Hour),
+		CampaignAudienceReportLeaseDuration:      getEnvDuration("CAMPAIGN_AUDIENCE_REPORT_LEASE_DURATION", 6*time.Hour+15*time.Minute),
+		CampaignAudienceReportStorageRoot:        getEnvString("CAMPAIGN_AUDIENCE_REPORT_STORAGE_ROOT", "data/exports/campaign-audience-reports"),
+		CampaignAudienceReportMaxRows:            int64(getEnvInt("CAMPAIGN_AUDIENCE_REPORT_MAX_ROWS", 10_000_000)),
+		CampaignAudienceReportMaxOutputBytes:     int64(getEnvInt("CAMPAIGN_AUDIENCE_REPORT_MAX_OUTPUT_BYTES", 5<<30)),
+		CampaignAudienceReportMaxJobsPerCustomer: int64(getEnvInt("CAMPAIGN_AUDIENCE_REPORT_MAX_JOBS_PER_CUSTOMER", 100)),
+		CampaignAudienceReportMaxParallelRuns:    getEnvInt("CAMPAIGN_AUDIENCE_REPORT_MAX_PARALLEL_RUNS", 2),
+		CampaignExecutionEnabled:                 getEnvBool("CAMPAIGN_EXECUTION_ENABLED", true),
+		CampaignExecutionInterval:                getEnvDuration("CAMPAIGN_EXECUTION_INTERVAL", 1*time.Minute),
 		// All platform schedulers share this cap. Bulk audience selections take
 		// row/advisory locks, so an unbounded goroutine per ready Bundle causes
 		// lock waits and defeats the database connection-pool limit.
@@ -1320,6 +1338,17 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		}
 		if cfg.Scheduler.BundleActionFileSchedulerLeaseDuration <= cfg.Scheduler.BundleActionFileSchedulerJobTimeout {
 			errors = append(errors, "BUNDLE_ACTION_FILE_SCHEDULER_LEASE_DURATION must exceed BUNDLE_ACTION_FILE_SCHEDULER_JOB_TIMEOUT")
+		}
+	}
+	if cfg.Scheduler.CampaignAudienceReportSchedulerEnabled {
+		if cfg.Scheduler.CampaignAudienceReportSchedulerInterval <= 0 || cfg.Scheduler.CampaignAudienceReportJobTimeout <= 0 {
+			errors = append(errors, "campaign audience report scheduler interval and job timeout must be positive")
+		}
+		if cfg.Scheduler.CampaignAudienceReportLeaseDuration <= cfg.Scheduler.CampaignAudienceReportJobTimeout {
+			errors = append(errors, "CAMPAIGN_AUDIENCE_REPORT_LEASE_DURATION must exceed CAMPAIGN_AUDIENCE_REPORT_JOB_TIMEOUT")
+		}
+		if strings.TrimSpace(cfg.Scheduler.CampaignAudienceReportStorageRoot) == "" || cfg.Scheduler.CampaignAudienceReportMaxRows <= 0 || cfg.Scheduler.CampaignAudienceReportMaxOutputBytes <= 0 || cfg.Scheduler.CampaignAudienceReportMaxJobsPerCustomer <= 0 || cfg.Scheduler.CampaignAudienceReportMaxParallelRuns <= 0 {
+			errors = append(errors, "campaign audience report storage root, max rows, max output bytes, max jobs per customer, and max parallel runs must be positive")
 		}
 	}
 	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
