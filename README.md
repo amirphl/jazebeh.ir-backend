@@ -2,7 +2,7 @@
 
 Yamata no Orochi is a production-oriented Go backend for the Jazebeh messaging and campaign platform. It exposes customer, admin, and bot APIs for authentication, multi-platform campaign management, campaign bundles, AI-assisted bundle/tag scoring, wallet and payment operations, audience pricing, short links, support tickets, media uploads, and operational reporting.
 
-The service is built with Fiber v3, GORM, PostgreSQL, Redis, Prometheus metrics, Sentry-compatible error reporting, SQL migrations, and Docker-based beta deployment assets.
+The service is built with Fiber v3, GORM, PostgreSQL, Redis, Prometheus metrics, Sentry-compatible error reporting, SQL migrations, and Docker-based production deployment assets.
 
 ## What It Does
 
@@ -53,7 +53,7 @@ py-ai/                 Offline/auxiliary Python tooling for audiences and tags
 - Redis, when cache health checks and campaign execution are enabled.
 - `psql` and `createdb` for migration Make targets.
 - `swag` for Swagger regeneration. `make swag` installs it if it is missing.
-- Docker and Docker Compose for beta-style deployment.
+- Docker and Docker Compose for production deployment.
 - Python 3 for the optional `py-ai/` and `scripts/` helpers.
 
 ## Configuration
@@ -94,9 +94,9 @@ LOG_OUTPUT=stdout
 Important groups:
 
 - `DB_*`: PostgreSQL connection and pool settings.
-- `SERVER_*`: bind address, body limit, timeouts, compression, and proxy settings.
+- `SERVER_*`: bind address, body limit, timeouts, and proxy settings.
 - `JWT_*`: HS256 secret or RSA key configuration.
-- `CORS_*`, `RATE_LIMIT_*`, `REQUIRE_API_KEY`, `ALLOWED_API_KEYS`: API security controls.
+- `CORS_ALLOWED_ORIGINS`, `REQUIRE_API_KEY`, `ALLOWED_API_KEYS`: API security controls.
 - `CACHE_*`: Redis connection and cache behavior.
 - `METRICS_*`: Prometheus metrics server.
 - `SENTRY_*`: Sentry or GlitchTip reporting, including the external URL via `SENTRY_URL_PREFIX` and the GlitchTip UI host allowlist via `SENTRY_ALLOWED_HOSTS`.
@@ -128,7 +128,7 @@ Run the service with environment variables from `.env`:
 set -a
 source .env
 set +a
-go run main.go
+go run .
 ```
 
 The API listens on `http://localhost:8080` by default. The health endpoint is:
@@ -140,7 +140,7 @@ curl http://localhost:8080/api/v1/health
 The Makefile also provides:
 
 ```bash
-make run       # source .env and run main.go
+make run       # source .env and run the application package
 make run-dev   # source .env and run with -race
 make build     # build bin/yamata-no-orochi
 make fmt
@@ -243,7 +243,7 @@ The application has three separate authenticated contexts:
 - Admin APIs use admin authentication plus role/permission authorization middleware.
 - Bot APIs use bot authentication and are intended for internal campaign execution clients.
 
-Seed helpers and operational snippets for local admin/bot setup are kept in `RUN.md`.
+Fresh-server operational notes are kept in [the runbook](docs/FRESH_SERVER_RUNBOOK.md).
 
 ## Campaign Execution
 
@@ -290,11 +290,11 @@ retry base/max durations, and historical discovery batch size, all prefixed
 - Request IDs are generated and exposed through `X-Request-ID`.
 - Structured access logs are emitted by Fiber middleware.
 - File logging uses lumberjack rotation when `LOG_OUTPUT=file` or `LOG_OUTPUT=both`.
-- Sentry-compatible reporting is initialized from `SENTRY_*`; the beta compose stack includes GlitchTip services.
+- Sentry-compatible reporting is initialized from `SENTRY_*`; the production compose stack includes GlitchTip services.
 
-## Docker And Beta Deployment
+## Docker and Production Deployment
 
-Beta deployment assets are included for the full operational stack:
+Production deployment assets are included for the full operational stack:
 
 - `docker-compose.beta.yml`
 - `docker/Dockerfile.production`
@@ -308,7 +308,7 @@ Beta deployment assets are included for the full operational stack:
 - `scripts/cert_monitor.py`
 - `scripts/nginx_sentry_forwarder.py`
 
-The beta compose stack includes the Go app, PostgreSQL, Redis, backup container, nginx, Prometheus, Grafana, and GlitchTip/Sentry-compatible services.
+The production compose stack includes the Go app, PostgreSQL, Redis, backup container, nginx, Prometheus, Grafana, and GlitchTip/Sentry-compatible services.
 
 See the production docs for deployment-specific checklists:
 
@@ -342,7 +342,7 @@ The Makefile has older `./tests` targets that depend on test database variables.
 ## Useful Files
 
 - `env.template`: complete environment variable template.
-- `RUN.md`: local operational notes, seed SQL, and manual provider tooling commands.
+- `docs/FRESH_SERVER_RUNBOOK.md`: fresh-server operational notes, seed SQL, and manual provider tooling commands.
 - `TODO.md`: active project notes.
 - `docs/swagger.yaml` and `docs/swagger.json`: generated OpenAPI output.
 - `docs/bale.md` and `Najva.md`: Bale/Najva integration notes.
