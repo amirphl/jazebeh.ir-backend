@@ -13,7 +13,8 @@ This runbook backs up these PostgreSQL tables:
 - `public.audience_profiles`
 - `public.src_layer_all_stats`
 
-It is verified against schema head `0128`, where the sensitive field is
+It is verified against the current aggregate schema head
+`0170_add_bundle_action_file_staging_status.sql`, where the sensitive field is
 `public.audience_profiles.phone_number` and the table has these columns, in
 order:
 
