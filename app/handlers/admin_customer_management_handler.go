@@ -62,8 +62,10 @@ func (h *AdminCustomerManagementHandler) ListCustomers(c fiber.Ctx) error {
 // @Summary Admin Customers Shares Report
 // @Tags Admin Customer Management
 // @Produce json
-// @Param start_date query string false "Filter created_at >= start_date (RFC3339)"
-// @Param end_date query string false "Filter created_at <= end_date (RFC3339)"
+// @Param start_date query string true "Report period start (RFC3339; maximum period is 31 days)"
+// @Param end_date query string true "Report period end (RFC3339)"
+// @Param page query int false "Page number (default 1)"
+// @Param page_size query int false "Rows per page (default 50, maximum 100)"
 // @Success 200 {object} dto.APIResponse{data=dto.AdminCustomersSharesResponse}
 // @Failure 400 {object} dto.APIResponse
 // @Failure 401 {object} dto.APIResponse
@@ -82,6 +84,23 @@ func (h *AdminCustomerManagementHandler) GetCustomersShares(c fiber.Ctx) error {
 		if _, err := time.Parse(time.RFC3339, v); err != nil {
 			return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid end_date format", "VALIDATION_ERROR", nil)
 		}
+	}
+	if req.StartDate == nil || req.EndDate == nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "start_date and end_date are required", "VALIDATION_ERROR", nil)
+	}
+	if v := c.Query("page"); v != "" {
+		page, err := strconv.Atoi(v)
+		if err != nil || page < 1 {
+			return h.ErrorResponse(c, fiber.StatusBadRequest, "page must be at least 1", "VALIDATION_ERROR", nil)
+		}
+		req.Page = page
+	}
+	if v := c.Query("page_size"); v != "" {
+		pageSize, err := strconv.Atoi(v)
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			return h.ErrorResponse(c, fiber.StatusBadRequest, "page_size must be between 1 and 100", "VALIDATION_ERROR", nil)
+		}
+		req.PageSize = pageSize
 	}
 
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/admin/customer-management/shares", 30*time.Second)
