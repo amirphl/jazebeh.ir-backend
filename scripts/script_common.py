@@ -8,6 +8,16 @@ import getpass
 import os
 import sys
 import urllib.parse
+from guard_environment import environment_banner
+
+
+def require_live_provider_mode() -> None:
+    environment = environment_banner()
+    mode = os.getenv("EXTERNAL_SERVICES_MODE", "live").strip().lower()
+    if environment != "production" or mode != "live":
+        raise RuntimeError(
+            "This standalone tool contacts a live provider and requires APP_ENV=production and live mode"
+        )
 
 
 def read_secret(environment_name: str, prompt: str) -> str:
