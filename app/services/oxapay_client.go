@@ -316,7 +316,7 @@ func (c *OxapayClient) CreateInvoice(ctx context.Context, in OxapayInvoiceInput)
 	return &OxapayInvoiceResult{TrackID: env.Data.TrackID, PaymentURL: env.Data.PaymentURL, ExpiredAt: exp}, nil
 }
 
-// wallex trades for USDTIRR (shared helper based on bithide client)
+// wallex trades for USDTIRR
 type wallexTradesResponseOxapay struct {
 	Result struct {
 		LatestTrades []struct {
