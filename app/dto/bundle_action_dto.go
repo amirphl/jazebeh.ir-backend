@@ -36,6 +36,7 @@ type BundleActionSummaryResponse struct {
 }
 type BundleActionTagMetricItem struct {
 	TagID                         uint     `json:"tag_id"`
+	TagDisplayName                *string  `json:"tag_display_name"`
 	TestActionCount               int64    `json:"test_action_count"`
 	TestEligibleDeliveredCount    int64    `json:"test_eligible_delivered_count"`
 	TestPhaseAvgATR               *float64 `json:"test_phase_avg_atr"`
