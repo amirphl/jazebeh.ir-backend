@@ -531,7 +531,10 @@ type ShortLinkRepository interface {
 	ListWithClicksDetailsByScenarioNameLike(ctx context.Context, pattern string, orderBy string) ([]*ShortLinkWithClick, error)
 	GetLastScenarioID(ctx context.Context) (uint, error)
 	NextScenarioID(ctx context.Context) (uint, error)
-	GetMaxUIDSince(ctx context.Context, since time.Time) (string, error)
+	// ReserveSequentialUIDs reserves fixed-width short-link tokens inside the
+	// caller's transaction. The reservation rolls back with the link insert,
+	// so failed writes and idempotent retries never burn the sequence.
+	ReserveSequentialUIDs(ctx context.Context, count int) ([]string, error)
 }
 
 // ExternalShortLinkSyncRepository atomically imports external clicks and advances their cursor.
