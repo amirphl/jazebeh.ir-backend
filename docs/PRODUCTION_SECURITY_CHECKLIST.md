@@ -1,6 +1,6 @@
 # Production security checklist
 
-Use this checklist with the active beta Compose deployment. It distinguishes
+Use this checklist with the active production Compose deployment. It distinguishes
 controls already present in the repository from controls that still require
 host, provider, or organizational work. A checked box must reflect the deployed
 environment, not merely the existence of a configuration field.
@@ -77,9 +77,8 @@ environment, not merely the existence of a configuration field.
 
 ### Request controls
 
-- [ ] Review the actual hard-coded Fiber CORS allowlist in
-  `app/router/routes.go`; changing `CORS_ALLOWED_ORIGINS` alone does not change
-  it today.
+- [ ] Review the actual hard-coded production Fiber CORS allowlist in
+  `app/router/routes.go`; `CORS_ALLOWED_ORIGINS` applies only to development.
 - [ ] Review Fiber’s hard-coded limits (2,000 API and 20 auth requests/minute)
   and nginx’s stricter zones (100 API, 5 auth, and 200 general requests/minute
   per IP), including burst behavior.
@@ -120,9 +119,14 @@ environment, not merely the existence of a configuration field.
 ## Worker and operational safety
 
 - [ ] `yamata-app-beta` has campaign execution off, exact-capacity and Test
-  sampling scheduling on, and smart-tag scheduling on.
+  sampling scheduling on, execution-calculation scheduling on, and smart-tag
+  scheduling on.
 - [ ] `yamata-campaign-scheduler-beta` has campaign execution on and exact
-  capacity, Test sampling, Tag Test reporting, and smart-tag schedulers off.
+  capacity, Test sampling, execution calculation, Tag Test reporting, audience
+  reports, bundle action-file processing, refund reconciliation, and smart-tag
+  schedulers off.
+- [ ] `yamata-app-beta` owns campaign-audience reports, bundle action-file
+  processing, refund reconciliation, and external short-link synchronization.
 - [ ] `CAMPAIGN_MESSAGE_SEND_MOCK_ENABLED=false` in production.
 - [ ] The scheduler has no published ports and uses
   `http://app-beta:8080` for its internal bot client.
