@@ -32,8 +32,10 @@ type AdminCustomerManagementFlowImpl struct {
 }
 
 const (
-	systemCustomerEmail = "system@yamata-no-orochi.com"
-	taxCustomerEmail    = "tax@system.yamata-no-orochi.com"
+	systemCustomerEmail                 = "system@yamata-no-orochi.com"
+	taxCustomerEmail                    = "tax@system.yamata-no-orochi.com"
+	adminCustomersSharesDefaultPageSize = 50
+	adminCustomersSharesMaxDateRange    = 31 * 24 * time.Hour
 )
 
 func NewAdminCustomerManagementFlow(
@@ -120,10 +122,34 @@ func (f *AdminCustomerManagementFlowImpl) GetCustomersShares(ctx context.Context
 	if startDate != nil && endDate != nil && startDate.After(*endDate) {
 		return nil, NewBusinessError("VALIDATION_ERROR", "start_date cannot be after end_date", ErrStartDateAfterEndDate)
 	}
+	if startDate == nil || endDate == nil {
+		return nil, NewBusinessError("VALIDATION_ERROR", ErrReportDateRangeRequired.Error(), ErrReportDateRangeRequired)
+	}
+	if endDate.Sub(*startDate) > adminCustomersSharesMaxDateRange {
+		return nil, NewBusinessError("VALIDATION_ERROR", ErrReportDateRangeTooLarge.Error(), ErrReportDateRangeTooLarge)
+	}
+	page, pageSize := req.Page, req.PageSize
+	if page == 0 {
+		page = 1
+	}
+	if pageSize == 0 {
+		pageSize = adminCustomersSharesDefaultPageSize
+	}
+	if page < 1 || pageSize < 1 || pageSize > 100 {
+		return nil, NewBusinessError("VALIDATION_ERROR", "page must be at least 1 and page_size must be between 1 and 100", ErrInvalidPage)
+	}
+	if page-1 > int(^uint(0)>>1)/pageSize {
+		return nil, NewBusinessError("VALIDATION_ERROR", "page is too large", ErrInvalidPage)
+	}
+	offset := (page - 1) * pageSize
 
-	rows, err := f.transactionRepo.AggregateCustomersShares(ctx, startDate, endDate)
+	rows, err := f.transactionRepo.AggregateCustomersShares(ctx, startDate, endDate, pageSize+1, offset)
 	if err != nil {
 		return nil, err
+	}
+	hasMore := len(rows) > pageSize
+	if hasMore {
+		rows = rows[:pageSize]
 	}
 
 	customerIDs := make([]uint, 0, len(rows))
@@ -134,7 +160,7 @@ func (f *AdminCustomerManagementFlowImpl) GetCustomersShares(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	clickCountsByCustomer, err := f.campaignRepo.AggregateClickCountsByCustomerIDs(ctx, customerIDs)
+	clickCountsByCustomer, err := f.campaignRepo.AggregateClickCountsByCustomerIDs(ctx, customerIDs, *startDate, *endDate)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +207,9 @@ func (f *AdminCustomerManagementFlowImpl) GetCustomersShares(ctx context.Context
 		SumSystemShare:        sumSystem,
 		SumTaxShare:           sumTax,
 		SumTotalSent:          sumTotalSent,
+		Page:                  page,
+		PageSize:              pageSize,
+		HasMore:               hasMore,
 	}
 	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminViewCustomerShares, "Admin viewed customers shares", true, nil, map[string]any{
 		"items":      len(items),
