@@ -76,6 +76,57 @@ func TestAppBetaComposePassesEveryProductionConfigEnvironmentVariable(t *testing
 	t.Fatalf("app-beta is missing production configuration environment variables: %s", strings.Join(variables, ", "))
 }
 
+func TestEnvTemplateIncludesEveryProductionConfigEnvironmentVariable(t *testing.T) {
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file path")
+	}
+	testDirectory := filepath.Dir(testFile)
+
+	productionConfig, err := os.ReadFile(filepath.Join(testDirectory, "production.go"))
+	if err != nil {
+		t.Fatalf("read production configuration: %v", err)
+	}
+	template, err := os.ReadFile(filepath.Join(testDirectory, "..", "env.template"))
+	if err != nil {
+		t.Fatalf("read environment template: %v", err)
+	}
+
+	templateKeys := make(map[string]struct{})
+	scanner := bufio.NewScanner(strings.NewReader(string(template)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, _, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		templateKeys[strings.TrimSpace(key)] = struct{}{}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read environment template: %v", err)
+	}
+
+	missing := make(map[string]struct{})
+	for _, match := range productionConfigEnvCallPattern.FindAllStringSubmatch(string(productionConfig), -1) {
+		if _, found := templateKeys[match[1]]; !found {
+			missing[match[1]] = struct{}{}
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	variables := make([]string, 0, len(missing))
+	for variable := range missing {
+		variables = append(variables, variable)
+	}
+	sort.Strings(variables)
+	t.Fatalf("env.template is missing production configuration environment variables: %s", strings.Join(variables, ", "))
+}
+
 func TestSchedulerDeploymentInheritsProductionConfigEnvironmentVariables(t *testing.T) {
 	_, testFile, _, ok := runtime.Caller(0)
 	if !ok {
