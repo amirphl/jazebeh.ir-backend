@@ -23,10 +23,13 @@ type BotShortLinkFlow interface {
 }
 
 type BotShortLinkFlowImpl struct {
-	shortRepo repository.ShortLinkRepository
-	db        *gorm.DB
-	publisher ShortLinkMappingPublisher
+	shortRepo  repository.ShortLinkRepository
+	db         *gorm.DB
+	publisher  ShortLinkMappingPublisher
+	mockDomain string
 }
+
+func (s *BotShortLinkFlowImpl) SetMockShortLinkDomain(domain string) { s.mockDomain = domain }
 
 func NewBotShortLinkFlow(shortRepo repository.ShortLinkRepository, db *gorm.DB, publishers ...ShortLinkMappingPublisher) BotShortLinkFlow {
 	var publisher ShortLinkMappingPublisher
@@ -46,6 +49,9 @@ func (s *BotShortLinkFlowImpl) GenerateAndCreateShortLinks(ctx context.Context, 
 		return []string{}, nil
 	}
 	shortLinkDomain := normalizeDomain(req.ShortLinkDomain)
+	if s.mockDomain != "" {
+		shortLinkDomain = s.mockDomain
+	}
 	if shortLinkDomain == "" {
 		return nil, NewBusinessError("VALIDATION_ERROR", "short_link_domain is required", nil)
 	}
