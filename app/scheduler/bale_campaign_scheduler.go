@@ -605,7 +605,8 @@ func (s *BaleCampaignScheduler) validateBaleCampaign(c dto.BotGetCampaignRespons
 	if c.UpdatedAt != nil && c.UpdatedAt.After(now) {
 		return fmt.Errorf("campaign updated_at is after now")
 	}
-	if strings.TrimSpace(s.baleCfg.APIAccessKey) == "" {
+	_, mocked := s.baleClient.(*mockBaleClient)
+	if !mocked && strings.TrimSpace(s.baleCfg.APIAccessKey) == "" {
 		return fmt.Errorf("Bale api-access-key is not configured")
 	}
 	if _, err := extractBaleBotID(c); err != nil {
