@@ -22,7 +22,7 @@ EOF
 systemctl daemon-reload
 install -d -o root -g root -m 0755 /etc/nginx/snippets
 tmp=$(mktemp /etc/nginx/snippets/.external-shortlink-monitoring.XXXXXX)
-sed "s/MONITORING_SOURCE_IP/$ip/g" "$SOURCE" > "$tmp"
+sed "s|# allow MONITORING_SOURCE_IP;|allow $ip;|" "$SOURCE" > "$tmp"
 install -o root -g root -m 0644 "$tmp" "$TARGET"
 rm -f "$tmp"
 nginx -t
