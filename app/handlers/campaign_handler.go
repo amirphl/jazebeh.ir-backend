@@ -6,12 +6,14 @@ import (
 	"errors"
 	"log"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	businessflow "github.com/amirphl/Yamata-no-Orochi/business_flow"
+	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
@@ -35,6 +37,9 @@ type CampaignHandlerInterface interface {
 	ExportCampaignReport(c fiber.Ctx) error
 	ExportCampaignClickReport(c fiber.Ctx) error
 	ExportCampaignAudienceClickReport(c fiber.Ctx) error
+	CreateCampaignAudienceReportJob(c fiber.Ctx) error
+	GetCampaignAudienceReportJob(c fiber.Ctx) error
+	DownloadCampaignAudienceReportJob(c fiber.Ctx) error
 	GetCampaignActionMetrics(c fiber.Ctx) error
 	SendCampaignTestMessage(c fiber.Ctx) error
 	HideCampaigns(c fiber.Ctx) error
@@ -229,6 +234,7 @@ type CampaignHandler struct {
 	smartTargetingFlow businessflow.SmartTargetingFlow
 	capacityFlow       businessflow.SmartTargetingCapacityFlow
 	actionFlow         businessflow.BundleActionFlow
+	reportJobFlow      businessflow.CampaignAudienceReportJobFlow
 	validator          *validator.Validate
 }
 
@@ -252,12 +258,13 @@ func (h *CampaignHandler) SuccessResponse(c fiber.Ctx, statusCode int, message s
 }
 
 // NewCampaignHandler creates a new campaign handler
-func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFlow businessflow.SmartTargetingFlow, capacityFlow businessflow.SmartTargetingCapacityFlow, actionFlow businessflow.BundleActionFlow) *CampaignHandler {
+func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFlow businessflow.SmartTargetingFlow, capacityFlow businessflow.SmartTargetingCapacityFlow, actionFlow businessflow.BundleActionFlow, reportJobFlow businessflow.CampaignAudienceReportJobFlow) *CampaignHandler {
 	handler := &CampaignHandler{
 		campaignFlow:       campaignFlow,
 		smartTargetingFlow: smartTargetingFlow,
 		capacityFlow:       capacityFlow,
 		actionFlow:         actionFlow,
+		reportJobFlow:      reportJobFlow,
 		validator:          validator.New(),
 	}
 
@@ -265,6 +272,110 @@ func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFl
 	handler.setupCustomValidations()
 
 	return handler
+}
+
+// CreateCampaignAudienceReportJob queues a disk-backed, multi-sheet report.
+// @Summary Create Campaign Audience Report Job
+// @Description Queues a large audience report. Poll the returned job and download it after completion; completed files expire after 24 hours.
+// @Tags Campaigns
+// @Accept json
+// @Produce json
+// @Param request body dto.ExportCampaignAudienceClickReportRequest true "Campaign IDs to export"
+// @Success 202 {object} dto.APIResponse{data=dto.CampaignAudienceReportJobResponse}
+// @Failure 429 {object} dto.APIResponse "Too many active report jobs"
+// @Router /api/v1/campaigns/audience-click-report/jobs [post]
+func (h *CampaignHandler) CreateCampaignAudienceReportJob(c fiber.Ctx) error {
+	var req dto.ExportCampaignAudienceClickReportRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", "INVALID_REQUEST", nil)
+	}
+	if err := h.validator.Struct(&req); err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Validation failed", "VALIDATION_ERROR", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/audience-click-report/jobs", 30*time.Second)
+	defer cancel()
+	job, err := h.reportJobFlow.Create(ctx, req.CampaignIDs, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
+	if err != nil {
+		return h.handleCampaignReportJobError(c, err)
+	}
+	return h.SuccessResponse(c, fiber.StatusAccepted, "Campaign audience report job created", job)
+}
+
+// GetCampaignAudienceReportJob returns the requester's report job state.
+// @Summary Get Campaign Audience Report Job
+// @Tags Campaigns
+// @Produce json
+// @Param id path string true "Report job UUID"
+// @Success 200 {object} dto.APIResponse{data=dto.CampaignAudienceReportJobResponse}
+// @Router /api/v1/campaigns/audience-click-report/jobs/{id} [get]
+func (h *CampaignHandler) GetCampaignAudienceReportJob(c fiber.Ctx) error {
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/audience-click-report/jobs/:id", 30*time.Second)
+	defer cancel()
+	job, _, err := h.reportJobFlow.Get(ctx, c.Params("id"))
+	if err != nil {
+		return h.handleCampaignReportJobError(c, err)
+	}
+	return h.SuccessResponse(c, fiber.StatusOK, "Campaign audience report job", job)
+}
+
+// DownloadCampaignAudienceReportJob streams a completed report to its owner.
+// @Summary Download Campaign Audience Report Job
+// @Tags Campaigns
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Param id path string true "Report job UUID"
+// @Success 200 {string} string "Excel file"
+// @Failure 404 {object} dto.APIResponse "Report job or output file not found"
+// @Failure 409 {object} dto.APIResponse "Report is not ready"
+// @Failure 410 {object} dto.APIResponse "Report expired"
+// @Router /api/v1/campaigns/audience-click-report/jobs/{id}/download [get]
+func (h *CampaignHandler) DownloadCampaignAudienceReportJob(c fiber.Ctx) error {
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/audience-click-report/jobs/:id/download", 30*time.Second)
+	defer cancel()
+	_, job, err := h.reportJobFlow.Get(ctx, c.Params("id"))
+	if err != nil {
+		return h.handleCampaignReportJobError(c, err)
+	}
+	if job.Status == models.CampaignAudienceReportJobExpired {
+		return h.ErrorResponse(c, fiber.StatusGone, "Campaign audience report has expired", "CAMPAIGN_REPORT_JOB_EXPIRED", nil)
+	}
+	if job.ExpiresAt != nil && !job.ExpiresAt.After(utils.UTCNow()) {
+		return h.ErrorResponse(c, fiber.StatusGone, "Campaign audience report has expired", "CAMPAIGN_REPORT_JOB_EXPIRED", nil)
+	}
+	if job.Status != models.CampaignAudienceReportJobCompleted || job.OutputPath == nil {
+		return h.ErrorResponse(c, fiber.StatusConflict, "Campaign audience report is not ready", "CAMPAIGN_REPORT_JOB_NOT_READY", nil)
+	}
+	info, err := os.Stat(*job.OutputPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return h.ErrorResponse(c, fiber.StatusNotFound, "Campaign audience report output is unavailable", "CAMPAIGN_REPORT_JOB_OUTPUT_NOT_FOUND", nil)
+		}
+		log.Printf("stat campaign audience report output: %v", err)
+		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Campaign audience report output is unavailable", "CAMPAIGN_REPORT_JOB_OUTPUT_UNAVAILABLE", nil)
+	}
+	if !info.Mode().IsRegular() {
+		return h.ErrorResponse(c, fiber.StatusNotFound, "Campaign audience report output is unavailable", "CAMPAIGN_REPORT_JOB_OUTPUT_NOT_FOUND", nil)
+	}
+	h.reportJobFlow.RecordDownload(ctx, job, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", "attachment; filename=\"campaign_audience_report.xlsx\"")
+	return c.SendFile(*job.OutputPath)
+}
+func (h *CampaignHandler) handleCampaignReportJobError(c fiber.Ctx, err error) error {
+	if be, ok := err.(*businessflow.BusinessError); ok {
+		switch be.Code {
+		case "CAMPAIGN_REPORT_JOB_NOT_FOUND":
+			return h.ErrorResponse(c, fiber.StatusNotFound, be.Message, be.Code, nil)
+		case "MISSING_CUSTOMER_ID":
+			return h.ErrorResponse(c, fiber.StatusUnauthorized, be.Message, be.Code, nil)
+		case "CAMPAIGN_IDS_REQUIRED", "CAMPAIGN_IDS_LIMIT_EXCEEDED", "CAMPAIGN_ID_INVALID", "CAMPAIGN_IDS_DUPLICATE":
+			return h.ErrorResponse(c, fiber.StatusBadRequest, be.Message, be.Code, nil)
+		case "CAMPAIGN_REPORT_JOB_LIMIT_EXCEEDED":
+			return h.ErrorResponse(c, fiber.StatusTooManyRequests, be.Message, be.Code, nil)
+		case "CAMPAIGN_NOT_FOUND":
+			return h.ErrorResponse(c, fiber.StatusNotFound, be.Message, be.Code, nil)
+		}
+	}
+	return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to process campaign audience report job", "CAMPAIGN_REPORT_JOB_FAILED", nil)
 }
 
 // GetCampaignActionMetrics returns the bundle-scoped action metrics for a campaign.
@@ -960,7 +1071,7 @@ func (h *CampaignHandler) ExportCampaignClickReport(c fiber.Ctx) error {
 // ExportCampaignAudienceClickReport exports campaign audience UID/click/action results from multiple
 // customer-owned campaigns into one Excel worksheet.
 // @Summary Export Campaign Audience Report
-// @Description Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.
+// @Description Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for selected campaigns owned by the authenticated customer. This synchronous compatibility endpoint supports at most 250,000 rows. For larger reports, create an asynchronous job at POST /api/v1/campaigns/audience-click-report/jobs, poll its status, then download the completed XLSX. Delivery status is unavailable in the stored audience mapping and is reported as unknown.
 // @Tags Campaigns
 // @Accept json
 // @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
