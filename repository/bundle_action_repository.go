@@ -75,7 +75,22 @@ func (r *BundleActionRepositoryImpl) ClaimPending(ctx context.Context, limit int
 	var out []*models.BundleActionFile
 	err := r.getDB(ctx).Transaction(func(tx *gorm.DB) error {
 		var rows []*models.BundleActionFile
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("status IN ? OR (status = ? AND started_at < ?)", []models.BundleActionFileStatus{models.BundleActionFilePending, models.BundleActionFileDeletePending}, models.BundleActionFileProcessing, stale).Order("created_at,id").Limit(limit).Find(&rows).Error; err != nil {
+		// Only one file per Bundle may be claimed at a time. Completion locks the
+		// Bundle while publishing its metrics, so parallel same-Bundle workers
+		// otherwise spend their deadline waiting and then retry as stale work.
+		if err := tx.Raw(`
+WITH candidates AS MATERIALIZED (
+    SELECT DISTINCT ON (bundle_id) id
+    FROM bundle_action_files
+    WHERE status IN ? OR (status = ? AND started_at < ?)
+    ORDER BY bundle_id, created_at, id
+)
+SELECT f.*
+FROM bundle_action_files AS f
+JOIN candidates AS c ON c.id = f.id
+ORDER BY f.created_at, f.id
+LIMIT ?
+FOR UPDATE OF f SKIP LOCKED`, []models.BundleActionFileStatus{models.BundleActionFilePending, models.BundleActionFileDeletePending}, models.BundleActionFileProcessing, stale, limit).Scan(&rows).Error; err != nil {
 			return err
 		}
 		for _, row := range rows {
@@ -297,14 +312,21 @@ func refreshBundleActionMetrics(tx *gorm.DB, bundleID uint, at time.Time) error 
 	if active == 0 {
 		return tx.Exec(`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) VALUES (?,false,0,0,?) ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=false,action_count=0,eligible_delivered_count=0,updated_at=EXCLUDED.updated_at`, bundleID, at).Error
 	}
-	base := eligibleActionAudienceSQL
-	if err := tx.Exec(base+` INSERT INTO bundle_action_campaign_metrics(bundle_id,campaign_id,action_count,eligible_delivered_count,updated_at) SELECT ?,campaign_id,COUNT(*) FILTER (WHERE action),COUNT(*),? FROM marked GROUP BY campaign_id`, bundleID, bundleID, bundleID, at).Error; err != nil {
+	// Materialize the high-volume delivery join once. Previously each metric
+	// insert reran eligibleActionAudienceSQL, including four correlated delivery
+	// probes per audience. This temp table is local to this transaction and is
+	// dropped automatically on commit/rollback.
+	if err := tx.Exec(`CREATE TEMP TABLE bundle_action_eligible ON COMMIT DROP AS `+eligibleActionAudienceSQL+`
+SELECT campaign_id, tag_id, phase, action FROM marked`, bundleID, bundleID).Error; err != nil {
+		return fmt.Errorf("materialize eligible action audience: %w", err)
+	}
+	if err := tx.Exec(`INSERT INTO bundle_action_campaign_metrics(bundle_id,campaign_id,action_count,eligible_delivered_count,updated_at) SELECT ?,campaign_id,COUNT(*) FILTER (WHERE action),COUNT(*),? FROM bundle_action_eligible GROUP BY campaign_id`, bundleID, at).Error; err != nil {
 		return fmt.Errorf("refresh campaign atr: %w", err)
 	}
-	if err := tx.Exec(base+` INSERT INTO bundle_action_tag_metrics(bundle_id,tag_id,test_action_count,test_eligible_delivered_count,overall_action_count,overall_eligible_delivered_count,updated_at) SELECT ?,tag_id,COUNT(*) FILTER(WHERE phase='test' AND action),COUNT(*) FILTER(WHERE phase='test'),COUNT(*) FILTER(WHERE action),COUNT(*),? FROM marked GROUP BY tag_id`, bundleID, bundleID, bundleID, at).Error; err != nil {
+	if err := tx.Exec(`INSERT INTO bundle_action_tag_metrics(bundle_id,tag_id,test_action_count,test_eligible_delivered_count,overall_action_count,overall_eligible_delivered_count,updated_at) SELECT ?,tag_id,COUNT(*) FILTER(WHERE phase='test' AND action),COUNT(*) FILTER(WHERE phase='test'),COUNT(*) FILTER(WHERE action),COUNT(*),? FROM bundle_action_eligible GROUP BY tag_id`, bundleID, at).Error; err != nil {
 		return fmt.Errorf("refresh tag atr: %w", err)
 	}
-	return tx.Exec(base+` INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) SELECT ?,true,COUNT(*) FILTER(WHERE action),COUNT(*),? FROM marked ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=true,action_count=EXCLUDED.action_count,eligible_delivered_count=EXCLUDED.eligible_delivered_count,updated_at=EXCLUDED.updated_at`, bundleID, bundleID, bundleID, at).Error
+	return tx.Exec(`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) SELECT ?,true,COUNT(*) FILTER(WHERE action),COUNT(*),? FROM bundle_action_eligible ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=true,action_count=EXCLUDED.action_count,eligible_delivered_count=EXCLUDED.eligible_delivered_count,updated_at=EXCLUDED.updated_at`, bundleID, at).Error
 }
 func (r *BundleActionRepositoryImpl) Summary(ctx context.Context, bundleID uint) (*models.BundleActionSummary, error) {
 	var x models.BundleActionSummary
