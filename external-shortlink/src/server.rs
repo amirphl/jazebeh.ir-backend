@@ -931,7 +931,7 @@ mod tests {
             .await
             .unwrap();
         state.cache.insert("abc1".to_owned(), Arc::new(link()));
-        for ip in ["66.249.1.2", "74.125.1.2"] {
+        for ip in ["66.102.1.2", "66.249.1.2", "74.125.1.2", "192.178.1.2"] {
             let response = router(state.clone())
                 .oneshot(
                     HttpRequest::builder()
@@ -963,7 +963,7 @@ mod tests {
             assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
             assert!(!response.headers().contains_key(header::LOCATION));
         }
-        assert_eq!(state.spool.stats().await.unwrap().events, 2);
+        assert_eq!(state.spool.stats().await.unwrap().events, 4);
     }
 
     #[tokio::test]
