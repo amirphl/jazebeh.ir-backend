@@ -46,6 +46,13 @@ readonly DOCKER
 "${DOCKER[@]}" container inspect "$SOURCE_CONTAINER" >/dev/null 2>&1 ||
 	die "Source backend container does not exist: $SOURCE_CONTAINER"
 
+for container in "$SOURCE_CONTAINER" "$CONTAINER_NAME"; do
+	if "${DOCKER[@]}" container inspect "$container" >/dev/null 2>&1; then
+		project="$("${DOCKER[@]}" inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$container")"
+		[[ "$project" != yamata-staging ]] || die "Refusing to modify staging container: $container"
+	fi
+done
+
 [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$SOURCE_CONTAINER")" == "true" ]] ||
 	die "Source backend is not running: $SOURCE_CONTAINER"
 
