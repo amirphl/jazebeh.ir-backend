@@ -18,6 +18,7 @@ type AdminLineNumberFlow interface {
 	Create(ctx context.Context, req *dto.AdminCreateLineNumberRequest, metadata *ClientMetadata) (*dto.AdminLineNumberDTO, error)
 	ListAll(ctx context.Context, metadata *ClientMetadata) ([]*dto.AdminLineNumberDTO, error)
 	UpdateBatch(ctx context.Context, req *dto.AdminUpdateLineNumbersRequest, metadata *ClientMetadata) error
+	UpdatePriceFactor(ctx context.Context, req *dto.AdminUpdateLineNumberPriceFactorRequest, metadata *ClientMetadata) (*dto.AdminLineNumberDTO, error)
 	GetReport(ctx context.Context, metadata *ClientMetadata) ([]*dto.AdminLineNumberReportItem, error)
 }
 
@@ -168,6 +169,45 @@ func (f *AdminLineNumberFlowImpl) UpdateBatch(ctx context.Context, req *dto.Admi
 		"updates": len(updates),
 	}, nil)
 	return nil
+}
+
+func (f *AdminLineNumberFlowImpl) UpdatePriceFactor(ctx context.Context, req *dto.AdminUpdateLineNumberPriceFactorRequest, metadata *ClientMetadata) (*dto.AdminLineNumberDTO, error) {
+	if req == nil {
+		return nil, NewBusinessError("LINE_NUMBER_VALIDATION_FAILED", "Update line number price factor validation failed", ErrLineNumberValueRequired)
+	}
+
+	value := strings.TrimSpace(req.LineNumber)
+	if value == "" {
+		return nil, NewBusinessError("LINE_NUMBER_REQUIRED", "Line number is required", ErrLineNumberValueRequired)
+	}
+	if req.PriceFactor <= 0 {
+		return nil, NewBusinessError("PRICE_FACTOR_INVALID", "Price factor must be greater than zero", ErrPriceFactorInvalid)
+	}
+
+	existing, err := f.lineRepo.ByValue(ctx, value)
+	if err != nil {
+		return nil, NewBusinessError("LINE_NUMBER_FETCH_FAILED", "Failed to fetch line number", err)
+	}
+	if existing == nil {
+		return nil, NewBusinessError("LINE_NUMBER_NOT_FOUND", "Line number not found", ErrLineNumberNotFound)
+	}
+
+	existing.PriceFactor = req.PriceFactor
+	existing.UpdatedAt = utils.UTCNow()
+	if err := f.lineRepo.Update(ctx, existing); err != nil {
+		logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin update line number price factor", false, nil, map[string]any{
+			"line_number":  value,
+			"price_factor": req.PriceFactor,
+		}, err)
+		return nil, NewBusinessError("LINE_NUMBER_UPDATE_FAILED", "Failed to update line number price factor", err)
+	}
+
+	resp := ToLineNumberDTO(*existing)
+	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminLineNumberUpdate, "Admin update line number price factor", true, nil, map[string]any{
+		"line_number":  value,
+		"price_factor": req.PriceFactor,
+	}, nil)
+	return &resp, nil
 }
 
 func (f *AdminLineNumberFlowImpl) GetReport(ctx context.Context, metadata *ClientMetadata) ([]*dto.AdminLineNumberReportItem, error) {
