@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -254,7 +255,7 @@ func TestScheduleStatusCheckJobsSchedulesCandooThirdCheckAt12Hours(t *testing.T)
 	}
 }
 
-func TestScheduleStatusCheckJobsKeeps24HourPayamSMSCheck(t *testing.T) {
+func TestScheduleStatusCheckJobsKeeps30HourPayamSMSCheck(t *testing.T) {
 	repo := &stubSMSCampaignStatusJobRepo{}
 	scheduler := &SMSCampaignScheduler{jobRepo: repo}
 
@@ -267,8 +268,8 @@ func TestScheduleStatusCheckJobsKeeps24HourPayamSMSCheck(t *testing.T) {
 	if got := len(repo.batched[0]); got != 5 {
 		t.Fatalf("PayamSMS status jobs = %d, want 5", got)
 	}
-	if got := repo.batched[0][4].ScheduledAt.Sub(repo.batched[0][4].CreatedAt); got != 24*time.Hour {
-		t.Fatalf("PayamSMS final status job delay = %s, want 24h", got)
+	if got := repo.batched[0][4].ScheduledAt.Sub(repo.batched[0][4].CreatedAt); got != 30*time.Hour {
+		t.Fatalf("PayamSMS final status job delay = %s, want 30h", got)
 	}
 }
 
@@ -557,6 +558,49 @@ func TestSMSHandleStatusJobFetchFailureKeepsJobRetryable(t *testing.T) {
 	}
 	if job.RawProviderResponse == nil || *job.RawProviderResponse != `{"error":"temporarily unavailable"}` {
 		t.Fatalf("expected raw provider response to be retained, got=%v", job.RawProviderResponse)
+	}
+}
+
+func TestSMSStatusJobFailureLogIdentifiesProviderStageAndDeadline(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	jobRepo := &stubSMSCampaignStatusJobRepo{}
+	s := &SMSCampaignScheduler{
+		jobRepo:                         jobRepo,
+		logger:                          log.New(&logs, "", 0),
+		payamStatusToken:                "cached-token",
+		payamStatusTokenIssuedAt:        time.Now().UTC(),
+		statusJobMaxConcurrentCampaigns: 1,
+		smsClient: &stubSMSClient{
+			fetchStatusFn: func(context.Context, string, []string) (PayamStatusFetchResult, error) {
+				return PayamStatusFetchResult{}, context.DeadlineExceeded
+			},
+		},
+	}
+	provider := models.SMSProviderPayamSMS
+	job := &models.CampaignStatusJob{
+		ID:                  12,
+		ProcessedCampaignID: 89,
+		Platform:            models.CampaignPlatformSMS,
+		TrackingIDs:         []string{"trk-1", "trk-2"},
+		Provider:            &provider,
+	}
+
+	s.processSMSStatusJobGroup(context.Background(), []*models.CampaignStatusJob{job})
+
+	output := logs.String()
+	for _, want := range []string{
+		"job_id=12",
+		"processed_campaign_id=89",
+		"provider=\"payamsms\"",
+		"tracking_id_count=2",
+		"deadline_exceeded=true",
+		"fetch PayamSMS delivery status tracking_id_count=2",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("failure log missing %q: %s", want, output)
+		}
 	}
 }
 
