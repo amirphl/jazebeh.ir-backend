@@ -55,9 +55,11 @@ chmod 600 .env.beta
 Fill at least these values before starting anything:
 
 - `APP_ENV=production`
+- `EXTERNAL_SERVICES_MODE=live`
 - `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `JWT_SECRET_KEY`
 - `DOMAIN`, `MONITORING_DOMAIN`, `SENTRY_UI_DOMAIN`, `CERTBOT_EMAIL`
+- `PGADMIN_DOMAIN`, `PGADMIN_LISTEN_BIND_IP`, and the three pgAdmin secret-file paths; provision the files as described in [the pgAdmin deployment guide](PGADMIN_DEPLOYMENT.md)
 - `GRAFANA_ADMIN_PASSWORD`
 - `SENTRY_POSTGRES_DB`, `SENTRY_POSTGRES_USER`, `SENTRY_POSTGRES_PASSWORD`
 - `SENTRY_GLITCHTIP_SECRET_KEY`
@@ -81,7 +83,8 @@ Recommended first-boot settings:
 
 - `TLS_ENABLED="false"` because nginx terminates TLS
 - `CACHE_REDIS_URL="redis://redis-beta:6379"`
-- `CAMPAIGN_EXECUTION_ENABLED="false"` until bot credentials and provider credentials are verified
+- `CAMPAIGN_EXECUTION_ENABLED="false"` on the API; the separate campaign worker enables execution after credentials are verified
+- Configure the API-owned scheduler settings described in [Production configuration](PRODUCTION_CONFIGURATION.md), and set `SENTRY_DSN` for the campaign worker.
 
 ## 4. Decide What To Do About Extra Hardcoded Domains
 
@@ -98,12 +101,19 @@ Also note:
 
 ```bash
 mkdir -p docker/nginx/sites-available/generated/beta
+mkdir -p docker/nginx/sites-available/generated/pgadmin
 mkdir -p docker/prometheus/rules
 ```
 
 ## 6. Obtain TLS Certificates
 
 The compose stack mounts `/etc/letsencrypt` from the host. Certificates must exist before nginx starts.
+Load the deployment values before using them in the commands below:
+
+```bash
+source scripts/load-yamata-env.sh
+load_yamata_env_file "$PWD/.env.beta"
+```
 
 If you use `acme.sh`:
 
@@ -120,6 +130,7 @@ Issue a certificate for your main deployment domain:
   -d "www.$DOMAIN" \
   -d "$MONITORING_DOMAIN" \
   -d "$SENTRY_UI_DOMAIN" \
+  -d "$PGADMIN_DOMAIN" \
   --standalone
 ```
 
@@ -141,9 +152,8 @@ If you kept the hardcoded `jaazebeh.ir`, `jo1n.ir`, or `joinsahel.ir` nginx bloc
 Load `.env.beta` into the shell first:
 
 ```bash
-set -a
-source .env.beta
-set +a
+source scripts/load-yamata-env.sh
+load_yamata_env_file "$PWD/.env.beta"
 ```
 
 Generate the Postgres init files expected by compose:
@@ -155,9 +165,12 @@ bash docker/postgres/process-init-beta.sh
 Render the nginx config used by the container:
 
 ```bash
-envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $HSTS_MAX_AGE $GLOBAL_RATE_LIMIT $AUTH_RATE_LIMIT' \
+envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN $PGADMIN_DOMAIN' \
   < docker/nginx/sites-available/yamata-beta.conf \
   > docker/nginx/sites-available/generated/beta/yamata.conf
+envsubst '$DOMAIN $PGADMIN_DOMAIN' \
+  < docker/nginx/sites-available/pgadmin-beta.conf \
+  > docker/nginx/sites-available/generated/pgadmin/pgadmin.conf
 ```
 
 Normalize permissions for Docker bind-mounted configs. Keep `.env.beta` private, but files and directories under `docker/` must be readable/traversable by container users such as `postgres`, `nginx`, `nobody`, and `grafana`.
@@ -183,6 +196,7 @@ Postgres is configured for non-SSL traffic only on the private Docker bridge net
 Build the backend and cert-monitor images from this repo:
 
 ```bash
+./scripts/ensure-openresty-base-image.sh
 docker build -f docker/Dockerfile.production -t yamata-no-orochi .
 docker build -f docker/cert-monitor/Dockerfile -t yamata-cert-monitor-beta docker/cert-monitor
 ```
@@ -245,9 +259,8 @@ This script uses `.env.beta`, waits for Postgres, and applies the SQL migrations
 If it fails with `Database '$DB_NAME' does not exist`, the Postgres data volume was probably initialized before the final `.env.beta` values or processed init files were ready. Create the configured database inside the running Postgres container, apply the database-specific bootstrap SQL once, then rerun the initializer:
 
 ```bash
-set -a
-source .env.beta
-set +a
+source scripts/load-yamata-env.sh
+load_yamata_env_file "$PWD/.env.beta"
 
 docker exec -e PGPASSWORD="$DB_PASSWORD" yamata-postgres-beta \
   createdb -U "$DB_USER" -O "$DB_USER" "$DB_NAME"
@@ -259,7 +272,7 @@ docker exec -i -e PGPASSWORD="$DB_PASSWORD" yamata-postgres-beta \
 ./scripts/init-beta-database.sh
 ```
 
-For a truly disposable fresh server, recreating the Postgres data volume also works, but that deletes all existing beta database data. Prefer the manual `createdb` path above unless you are certain the volume contains nothing you need.
+For a truly disposable fresh server, recreating the Postgres data volume also works, but that deletes all existing production database data. Prefer the manual `createdb` path above unless you are certain the volume contains nothing you need.
 
 ## 11. Start The App And Proxy Layer
 
@@ -280,6 +293,8 @@ Then start frontend, nginx, and the log/cert sidecars:
 ```bash
 docker compose --env-file .env.beta -f docker-compose.beta.yml up -d \
   frontend-beta \
+  pgadmin-beta \
+  pgadmin-nginx-beta \
   nginx-beta \
   cert-monitor-beta \
   nginx-sentry-forwarder-beta
@@ -334,6 +349,15 @@ After that, use the admin APIs or direct SQL to populate:
 
 Without those, the app may be healthy but campaign creation and pricing flows will not be usable.
 
+After provisioning the bot with the configured `BOT_USERNAME` and `BOT_PASSWORD` and verifying provider credentials, start the separate campaign worker:
+
+```bash
+./scripts/deploy-campaign-scheduler-beta.sh yamata-no-orochi
+docker logs --tail 100 yamata-campaign-scheduler-beta
+```
+
+The script checks the running API's scheduler settings and Sentry DSN before creating the worker. Keep campaign execution disabled in the API; the worker enables it. For subsequent releases use `./scripts/deploy-production-beta.sh --domain "$DOMAIN"` to deploy the API and recreate the worker together.
+
 ## 13. Smoke Tests
 
 Container status:
@@ -363,7 +387,7 @@ curl -X POST "https://$DOMAIN/api/v1/bot/auth/login" \
 
 ## 14. Recreate A Container With `.env.beta`
 
-Always include `--env-file .env.beta` when recreating beta services. A plain `docker compose -f docker-compose.beta.yml ...` may start containers with blank or shell-default values instead of the deployment env file.
+Always include `--env-file .env.beta` when recreating production services. A plain `docker compose -f docker-compose.beta.yml ...` may start containers with blank or shell-default values instead of the deployment env file.
 
 For most config or env changes, use Compose to recreate the service in place:
 
@@ -437,7 +461,7 @@ docker rm yamata-app-beta
 docker compose --env-file .env.beta -f docker-compose.beta.yml up -d app-beta
 ```
 
-Do not remove volumes unless you intentionally want to delete persisted data. For example, removing `postgres_data_beta` deletes the beta database.
+Do not remove volumes unless you intentionally want to delete persisted data. For example, removing `postgres_data_beta` deletes the production database.
 
 ## 15. Important Notes
 
