@@ -353,7 +353,7 @@ func nonAutomatedClickTrafficSQL(tableAlias string) string {
 
 	return fmt.Sprintf(`
 %[1]sis_test IS NOT TRUE
-AND COALESCE(%[1]sip, '') !~ '^(66\.249\.|74\.125\.)'
+AND COALESCE(%[1]sip, '') !~ '^(66\.(102|249)\.|74\.125\.|192\.178\.)'
 AND COALESCE(%[1]suser_agent, '') !~* '%[2]s'
 AND NOT (
     COALESCE(%[1]suser_agent, '') ~* 'Chrome'
