@@ -1527,11 +1527,12 @@ var campaignAudienceClickReportHeaders = []string{
 }
 
 const (
-	// Excel permits 1,048,576 rows per worksheet, including the header. Keep a
-	// lower API limit so this synchronous endpoint has bounded CPU, memory, and
-	// response-buffer usage even when a customer selects many campaigns.
+	// Excel permits 1,048,576 rows per worksheet, including the header. This
+	// synchronous endpoint still retains source rows and the final XLSX response
+	// in memory, so keep a deliberately conservative bound rather than allowing
+	// a full worksheet to exhaust an API worker.
 	maxExcelWorksheetDataRows          = 1_048_575
-	maxCampaignAudienceClickReportRows = 100_000
+	maxCampaignAudienceClickReportRows = 250_000
 	// PostgreSQL's extended query protocol accepts no more than 65,535 bound
 	// parameters. Keep this well below that ceiling because the action lookup
 	// also binds the bundle ID and file status.
@@ -1635,13 +1636,19 @@ func buildCampaignReportRows(allUIDs []string, uidToCode map[string]string, clic
 }
 
 func buildCampaignAudienceClickReportRows(campaign models.Campaign, allUIDs []string, uidToCode map[string]string, clickedCodes []string, actionUIDs map[string]bool) []campaignAudienceClickReportRow {
+	sortedUIDs := uniqueSortedUIDs(allUIDs)
+	sort.Strings(sortedUIDs)
+	return buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(campaign, sortedUIDs, uidToCode, clickedCodes, actionUIDs)
+}
+
+// buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs avoids a second
+// deduplication and sort when the caller already has canonical audience UIDs.
+func buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(campaign models.Campaign, sortedUIDs []string, uidToCode map[string]string, clickedCodes []string, actionUIDs map[string]bool) []campaignAudienceClickReportRow {
 	clickedCodeSet := make(map[string]struct{}, len(clickedCodes))
 	for _, code := range clickedCodes {
 		clickedCodeSet[code] = struct{}{}
 	}
 
-	sortedUIDs := uniqueSortedUIDs(allUIDs)
-	sort.Strings(sortedUIDs)
 	rows := make([]campaignAudienceClickReportRow, 0, len(sortedUIDs))
 	for _, audienceUID := range sortedUIDs {
 		_, clicked := clickedCodeSet[uidToCode[audienceUID]]
@@ -1801,7 +1808,7 @@ func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context
 			auditFailure(fmt.Sprintf("Campaign audience report export failed while loading action data for campaign %s", campaign.UUID.String()), err)
 			return nil, NewBusinessError("CAMPAIGN_ACTION_LOOKUP_FAILED", "failed to load campaign action data", err)
 		}
-		rows = append(rows, buildCampaignAudienceClickReportRows(*campaign, allUIDs, uidToCode, clickedCodesByCampaignID[campaign.ID], actionUIDs)...)
+		rows = append(rows, buildCampaignAudienceClickReportRowsFromSortedUniqueUIDs(*campaign, allUIDs, uidToCode, clickedCodesByCampaignID[campaign.ID], actionUIDs)...)
 	}
 
 	reportBytes, err := buildCampaignAudienceClickReportExcel(rows)
