@@ -1,7 +1,7 @@
 # Production configuration
 
 This document describes the configuration consumed by the current application
-and beta Compose stack. The complete variable inventory is
+and production Compose stack. The complete variable inventory is
 [`env.template`](../env.template); parsing, defaults, and startup validation live
 in [`config/production.go`](../config/production.go).
 
@@ -25,7 +25,8 @@ chmod 600 .env.beta
 ```
 
 Replace every provisioning placeholder such as `$domain`, `$db_password`, and
-`$jwt_secret`. The strict production loader rejects unresolved placeholders.
+`$jwt_secret`. Set `APP_ENV=production` and `EXTERNAL_SERVICES_MODE=live` in
+this production file. The strict production loader rejects unresolved placeholders.
 Do not commit `.env`, `.env.beta`, credentials, private keys, or provider
 tokens.
 
@@ -63,11 +64,11 @@ values after deployment.
 
 | Group | Prefixes or principal variables | Notes |
 |---|---|---|
-| Build/runtime identity | `APP_ENV`, `VERSION`, `COMMIT_HASH`, `BUILD_TIME` | Swagger routes exist only for `development` and `local`. |
+| Build/runtime identity | `APP_ENV`, `EXTERNAL_SERVICES_MODE`, `VERSION`, `COMMIT_HASH`, `BUILD_TIME` | Valid pairs are `development`/`mock`, `staging`/`mock`, and `production`/`live`. The supported application configuration has no `local` mode; Swagger is exposed in `development`. |
 | PostgreSQL | `DB_*`, `POSTGRES_SHM_SIZE` | Compose forces the app host to `postgres-beta`; PostgreSQL 15 uses a configurable shared-memory mount. |
 | HTTP server | `SERVER_*` | The API defaults to port 8080; the metrics listener is separate. |
 | JWT/authentication | `JWT_*`, `PASSWORD_*`, `SESSION_*` | See the required-value caveat above. |
-| Edge/security | `TLS_*`, `HSTS_*`, `CORS_*`, rate-limit and header variables | Several values are parsed but the current Fiber middleware and rendered nginx template contain their own settings; see “Runtime caveats.” |
+| Edge/security | `TLS_*`, `CORS_ALLOWED_ORIGINS` | The CORS origins value applies to the development router; production edge policy is static. |
 | Logging/observability | `LOG_*`, `METRICS_*`, `SENTRY_*` | Metrics default to port 9090 and path `/metrics`. |
 | Redis/cache | `CACHE_*`, `REDIS_PASSWORD` | Compose injects `redis://redis-beta:6379` for the app. |
 | Deployment | `DOMAIN`, `API_DOMAIN`, `MONITORING_DOMAIN`, `SENTRY_*_DOMAIN`, `PGADMIN_*`, `CERTBOT_EMAIL`, `GRAFANA_ADMIN_PASSWORD`, backup variables | The deployment script renders nginx from the explicit domain argument. pgAdmin credential paths refer to protected host files; they are not credential values. |
@@ -90,9 +91,12 @@ The checked-in production workflow requires the following `.env.beta` values:
 CAMPAIGN_EXECUTION_ENABLED=false
 SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED=true
 SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED=true
+SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED=true
 # Default is 1. Increase only after verifying PostgreSQL can sustain concurrent audience scans.
 SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS=1
 TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED=true
+BUNDLE_ACTION_FILE_SCHEDULER_ENABLED=true
+CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED=true
 SMART_TAG_EVALUATION_ENABLED=true
 SMART_TAG_EVALUATION_SCHEDULER_ENABLED=true
 SMART_TAG_EVALUATION_DAILY_LIMIT_PER_CUSTOMER=2
@@ -102,17 +106,22 @@ CAMPAIGN_MESSAGE_SEND_MOCK_ENABLED=false
 `scripts/deploy-campaign-scheduler-beta.sh` derives a private worker from the
 running API container and overrides those responsibilities:
 
-| Process | Campaign execution | Exact capacity | Test sampling | Tag Test reports | Smart-tag evaluation |
-|---|---:|---:|---:|---:|---:|
-| `yamata-app-beta` | off | on | on | on | on |
-| `yamata-campaign-scheduler-beta` | on | off | off | off | off |
+| Process | Campaign execution | Capacity / Test / execution calculation | Reports, action files, refunds | Smart-tag / short-link sync |
+|---|---:|---:|---:|---:|
+| `yamata-app-beta` | off | on | on | on |
+| `yamata-campaign-scheduler-beta` | on | off | off | off |
 
-The capacity and Test-sampling switches are independent. When the sampling
-variable is omitted, it inherits the capacity switch for backward
-compatibility; set it explicitly in production. Test sampling has one worker
-by default. Set `SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS=2` to prevent
-one large sampling request from blocking the whole queue, but do so only after
-confirming PostgreSQL has headroom for two simultaneous large audience scans.
+The capacity, Test-sampling, and execution-calculation switches are independent.
+Existing `.env.beta` files are not updated when `env.template` changes; explicitly
+enable the bundle action-file scheduler in them and redeploy the API.
+When either of the latter switches is omitted, it inherits the capacity switch
+for backward compatibility; set both explicitly in production. The API also
+owns campaign-audience report generation, bundle action-file processing, refund
+reconciliation, smart-tag evaluation, and external short-link synchronization
+because they use its persistent data volumes or central scheduling state. Test
+sampling has one worker by default. Set
+`SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS=2` only after confirming that
+PostgreSQL has headroom for two simultaneous large audience scans.
 
 This prevents two processes from claiming the same job family. Run
 `scripts/deploy-production-beta.sh` after any image or environment change;
@@ -134,18 +143,14 @@ variable, not the prompt files, with the credential.
 
 ## Runtime caveats
 
-- TLS terminates at nginx in the beta stack; `TLS_ENABLED=false` is appropriate
+- TLS terminates at nginx in the production stack; `TLS_ENABLED=false` is appropriate
   for the internal HTTP hop. Certificate paths in the nginx template must
   already exist under `/etc/letsencrypt`.
-- Fiber currently hard-codes its CORS allowlist, security headers, global limit
-  of 2,000 requests/minute, and auth limit of 20 requests/minute in
-  `app/router/routes.go`. Nginx defines separate per-IP zones of 100 API
+- Fiber currently hard-codes its CORS allowlist (except development origins),
+  security headers, global limit of 2,000 requests/minute, and auth limit of
+  20 requests/minute in `app/router/routes.go`. Nginx defines separate per-IP zones of 100 API
   requests/minute, 5 auth requests/minute, and 200 general requests/minute in
-  `docker/nginx/nginx.conf`. Do not assume every parsed `CORS_*`, header, or
-  rate-limit variable changes runtime middleware.
-- `SERVER_ENABLE_COMPRESSION` and its level are parsed, but the current router
-  always installs best-speed compression. Similar config-to-runtime gaps should
-  be checked against code before an operational change.
+  `docker/nginx/nginx.conf`.
 - The app’s default body limit is 100 MiB. Nginx separately allows 100 MiB for
   media and bot audience uploads and 50 MiB for admin short-link CSV uploads.
 - The public health endpoint is `/api/v1/health`; nginx also maps `/health` to
