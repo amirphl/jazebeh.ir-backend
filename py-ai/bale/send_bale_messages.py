@@ -12,13 +12,18 @@ Usage example:
 """
 
 import argparse
+import mimetypes
 import sys
 import time
 from pathlib import Path
 
 import pandas as pd
 import requests
-import mimetypes
+
+PY_AI_ROOT = Path(__file__).resolve().parents[1]
+if str(PY_AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(PY_AI_ROOT))
+from operational_guard import require_live_production_execution
 
 NOT_USER_SUBSTR = "phone number is not bale user"
 NOT_USER_CODE = '"code":17'
@@ -34,11 +39,18 @@ def read_numbers(path: Path) -> list[str]:
         return []
     first_col = df.iloc[:, 0].astype(str).str.strip()
     # drop header-like values and blanks
-    nums = ['98' + n for n in first_col if n and not n.lower().startswith("mobile")]
+    nums = ["98" + n for n in first_col if n and not n.lower().startswith("mobile")]
     return nums
 
 
-def send_message(api_base: str, api_key: str, bot_id: int, phone: str, text: str, file_id: str | None = None) -> tuple[bool, str]:
+def send_message(
+    api_base: str,
+    api_key: str,
+    bot_id: int,
+    phone: str,
+    text: str,
+    file_id: str | None = None,
+) -> tuple[bool, str]:
     url = f"{api_base.rstrip('/')}/api/v3/send_message"
     payload = {
         "bot_id": bot_id,
@@ -83,16 +95,52 @@ def upload_file(api_base: str, api_key: str, path: Path) -> tuple[bool, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Send Bale messages from XLSX phone list.")
-    parser.add_argument("--xlsx", required=True, type=Path, help="Path to XLSX file (first column = phone numbers)")
-    parser.add_argument("--message-file", required=True, type=Path, help="Path to UTF-8 text file containing message")
-    parser.add_argument("--media-file", type=Path, help="Optional media file to upload and send")
+    parser = argparse.ArgumentParser(
+        description="Send Bale messages from XLSX phone list."
+    )
+    parser.add_argument(
+        "--xlsx",
+        required=True,
+        type=Path,
+        help="Path to XLSX file (first column = phone numbers)",
+    )
+    parser.add_argument(
+        "--message-file",
+        required=True,
+        type=Path,
+        help="Path to UTF-8 text file containing message",
+    )
+    parser.add_argument(
+        "--media-file", type=Path, help="Optional media file to upload and send"
+    )
     parser.add_argument("--bot-id", required=True, type=int, help="Bale bot ID")
     parser.add_argument("--api-key", required=True, help="Bale API access key")
-    parser.add_argument("--api-base", default="https://safir.bale.ai", help="Bale API base URL (default: safir.bale.ai)")
-    parser.add_argument("--delay-ms", type=float, default=20.0, help="Delay between requests in milliseconds (default: 10)")
+    parser.add_argument(
+        "--api-base",
+        default="https://safir.bale.ai",
+        help="Bale API base URL (default: safir.bale.ai)",
+    )
+    parser.add_argument(
+        "--delay-ms",
+        type=float,
+        default=20.0,
+        help="Delay between requests in milliseconds (default: 10)",
+    )
+    parser.add_argument(
+        "--execute", action="store_true", help="send messages; default is a dry run"
+    )
     args = parser.parse_args()
 
+    numbers = read_numbers(args.xlsx)
+    if not numbers:
+        print("No phone numbers found.", file=sys.stderr)
+        return 1
+    if not args.execute:
+        print(
+            f"Dry run: would send to {len(numbers)} Bale recipient(s). Pass --execute in production live mode to send."
+        )
+        return 0
+    require_live_production_execution(execute=True, action="Sending Bale messages")
     message = read_message(args.message_file)
     media_file_id = None
     if args.media_file:
@@ -101,12 +149,8 @@ def main() -> int:
             print(f"Media upload failed: {fid_or_err}", file=sys.stderr)
             return 1
         media_file_id = fid_or_err
-    numbers = read_numbers(args.xlsx)
-    if not numbers:
-        print("No phone numbers found.", file=sys.stderr)
-        return 1
-    
-    print('Go ...')
+
+    print("Go ...")
 
     delay_s = args.delay_ms / 1000.0
     success = 0
@@ -114,7 +158,9 @@ def main() -> int:
     failed_numbers: list[tuple[str, str]] = []
 
     for num in numbers:
-        ok, info = send_message(args.api_base, args.api_key, args.bot_id, num, message, media_file_id)
+        ok, info = send_message(
+            args.api_base, args.api_key, args.bot_id, num, message, media_file_id
+        )
         if ok:
             success += 1
             print(f"[OK] {num} message_id={info}")
