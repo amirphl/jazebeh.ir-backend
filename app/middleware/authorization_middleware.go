@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"log"
-	"strings"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/authorization"
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
@@ -68,36 +67,6 @@ func (m *AuthorizationMiddleware) AdminAuthorize() fiber.Handler {
 			})
 		}
 
-		return c.Next()
-	}
-}
-
-// ServiceAccountAuthorize allows cron/service accounts with pre-assigned permissions.
-// Service accounts should hit internal tools with an injected permission key header.
-func (m *AuthorizationMiddleware) ServiceAccountAuthorize(required authorization.PermissionKey) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		header := strings.TrimSpace(c.Get("X-Service-Permissions"))
-		if header == "" {
-			return c.Status(fiber.StatusForbidden).JSON(dto.APIResponse{
-				Success: false,
-				Message: "Permission denied",
-				Error:   dto.ErrorDetail{Code: "PERMISSION_DENIED", Details: map[string]any{"permission": required}},
-			})
-		}
-		has := false
-		for _, part := range strings.Split(header, ",") {
-			if strings.EqualFold(strings.TrimSpace(part), string(required)) {
-				has = true
-				break
-			}
-		}
-		if !has {
-			return c.Status(fiber.StatusForbidden).JSON(dto.APIResponse{
-				Success: false,
-				Message: "Permission denied",
-				Error:   dto.ErrorDetail{Code: "PERMISSION_DENIED", Details: map[string]any{"permission": required}},
-			})
-		}
 		return c.Next()
 	}
 }
