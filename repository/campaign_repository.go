@@ -583,9 +583,12 @@ func (r *CampaignRepositoryImpl) ByFilter(ctx context.Context, filter models.Cam
 const scheduleAtSecondaryOrder = `
 	CASE WHEN campaigns.status IN ('initiated', 'in-progress') THEN 1 ELSE 0 END ASC,
 	CASE WHEN campaigns.spec->>'schedule_at' IS NULL OR campaigns.spec->>'schedule_at' = '' THEN 0 ELSE 1 END ASC,
-	CASE WHEN campaigns.spec->>'schedule_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' AND (campaigns.spec->>'schedule_at')::timestamptz >= NOW() THEN 0 ELSE 1 END ASC,
-	CASE WHEN campaigns.spec->>'schedule_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' AND (campaigns.spec->>'schedule_at')::timestamptz >= NOW() THEN (campaigns.spec->>'schedule_at')::timestamptz END ASC NULLS LAST,
-	CASE WHEN campaigns.spec->>'schedule_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' AND (campaigns.spec->>'schedule_at')::timestamptz < NOW() THEN (campaigns.spec->>'schedule_at')::timestamptz END DESC NULLS LAST`
+	CASE WHEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') >= NOW() THEN 0 ELSE 1 END ASC,
+	CASE WHEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') >= NOW() THEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') END ASC NULLS LAST,
+	CASE WHEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') < NOW() THEN yamata_try_timestamptz(campaigns.spec->>'schedule_at') END DESC NULLS LAST`
+
+// scheduleAtOrderExpr returns NULL for a missing or malformed legacy value.
+const scheduleAtOrderExpr = `yamata_try_timestamptz(campaigns.spec->>'schedule_at')`
 
 func (r *CampaignRepositoryImpl) applyOrder(query *gorm.DB, orderBy string) *gorm.DB {
 	switch strings.TrimSpace(orderBy) {
@@ -595,6 +598,10 @@ func (r *CampaignRepositoryImpl) applyOrder(query *gorm.DB, orderBy string) *gor
 		return query.Order("campaigns.updated_at ASC").Order(scheduleAtSecondaryOrder)
 	case "newest":
 		return query.Order("campaigns.updated_at DESC").Order(scheduleAtSecondaryOrder)
+	case "schedule_at_asc":
+		return query.Order(scheduleAtOrderExpr + " ASC NULLS LAST").Order("campaigns.id ASC")
+	case "schedule_at_desc":
+		return query.Order(scheduleAtOrderExpr + " DESC NULLS LAST").Order("campaigns.id ASC")
 	case "phase_test_first":
 		return query.Order(`
 			CASE campaigns.phase
