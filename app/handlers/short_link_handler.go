@@ -50,8 +50,10 @@ func (h *ShortLinkHandler) Visit(c fiber.Ctx) error {
 		log.Println("Visit short link failed", err)
 		return c.Status(fiber.StatusInternalServerError).SendString("internal error")
 	}
-	c.Redirect().Status(fiber.StatusFound).To(link)
-	return nil
+	// Preserve an ordinary, bodyless redirect. Canonical and og:url tags on a
+	// synthetic document do not make unfurlers fetch the destination's metadata,
+	// and can hide previews that clients would obtain by following the redirect.
+	return c.Redirect().Status(fiber.StatusFound).To(link)
 }
 
 func (h *ShortLinkHandler) createRequestContextWithTimeout(c fiber.Ctx, endpoint string, timeout time.Duration) (context.Context, context.CancelFunc) {
