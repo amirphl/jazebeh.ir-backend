@@ -13,7 +13,7 @@ Compose v2, and the restore utilities:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y gettext-base openssl pv
+sudo apt-get install -y gettext-base openssl pv python3
 docker info
 docker compose version
 ```
@@ -79,7 +79,7 @@ background Redis snapshots (never synchronous `SAVE`), copies the newest complet
 main database backup (so it never captures the current state of
 `yamata-postgres-beta`), takes a consistent online dump of Sentry, and archives
 the remaining Docker volumes. It also includes uploads, logs, Grafana,
-Prometheus, pgAdmin data, the scheduled backup volume, certificates, the
+Prometheus, pgAdmin data, certificates, the
 complete project working tree (including `.env.beta` and Git-ignored files),
 file-backed secrets/certificates referenced by the environment, Docker images,
 manifests, `/etc/hosts`, and the source Docker daemon configuration when present.
@@ -98,6 +98,11 @@ atomically frozen whole-server image: writes made after last night's main
 database dump are intentionally absent, and frequently changing non-database
 volumes (for example Prometheus data and logs) are not globally atomic. Do not
 use `--leave-stopped`; it is kept only for compatibility and is ignored.
+
+The seven-day `postgres_backups_beta` history is intentionally not copied by
+default: the selected, validated nightly dump is already stored as
+`db/yamata-main.dump`. Add `--include-postgres-backup-history` only when enough
+extra space is available and retaining every historical dump is required.
 
 Transfer these three files to the destination:
 
@@ -127,7 +132,8 @@ chmod +x restore-yamata-backup.sh
 ```
 
 The restore discovers the original Compose project prefix, restores the actual
-prefixed volumes (including pgAdmin and `postgres_backups_beta`), restores
+prefixed volumes (including pgAdmin and, when explicitly included,
+`postgres_backups_beta`), restores
 `/etc/hosts` when it is present in the archive, validates certificates without issuing or renewing them,
 fixes prompt-file readability, applies the idempotent migrations needed through
 the required subset's current endpoint (0152), and starts the API

@@ -40,7 +40,7 @@ case "$PROJECT_DIR" in
 esac
 [[ ! -e "$PROJECT_DIR" ]] || die "PROJECT_DIR already exists: $PROJECT_DIR"
 
-for command_name in tar gzip sha256sum find awk grep sed openssl envsubst; do
+for command_name in tar gzip sha256sum find awk grep sed openssl envsubst python3; do
 	command -v "$command_name" >/dev/null 2>&1 || die "Required command is missing: $command_name"
 done
 

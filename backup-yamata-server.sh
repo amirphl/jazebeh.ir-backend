@@ -11,6 +11,7 @@ PROJECT_DIR="$SCRIPT_DIR"
 OUTPUT_PARENT="$HOME"
 LEAVE_STOPPED=false
 MAIN_DB_BACKUP="latest"
+INCLUDE_POSTGRES_BACKUP_HISTORY=false
 
 log() {
 	printf '[backup] %s\n' "$*"
@@ -36,6 +37,10 @@ Options:
   --main-db-backup X  Use X for the main database. X is an absolute .dump path
                       or "latest" for the newest completed scheduled dump
                       (default: latest); the live main database is never dumped
+  --include-postgres-backup-history
+                      Also archive every retained scheduled PostgreSQL dump.
+                      Disabled by default: yamata-main.dump already contains
+                      the selected nightly dump and the history can be large.
   --leave-stopped     Deprecated compatibility option; this script is online
   --help              Show this help
 EOF
@@ -63,6 +68,10 @@ while [[ $# -gt 0 ]]; do
 			MAIN_DB_BACKUP="$2"
 			shift 2
 			;;
+		--include-postgres-backup-history)
+			INCLUDE_POSTGRES_BACKUP_HISTORY=true
+			shift
+			;;
 		--help|-h)
 			usage
 			;;
@@ -75,7 +84,7 @@ done
 PROJECT_DIR="$(readlink -f "$PROJECT_DIR")"
 mkdir -p "$OUTPUT_PARENT"
 OUTPUT_PARENT="$(readlink -f "$OUTPUT_PARENT")"
-readonly PROJECT_DIR OUTPUT_PARENT LEAVE_STOPPED MAIN_DB_BACKUP
+readonly PROJECT_DIR OUTPUT_PARENT LEAVE_STOPPED MAIN_DB_BACKUP INCLUDE_POSTGRES_BACKUP_HISTORY
 
 [[ -f "$PROJECT_DIR/.env.beta" ]] || die "Missing $PROJECT_DIR/.env.beta"
 [[ -f "$PROJECT_DIR/docker-compose.beta.yml" ]] || \
@@ -295,8 +304,12 @@ backup_volume yamata-grafana-beta /var/lib/grafana \
 	"$BACKUP_ROOT/volumes" grafana_data_beta.tar.gz
 backup_volume yamata-prometheus-beta /prometheus \
 	"$BACKUP_ROOT/volumes" prometheus_data_beta.tar.gz
-backup_volume yamata-postgres-backup-beta /backups \
-	"$BACKUP_ROOT/volumes" postgres_backups_beta.tar.gz
+if [[ "$INCLUDE_POSTGRES_BACKUP_HISTORY" == true ]]; then
+	backup_volume yamata-postgres-backup-beta /backups \
+		"$BACKUP_ROOT/volumes" postgres_backups_beta.tar.gz
+else
+	log "Skipping redundant PostgreSQL backup history; selected dump is stored as db/yamata-main.dump"
+fi
 if "${DOCKER[@]}" container inspect yamata-pgadmin-beta >/dev/null 2>&1; then
 	backup_volume yamata-pgadmin-beta /var/lib/pgadmin \
 		"$BACKUP_ROOT/volumes" pgadmin_data_beta.tar.gz
