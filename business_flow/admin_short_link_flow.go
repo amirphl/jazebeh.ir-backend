@@ -63,13 +63,16 @@ type AdminShortLinkFlow interface {
 }
 
 type AdminShortLinkFlowImpl struct {
-	repo      repository.ShortLinkRepository
-	clickRepo repository.ShortLinkClickRepository
-	auditRepo repository.AuditLogRepository
-	publisher ShortLinkMappingPublisher
-	jobRepo   repository.AdminShortLinkUploadJobRepository
-	db        *gorm.DB
+	repo       repository.ShortLinkRepository
+	clickRepo  repository.ShortLinkClickRepository
+	auditRepo  repository.AuditLogRepository
+	publisher  ShortLinkMappingPublisher
+	jobRepo    repository.AdminShortLinkUploadJobRepository
+	db         *gorm.DB
+	mockDomain string
 }
+
+func (f *AdminShortLinkFlowImpl) SetMockShortLinkDomain(domain string) { f.mockDomain = domain }
 
 func NewAdminShortLinkFlow(
 	repo repository.ShortLinkRepository,
@@ -96,6 +99,9 @@ func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(
 		return nil, NewBusinessError("VALIDATION_ERROR", "CSV file is required", nil)
 	}
 	shortLinkDomain = normalizeDomain(shortLinkDomain)
+	if f.mockDomain != "" {
+		shortLinkDomain = f.mockDomain
+	}
 	if shortLinkDomain == "" {
 		return nil, NewBusinessError("VALIDATION_ERROR", "short_link_domain is required", nil)
 	}
