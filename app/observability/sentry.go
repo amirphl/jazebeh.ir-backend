@@ -27,6 +27,9 @@ type SentryConfig struct {
 	Timeout     time.Duration
 	Capture4xx  bool
 	Capture5xx  bool
+	// HTTPTransport is injected by the application so Sentry follows the same
+	// outbound network policy as every other Go HTTP client.
+	HTTPTransport http.RoundTripper
 }
 
 type sentryClient struct {
@@ -71,6 +74,7 @@ func InitSentry(cfg SentryConfig) error {
 		ServerName:       serverName,
 		AttachStacktrace: true,
 		Transport:        transport,
+		HTTPTransport:    cfg.HTTPTransport,
 	}); err != nil {
 		return err
 	}
