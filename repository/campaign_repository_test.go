@@ -39,7 +39,7 @@ func TestNonAutomatedClickTrafficSQLUsesAllBotSignals(t *testing.T) {
 
 	for _, fragment := range []string{
 		"click.is_test IS NOT TRUE",
-		"COALESCE(click.ip, '') !~ '^(66\\.249\\.|74\\.125\\.)'",
+		"COALESCE(click.ip, '') !~ '^(66\\.(102|249)\\.|74\\.125\\.|192\\.178\\.)'",
 		"COALESCE(click.user_agent, '') !~* '" + automatedClickUserAgentPattern + "'",
 		"COALESCE(click.user_agent, '') ~* 'Chrome'",
 		"COALESCE(click.user_agent, '') !~* '(Edg|OPR|Opera)'",
@@ -54,7 +54,7 @@ func TestNonAutomatedClickTrafficSQLUsesAllBotSignals(t *testing.T) {
 
 func TestTagPerformanceSQLUsesSharedBotFilter(t *testing.T) {
 	for _, fragment := range []string{
-		"COALESCE(click.ip, '') !~ '^(66\\.249\\.|74\\.125\\.)'",
+		"COALESCE(click.ip, '') !~ '^(66\\.(102|249)\\.|74\\.125\\.|192\\.178\\.)'",
 		"COALESCE(click.user_agent, '') !~* '" + automatedClickUserAgentPattern + "'",
 	} {
 		if !strings.Contains(recomputeCampaignTagPerformanceSQL, fragment) {
