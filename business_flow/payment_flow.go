@@ -10,12 +10,14 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
+	"github.com/amirphl/Yamata-no-Orochi/app/observability"
 	"github.com/amirphl/Yamata-no-Orochi/app/services"
 	"github.com/amirphl/Yamata-no-Orochi/config"
 	"github.com/amirphl/Yamata-no-Orochi/models"
@@ -390,6 +392,11 @@ func (p *PaymentFlowImpl) callAtipayGetToken(
 	customer models.Customer,
 	paymentRequest models.PaymentRequest,
 ) (string, error) {
+	if p.atipayCfg.Mock {
+		log.Printf("mock provider=atipay action=get-token")
+		observability.RecordMockOperation("atipay", "get_token", "success", 1)
+		return "mock-" + paymentRequest.InvoiceNumber, nil
+	}
 	scatteredSettlementItems, err := p.calculateScatteredSettlementItems(ctx, customer, paymentRequest.Amount)
 	if err != nil {
 		return "", err
@@ -512,6 +519,21 @@ func (p *PaymentFlowImpl) callAtipayGetToken(
 }
 
 // PaymentCallback handles the callback from Atipay after payment completion
+type mockPaymentCustomerKey struct{}
+
+// WithMockPaymentCustomer identifies the authenticated customer for simulated callbacks.
+func WithMockPaymentCustomer(ctx context.Context, customerID uint) context.Context {
+	return context.WithValue(ctx, mockPaymentCustomerKey{}, customerID)
+}
+
+func authorizeMockPaymentCustomer(ctx context.Context, owner uint) error {
+	customerID, ok := ctx.Value(mockPaymentCustomerKey{}).(uint)
+	if !ok || customerID == 0 || customerID != owner {
+		return ErrForbidden
+	}
+	return nil
+}
+
 func (p *PaymentFlowImpl) PaymentCallback(ctx context.Context, atipayRequest *dto.AtipayRequest, metadata *ClientMetadata) (string, error) {
 	// Validate callback data
 	if err := p.validateCallbackRequest(atipayRequest); err != nil {
@@ -534,6 +556,11 @@ func (p *PaymentFlowImpl) PaymentCallback(ctx context.Context, atipayRequest *dt
 		if paymentRequest == nil {
 			return ErrPaymentRequestNotFound
 		}
+		if p.atipayCfg.Mock {
+			if err := authorizeMockPaymentCustomer(txCtx, paymentRequest.CustomerID); err != nil {
+				return err
+			}
+		}
 
 		customer, err = getCustomer(txCtx, p.customerRepo, paymentRequest.CustomerID)
 		if err != nil {
@@ -551,6 +578,13 @@ func (p *PaymentFlowImpl) PaymentCallback(ctx context.Context, atipayRequest *dt
 
 		// Determine payment status based on callback
 		mapping = p.getPaymentStatusMapping(atipayRequest.Status, atipayRequest.State)
+		if p.atipayCfg.Mock {
+			outcome := "failed"
+			if mapping.Success {
+				outcome = "accepted"
+			}
+			observability.RecordMockOperation("atipay", "callback", outcome, 1)
+		}
 
 		// Update payment request with callback data
 		if err := p.updatePaymentRequest(txCtx, paymentRequest, atipayRequest, mapping); err != nil {
@@ -560,7 +594,15 @@ func (p *PaymentFlowImpl) PaymentCallback(ctx context.Context, atipayRequest *dt
 		// If payment was successful, increase customer balance
 		if mapping.Success {
 			// Verify payment with Atipay before finalizing
-			verificationResult, err := p.verifyPaymentWithAtipay(txCtx, atipayRequest.ReferenceNumber)
+			var verificationResult *AtipayVerificationResponse
+			var err error
+			if p.atipayCfg.Mock {
+				log.Printf("mock provider=atipay action=verify-payment")
+				observability.RecordMockOperation("atipay", "verify_payment", "success", 1)
+				verificationResult = &AtipayVerificationResponse{AmountIRR: float64(paymentRequest.Amount * 10)}
+			} else {
+				verificationResult, err = p.verifyPaymentWithAtipay(txCtx, atipayRequest.ReferenceNumber)
+			}
 			if err != nil {
 				// Failed but don't return error to avoid rollback
 				mapping.Status = models.PaymentRequestStatusFailed
