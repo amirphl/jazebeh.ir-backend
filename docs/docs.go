@@ -4715,7 +4715,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "newest",
-                        "description": "Order by (newest|oldest)",
+                        "description": "Order by (newest|oldest|phase_test_first|phase_execution_first|highest_click_rate|lowest_click_rate|schedule_at_asc|schedule_at_desc)",
                         "name": "orderby",
                         "in": "query"
                     },
