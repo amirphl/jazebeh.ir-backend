@@ -88,6 +88,7 @@ func (BundleActionCampaignMetric) TableName() string { return "bundle_action_cam
 type BundleActionTagMetric struct {
 	BundleID                      uint      `gorm:"primaryKey" json:"bundle_id"`
 	TagID                         uint      `gorm:"primaryKey" json:"tag_id"`
+	TagDisplayName                *string   `gorm:"->;column:tag_display_name" json:"tag_display_name"`
 	TestActionCount               int64     `json:"test_action_count"`
 	TestEligibleDeliveredCount    int64     `json:"test_eligible_delivered_count"`
 	TestPhaseAvgATR               *float64  `gorm:"->;column:test_phase_avg_atr" json:"test_phase_avg_atr"`
