@@ -209,6 +209,11 @@ sudo ./scripts/setup-monitoring-debian-12.sh --monitoring-ip 'APP_BETA_PUBLIC_IP
 
 curl -fsS http://127.0.0.1:9100/metrics | head
 sudo nginx -t
+
+# This reaches Nginx through loopback. A plain https://jzbe.ir request made
+# on jzbe.ir itself uses its public/NAT source address and correctly returns 403.
+curl --resolve jzbe.ir:443:127.0.0.1 -fsSI https://jzbe.ir/metrics
+curl --resolve jzbe.ir:443:127.0.0.1 -fsSI https://jzbe.ir/node-metrics
 ```
 
 The central Prometheus configuration includes the `external_shortlink` and
