@@ -124,6 +124,26 @@ the operating system, and growth. Alert before the spool reaches either limit;
 no finite local disk allocation can guarantee retention during an indefinitely
 long PostgreSQL outage.
 
+## PostgreSQL maintenance
+
+The deployment applies the idempotent `schema.sql` file on every release. Its
+retention index is built with `CREATE INDEX CONCURRENTLY`, so deploying the
+retention-query improvement does not block redirect traffic. Do not wrap that
+file in a transaction.
+
+After deploying this version to an existing installation with a large `links`
+table, run the following once during normal operation to reclaim reusable
+space and refresh planner statistics:
+
+```sh
+sudo docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml \
+  exec -T postgres sh -ceu 'PGPASSWORD="$POSTGRES_PASSWORD" psql --host 127.0.0.1 --port 5432 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "VACUUM (ANALYZE, VERBOSE) links"'
+```
+
+`VACUUM FULL` is deliberately not part of the procedure because it takes an
+exclusive table lock. If disk space must be returned to the host, schedule
+`pg_repack` separately.
+
 ## Production application configuration
 
 Apply production migration `0135_external_short_link_sync.sql`, then configure

@@ -48,7 +48,13 @@ CREATE TABLE IF NOT EXISTS clicks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_clicks_link_id ON clicks (link_id);
-CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at ON clicks (clicked_at);
+-- Retention filters by timestamp and uses click_id only as a stable tie
+-- breaker.  This prevents the purge job from scanning every recent row in
+-- primary-key order before it reaches a retained row.  Keep these statements
+-- outside an explicit transaction: CONCURRENTLY avoids blocking redirects.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_clicks_purge_expired
+    ON clicks (clicked_at, click_id);
+DROP INDEX CONCURRENTLY IF EXISTS idx_clicks_clicked_at;
 -- Acknowledgement is represented by the singleton cursor below. Do not index
 -- acknowledged_at: advancing a cursor would rewrite an index entry per click.
 DROP INDEX IF EXISTS idx_clicks_acknowledged_at;

@@ -72,11 +72,25 @@ async fn postgres_mapping_click_cursor_and_idempotency() {
         (created.created, created.existing, created.persisted.len()),
         (1, 0, 1)
     );
+    let xmin_before: String = sqlx::query_scalar("SELECT xmin::text FROM links WHERE code = $1")
+        .bind(&code)
+        .fetch_one(&setup_pool)
+        .await
+        .unwrap();
     let existing = database
         .upload_links(std::slice::from_ref(&mapping))
         .await
         .unwrap();
     assert_eq!((existing.created, existing.existing), (0, 1));
+    let xmin_after: String = sqlx::query_scalar("SELECT xmin::text FROM links WHERE code = $1")
+        .bind(&code)
+        .fetch_one(&setup_pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        xmin_after, xmin_before,
+        "unchanged mappings must not be rewritten"
+    );
 
     let cleared_metadata = LinkInput {
         code: code.clone(),
@@ -153,4 +167,22 @@ async fn postgres_mapping_click_cursor_and_idempotency() {
     let acknowledged = database.acknowledge(final_id).await.unwrap();
     assert!(acknowledged >= final_id);
     assert_eq!(database.acknowledge(final_id).await.unwrap(), acknowledged);
+
+    // Exercise the retention path with an acknowledged, expired row. The
+    // production index is verified by the deployment schema; this confirms
+    // that timestamp ordering preserves cursor-based deletion semantics.
+    sqlx::query(
+        "UPDATE clicks SET clicked_at = CURRENT_TIMESTAMP - INTERVAL '8 days' WHERE event_id = $1",
+    )
+    .bind(event.event_id)
+    .execute(&setup_pool)
+    .await
+    .unwrap();
+    assert!(database.purge_acknowledged(7).await.unwrap() >= 1);
+    let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM clicks WHERE event_id = $1")
+        .bind(event.event_id)
+        .fetch_one(&setup_pool)
+        .await
+        .unwrap();
+    assert_eq!(retained, 0);
 }

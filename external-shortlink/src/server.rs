@@ -757,6 +757,9 @@ fn redirect_response(destination: &str) -> Response {
     let Ok(location) = HeaderValue::from_str(destination) else {
         return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
     };
+    // Keep this response as a normal redirect. A canonical or og:url value in
+    // a synthetic document does not make an unfurler retrieve the
+    // destination's metadata and can mask the preview it gets after redirect.
     (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
 }
 

@@ -284,6 +284,21 @@ impl Database {
             FROM incoming
             WHERE existing.code = incoming.code
               AND existing.long_url = incoming.long_url
+              -- The synchronizer routinely re-sends existing mappings.  Do
+              -- not create a new tuple (and WAL/index churn) unless mutable
+              -- metadata actually changed. IS DISTINCT FROM is null-safe.
+              AND (
+                    existing.short_url IS DISTINCT FROM incoming.short_url
+                 OR existing.source_link_id IS DISTINCT FROM incoming.source_link_id
+                 OR existing.campaign_id IS DISTINCT FROM incoming.campaign_id
+                 OR existing.client_id IS DISTINCT FROM incoming.client_id
+                 OR existing.scenario_id IS DISTINCT FROM incoming.scenario_id
+                 OR existing.scenario_name IS DISTINCT FROM incoming.scenario_name
+                 OR existing.phone_number IS DISTINCT FROM incoming.phone_number
+                 OR existing.is_test IS DISTINCT FROM incoming.is_test
+                 OR existing.source_created_at IS DISTINCT FROM incoming.source_created_at
+                 OR existing.source_updated_at IS DISTINCT FROM incoming.source_updated_at
+              )
             ",
         ))
         .bind(&codes)
@@ -408,7 +423,12 @@ impl Database {
                                 WHERE singleton = TRUE
                             )
                               AND clicked_at < $1
-                            ORDER BY click_id
+                            -- Retention is timestamp-based. Ordering by the
+                            -- primary key forced PostgreSQL to visit every
+                            -- acknowledged recent click before finding an
+                            -- expired one. The composite retention index is
+                            -- ordered by these columns.
+                            ORDER BY clicked_at, click_id
                             LIMIT $2
                             FOR UPDATE SKIP LOCKED
                         )
