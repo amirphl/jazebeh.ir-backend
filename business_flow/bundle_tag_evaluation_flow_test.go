@@ -16,6 +16,31 @@ import (
 
 type smartTagOpenAIClientFunc func(context.Context, map[string]any) (*services.SmartTagOpenAIResult, error)
 
+func TestMockOpenAIProducesValidTagScores(t *testing.T) {
+	flow := &BundleTagEvaluationFlowImpl{}
+	cfg := config.SmartTagEvaluationConfig{OpenAI: config.SmartTagOpenAIConfig{Mock: true, Model: "mock"}}
+	client, err := services.NewSmartTagOpenAIClient(cfg.OpenAI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tags := []models.BundleTagEvaluationTagSnapshot{{TagID: 1}, {TagID: 2}}
+	result, err := client.CallResponsesAPI(context.Background(), flow.buildTagScoringPayload(cfg, "persona", tags))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scores, _, err := flow.parseAndValidateBatchResponse(result.RawResponse, tags, config.SmartTagValidationConfig{RequireExactTagCount: true, RequireExactTagIDs: true})
+	if err != nil || len(scores) != len(tags) {
+		t.Fatalf("scores=%v error=%v", scores, err)
+	}
+	persona, err := client.CallResponsesAPI(context.Background(), flow.buildPersonaAnalysisPayload(cfg, "test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, err := extractOpenAIResponseText(persona.RawResponse); err != nil || text == "" {
+		t.Fatalf("persona=%q error=%v", text, err)
+	}
+}
+
 func (f smartTagOpenAIClientFunc) CallResponsesAPI(ctx context.Context, payload map[string]any) (*services.SmartTagOpenAIResult, error) {
 	return f(ctx, payload)
 }
