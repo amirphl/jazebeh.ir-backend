@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from load_dotenv import DotenvError, parse_dotenv
+from guard_environment import environment_banner, require_production_confirmation
 
 try:
     import psycopg
@@ -398,9 +399,13 @@ def main() -> int:
         setup_logging(args.log_file)
         LOGGER.info("starting campaign=%s execute=%s env_file=%s log_file=%s", args.campaign_id, args.execute, args.env_file, args.log_file)
         load_environment(args.env_file)
+        if args.execute:
+            require_production_confirmation(args.confirm_campaign_id == args.campaign_id)
+        else:
+            environment_banner()
         job=Resume(args.campaign_id,args.execute)
         (job.execute() if args.execute else job.dry_run()); return 0
-    except (ResumeError, psycopg.Error, requests.RequestException, ValueError) as exc:
+    except (RuntimeError, psycopg.Error, requests.RequestException, ValueError) as exc:
         LOGGER.error("campaign=%s failed: %s", args.campaign_id, exc)
         print(f"ERROR: {exc}",file=sys.stderr); return 1
     finally:
