@@ -36,19 +36,19 @@ end
 
 function in_tehran_window
     set -l hour (env TZ=Asia/Tehran date +%H)
-    string match -rq '^(23|0[0-7])$' -- "$hour"
+    string match -rq '^(21|22|23|0[0-9]|10|11)$' -- "$hour"
 end
 
 function batch_timeout_ms
-    # End a batch before 08:00 Tehran time. The caller does not start another
+    # End a batch before 11:59 Tehran time. The caller does not start another
     # batch unless the resulting budget exceeds MIN_BATCH_TIMEOUT_MS. A SQL
     # timeout remains a final safety net for an unexpectedly slow batch.
     set -l hour (env TZ=Asia/Tehran date +%H)
     set -l cutoff
-    if test "$hour" = 23
-        set cutoff (env TZ=Asia/Tehran date -d 'tomorrow 08:00' +%s)
+    if string match -rq '^(21|22|23)$' -- "$hour"
+        set cutoff (env TZ=Asia/Tehran date -d 'tomorrow 11:59' +%s)
     else
-        set cutoff (env TZ=Asia/Tehran date -d 'today 08:00' +%s)
+        set cutoff (env TZ=Asia/Tehran date -d 'today 11:59' +%s)
     end
     set -l now (date +%s)
     # PostgreSQL's statement_timeout numeric form is milliseconds.
@@ -127,7 +127,7 @@ test -d "$project_dir"; or die "Project directory does not exist: $project_dir"
 
 if test "$mode" = --start
     test (id -u) -eq 0; or die 'Run --start with sudo so the systemd unit has Docker access.'
-    in_tehran_window; or die 'Refusing to start outside 23:00-08:00 Asia/Tehran.'
+    in_tehran_window; or die 'Refusing to start outside 21:00-11:59 Asia/Tehran.'
     test -n "$unit_name"; or set unit_name yamata-audience-batch-import-(date -u +%Y%m%dT%H%M%SZ)
     set unit_name (string replace -r '\\.service$' '' -- "$unit_name")
     string match -rq '^[A-Za-z0-9_.@-]+$' -- "$unit_name"; or die "Invalid systemd unit name: $unit_name"
@@ -148,7 +148,7 @@ if test "$mode" = --start
 end
 
 test (id -u) -eq 0; or die '--run must execute as root (normally through --start/systemd).'
-in_tehran_window; or die 'Refusing to run outside 23:00-08:00 Asia/Tehran.'
+in_tehran_window; or die 'Refusing to run outside 21:00-11:59 Asia/Tehran.'
 
 for required in awk cat date docker flock head mktemp realpath sha256sum tail wc
     command -q "$required"; or die "Required command is missing: $required"
