@@ -2,7 +2,7 @@
 
 This directory contains the generated OpenAPI output and the deployment, configuration, security, and provider notes for the Jazebeh backend. For the project overview and local setup, start with the [root README](../README.md).
 
-> The current beta production migration and restore source of truth is
+> The current production migration and restore source of truth is
 > [`../PRODUCTION_MIGRATION.md`](../PRODUCTION_MIGRATION.md). For fresh releases,
 > use the checked-in Compose deployment workflow documented below.
 
@@ -17,9 +17,12 @@ The application is a Go 1.26 service built on Fiber v3, GORM, PostgreSQL, and Re
 - Short links and click reporting, media, tickets, pricing, platform settings, admin customer management, and maker-checker access control.
 - Prometheus metrics, Grafana dashboards, structured/rotated logs, request IDs, and Sentry-compatible GlitchTip reporting.
 
-The schema head is migration `0133`. The newest schema work adds durable Tag
-Test performance reporting and makes Test sampling independently track Bundle
-allocation freshness instead of depending on an exact-capacity generation.
+The checked-in aggregate migration manifest currently ends at
+`0170_add_bundle_action_file_staging_status.sql`. Recent schema work includes
+durable, bounded customer campaign-audience report jobs, optimized bounded
+click reporting, and explicit staging state for bundle action files. Treat the
+aggregate manifest as the authoritative migration history before operating on
+an existing database.
 
 ## Source of Truth
 
@@ -31,17 +34,20 @@ Use these files when documentation and implementation differ:
 | Environment variables and defaults | [`config/production.go`](../config/production.go) and [`env.template`](../env.template) |
 | Startup wiring and workers | [`main.go`](../main.go) |
 | Database order and execution guidance | [`migrations/README.md`](../migrations/README.md) |
-| Beta deployment topology | [`docker-compose.beta.yml`](../docker-compose.beta.yml) |
+| Production deployment topology | [`docker-compose.beta.yml`](../docker-compose.beta.yml) |
 | Build, test, migration, and Swagger commands | [`Makefile`](../Makefile) |
 
 ## Documentation Map
 
 | Document | Purpose |
 |---|---|
-| [Production deployment](PRODUCTION_DEPLOYMENT.md) | Fresh beta Compose deployment and release operations |
+| [Production deployment](PRODUCTION_DEPLOYMENT.md) | Fresh production Compose deployment and release operations |
 | [Production migration](../PRODUCTION_MIGRATION.md) | Canonical server move, restore, imports, and cutover |
 | [Production configuration](PRODUCTION_CONFIGURATION.md) | Current environment parsing, required values, worker ownership, and runtime caveats |
 | [Production security checklist](PRODUCTION_SECURITY_CHECKLIST.md) | Implementation-aware host, application, container, and operational review |
+| [Local development](DEVELOPMENT.md) | Supported mock-mode workstation setup, migrations, local admin bootstrap, and egress limitations |
+| [Staging deployment](STAGING.md) | Isolated mock-mode staging host, deployment, validation, and administration |
+| [PostgreSQL vacuum maintenance](POSTGRESQL_VACUUM_MAINTENANCE_RUNBOOK.md) | Online, cancel-safe table vacuum/analyze operations, monitoring, and autovacuum tuning |
 | [Multi-server deployment](MULTI_SERVER_DEPLOYMENT.md) | Supported one-stack-per-host model and promotion/cutover guidance |
 | [Selective PostgreSQL backup/restore](SELECTIVE_POSTGRES_BACKUP_RESTORE_README.md) | Four-table local dataset export with phone-number anonymization |
 | [Jazebeh audience CSV import runbook](JAZEBEH_AUDIENCE_CSV_IMPORT_RUNBOOK.md) | Production procedure for validating, importing, monitoring, and verifying large mixed new/update audience exports |
@@ -75,7 +81,10 @@ make swag
 
 `make swag` installs the `swag` CLI when it is missing. Review generated diffs before committing them.
 
-Swagger routes are registered only when `APP_ENV=development` or `APP_ENV=local`:
+Swagger routes are available in the supported `APP_ENV=development` mode. The
+router also retains a `local` branch for direct router use, but application
+configuration rejects `local`; use `development` with
+`EXTERNAL_SERVICES_MODE=mock`.
 
 | Route | Description |
 |---|---|
@@ -110,28 +119,24 @@ GET  /api/v1/bundles/:id/tag-scores
 
 ## Local Documentation Setup
 
-Create the environment file and configure at least PostgreSQL, JWT, required system identities/wallets, and any enabled integrations:
+Use the supported mock-mode setup described in
+[Local development](DEVELOPMENT.md). It creates `.env.development`, uses a
+dedicated database named `*_development`, and applies migrations through a
+development-only tracker:
 
 ```bash
-cp env.template .env
-go mod download
+./scripts/configure-development-env.sh
+./scripts/setup-development.sh
 ```
 
-Create the database separately, then consult the [migration guide](../migrations/README.md). The aggregate manifests include every numbered migration; run them with `ON_ERROR_STOP=1` so any database error stops immediately.
-
-Start the API:
-
-```bash
-make run
-```
-
-Check health and open the local documentation:
+Start the API through the **Yamata development** VS Code launch configuration,
+then check health and open the local documentation:
 
 ```bash
 curl http://localhost:8080/api/v1/health
 ```
 
-Then visit `http://localhost:8080/swagger` with `APP_ENV=development` or `APP_ENV=local`.
+Then visit `http://127.0.0.1:8080/swagger`.
 
 ## Smart-Tag Evaluation
 
@@ -148,9 +153,9 @@ Smart-tag evaluation is off by default. When enabling it:
 
 The scheduler poll interval, maximum parallel runs, tag batch size, validation strictness, model, reasoning effort, token limit, timeout, retry count, temperature, and optional proxy are configurable through `env.template`.
 
-## Beta Deployment Stack
+## Production Deployment Stack
 
-`docker-compose.beta.yml` currently defines PostgreSQL 15, Redis 8, the Go application, nginx, a PostgreSQL backup container, GlitchTip with its PostgreSQL/Redis dependencies, an nginx Sentry forwarder, certificate monitoring, Prometheus, Grafana, PostgreSQL exporter, node exporter, cAdvisor, and the frontend image. Only nginx publishes host ports (`80` and `443`) in the checked-in compose file.
+`docker-compose.beta.yml` currently defines PostgreSQL 15, Redis 8, the Go application, nginx, a PostgreSQL backup container, hardened pgAdmin behind a separate Nginx proxy, GlitchTip with its PostgreSQL/Redis dependencies, an nginx Sentry forwarder, certificate monitoring, Prometheus, Grafana, PostgreSQL exporter, node exporter, cAdvisor, and the frontend image. The public edge publishes ports `80` and `443`; the separate pgAdmin proxy publishes `14433` only on the explicit `PGADMIN_LISTEN_BIND_IP` host interface.
 
 Use
 [`scripts/deploy-production-beta.sh`](../scripts/deploy-production-beta.sh) for
