@@ -46,7 +46,255 @@ capacity before making deployment changes.
   Production fetches pages with `after_id`, commits its own import cursor, then
   acknowledges the highest committed ID. Acknowledgements are idempotent.
 - **Operations:** `/healthz`, `/readyz`, and Prometheus `/metrics` are exposed
-  only through the proxy configuration. Structured service logs go to journald.
+  only through the proxy configuration. Structured JSON service logs go to
+  journald; Nginx writes matching JSON access records and PostgreSQL emits a
+  stable identifying prefix to Docker logs.
+
+## Audit logging
+
+Every Rust log record has `component="external_shortlink"` and an `event`
+identifier. Request failures additionally include the Nginx-generated
+`request_id`; use it to join `/var/log/nginx/external-shortlink.access.log`
+to `journalctl -u external-shortlink`. Nginx records method, path, status and
+timings but deliberately excludes credentials, request bodies, client IPs and
+user-agent data. The service follows the same privacy boundary: it never logs
+tokens, destinations, click payloads, phone numbers, client IPs, referers or
+user agents.
+
+Investigate warnings and errors with:
+
+```sh
+sudo journalctl -u external-shortlink --since '1 hour ago' -o json-pretty
+sudo tail -f /var/log/nginx/external-shortlink.access.log
+sudo docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml logs -f postgres
+```
+
+The service logs state transitions and actionable failures rather than every
+successful redirect. Repeated spool-write failures are rate-limited to one
+event per minute; their exact volume is retained in Prometheus counters.
+
+## Operations command reference
+
+Run the commands in this section on the dedicated Debian 12 host. The supported
+deployment checkout is `/home/debian/Yamata-no-Orochi/external-shortlink`; the
+installed release and its Compose file are under `/opt/external-shortlink`.
+Do not put API or database secrets on a command line, in shell history, or in
+this README.
+
+### First deployment and upgrades
+
+Create the root-only shared-token file once. Its value must exactly match
+`EXTERNAL_SHORTLINK_API_TOKEN` on the production application.
+
+```sh
+cd /home/debian/Yamata-no-Orochi/external-shortlink
+sudo install -o root -g root -m 0600 /dev/null /root/external-shortlink-api-token
+sudoedit /root/external-shortlink-api-token
+
+# Optional: generate a suitable value before configuring both systems.
+openssl rand -hex 32
+```
+
+Deploy for the first time. Add `--production-ip 'THE_PRODUCTION_EGRESS_IP'`
+when the production host has a stable egress address and `/api/` should be
+source-IP restricted.
+
+```sh
+cd /home/debian/Yamata-no-Orochi/external-shortlink
+sudo ./scripts/deploy-debian-12.sh deploy \
+  --api-token-file /root/external-shortlink-api-token \
+  --acme-email 'ops@example.com' \
+  --configure-ufw
+```
+
+For an upgrade, first obtain the reviewed source revision as the `debian`
+user, confirm the service subtree is clean, then rerun the same guarded deploy
+command. The script builds before replacing the running binary and validates
+Nginx before reload.
+
+```sh
+cd /home/debian/Yamata-no-Orochi
+git status --short external-shortlink
+git pull --ff-only
+cd external-shortlink
+sudo ./scripts/deploy-debian-12.sh deploy \
+  --api-token-file /root/external-shortlink-api-token
+```
+
+### Service lifecycle and health
+
+Use the deployment script for normal lifecycle actions. `stop` stops only the
+Rust redirect process; the private PostgreSQL container remains running.
+
+```sh
+cd /home/debian/Yamata-no-Orochi/external-shortlink
+sudo ./scripts/deploy-debian-12.sh start
+sudo ./scripts/deploy-debian-12.sh stop
+sudo ./scripts/deploy-debian-12.sh restart
+sudo ./scripts/deploy-debian-12.sh status
+```
+
+Check liveness, PostgreSQL readiness, the local metrics endpoint, and the
+public proxy/TLS path. `curl` is intentionally classified as an automated
+visitor for short-code redirects, so use these health endpoints for smoke
+tests.
+
+```sh
+curl -fsS http://127.0.0.1:8081/healthz
+curl -fsS http://127.0.0.1:8081/readyz
+curl -fsS http://127.0.0.1:8081/metrics
+curl -fsSI --resolve jzbe.ir:443:127.0.0.1 https://jzbe.ir/healthz
+sudo systemctl status external-shortlink --no-pager --full
+sudo docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml ps
+```
+
+### Logs and incident investigation
+
+The supported service-log command reads journald. Use JSON output when you
+need to filter the Rust `event` or correlate the Nginx `request_id`.
+
+```sh
+cd /home/debian/Yamata-no-Orochi/external-shortlink
+sudo ./scripts/deploy-debian-12.sh logs
+sudo ./scripts/deploy-debian-12.sh logs --lines 500 --since '2 hours ago'
+sudo ./scripts/deploy-debian-12.sh logs --follow
+
+sudo journalctl -u external-shortlink --since '1 hour ago' -o json-pretty
+sudo journalctl -u external-shortlink -p warning --since today --no-pager
+sudo tail -F /var/log/nginx/external-shortlink.access.log
+sudo tail -F /var/log/nginx/external-shortlink.error.log
+sudo docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml logs --tail 200 -f postgres
+sudo tail -F /var/log/external-shortlink/deploy.log
+```
+
+To investigate one failed proxied request, copy its `request_id` from the
+Nginx JSON access log and search the application journal:
+
+```sh
+sudo grep -F 'REQUEST_ID_FROM_NGINX' /var/log/nginx/external-shortlink.access.log
+sudo journalctl -u external-shortlink --since '2 hours ago' -o cat | grep -F 'REQUEST_ID_FROM_NGINX'
+```
+
+### Monitoring and capacity
+
+Prometheus should scrape `/metrics` from an address allowed by Nginx. For a
+local investigation, save the response and inspect redirect failures,
+PostgreSQL failures, spool pressure, and pool timeouts.
+
+```sh
+curl -fsS http://127.0.0.1:8081/metrics | tee /tmp/external-shortlink.metrics
+rg 'external_shortlink_(redirect_requests_total|postgres_errors_total|postgres_pool_timeouts_total|spool_|mapping_uploads_total)' /tmp/external-shortlink.metrics
+
+df -h / /var/lib/external-shortlink
+df -i / /var/lib/external-shortlink
+free -h
+uptime
+sudo du -sh /var/lib/external-shortlink
+sudo docker stats --no-stream
+```
+
+#### Connect the central Prometheus and Grafana stack
+
+On the `jzbe.ir` host, run the setup script with the **public egress IP of the
+server that runs `docker-compose.beta.yml`**. The IP was not included in the
+request, so it is intentionally a required argument rather than a hard-coded
+value. This installs Debian's node exporter locally and allows that one IP to
+scrape the app and host metrics through Nginx/TLS.
+
+```sh
+ssh debian@jzbe.ir
+cd /home/debian/Yamata-no-Orochi/external-shortlink
+sudo ./scripts/deploy-debian-12.sh deploy --api-token-file /root/external-shortlink-api-token
+sudo ./scripts/setup-monitoring-debian-12.sh --monitoring-ip 'APP_BETA_PUBLIC_IP'
+
+curl -fsS http://127.0.0.1:9100/metrics | head
+sudo nginx -t
+```
+
+The central Prometheus configuration includes the `external_shortlink` and
+`external_shortlink_node` HTTPS jobs, while
+`docker/prometheus/rules/external-shortlink.yml` provides baseline availability,
+5xx, spool-age, and click-loss alerts. Apply the configuration on the server
+that hosts the beta Compose stack:
+
+```sh
+cd /path/to/Yamata-no-Orochi
+docker compose -f docker-compose.beta.yml exec prometheus-beta \
+  promtool check config /etc/prometheus/prometheus.yml
+docker compose -f docker-compose.beta.yml exec prometheus-beta \
+  wget -qO- --post-data='' http://127.0.0.1:9090/-/reload
+```
+
+Useful Grafana/Prometheus expressions include:
+
+```promql
+# Redirect p99
+histogram_quantile(0.99, sum by (le) (rate(external_shortlink_redirect_latency_seconds_bucket[5m])))
+
+# Redirect 5xx percentage
+100 * sum(rate(external_shortlink_redirect_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(external_shortlink_redirect_requests_total[5m])), 0.001)
+
+# Spool pressure and click-loss rate
+external_shortlink_spool_oldest_event_age_seconds
+sum by (reason) (rate(external_shortlink_spool_rejected_total[5m]))
+
+# Remote host CPU and available memory
+100 - (avg by (instance) (rate(node_cpu_seconds_total{job="external_shortlink_node",mode="idle"}[5m])) * 100)
+node_memory_MemAvailable_bytes{job="external_shortlink_node"}
+```
+
+The spool is a live SQLite database. Do not edit, delete, copy only its main
+file, or run `VACUUM` against it while the service is active. Monitor it via
+metrics; recovery backups must include the SQLite database plus `-wal` and
+`-shm` sidecars.
+
+### PostgreSQL and Nginx maintenance
+
+Check the effective deployment configuration before a manual reload. Let the
+deployment script manage service files; use these commands only for diagnosis
+or an explicitly reviewed configuration change.
+
+```sh
+sudo nginx -t
+sudo systemctl reload nginx
+sudo systemctl status nginx --no-pager --full
+sudo docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml exec -T postgres \
+  pg_isready --host 127.0.0.1 --port 5432 --username external_shortlink_admin --dbname external_shortlink
+sudo docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml exec -T postgres \
+  sh -ceu 'PGPASSWORD="$POSTGRES_PASSWORD" psql --host 127.0.0.1 --port 5432 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "SELECT now(), pg_database_size(current_database());"'
+```
+
+For a large existing `links` table, refresh planner statistics and reclaim
+reusable space without taking an exclusive table lock:
+
+```sh
+sudo docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml \
+  exec -T postgres sh -ceu 'PGPASSWORD="$POSTGRES_PASSWORD" psql --host 127.0.0.1 --port 5432 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "VACUUM (ANALYZE, VERBOSE) links"'
+```
+
+Do not use `VACUUM FULL` during normal operation: it takes an exclusive lock.
+
+### Backups
+
+Take PostgreSQL dumps to storage outside this VM and include the SQLite spool.
+To obtain a consistent spool backup, briefly stop the redirect service before
+archiving its database and WAL sidecars, then start it again. Verify that the
+backup destination has sufficient space before running these commands.
+
+```sh
+sudo install -d -o root -g root -m 0700 /root/external-shortlink-backups
+sudo sh -ceu 'docker compose -f /opt/external-shortlink/app/deploy/postgres.compose.yml exec -T postgres sh -ceu '\''PGPASSWORD="$POSTGRES_PASSWORD" pg_dump --host 127.0.0.1 --port 5432 --username "$POSTGRES_USER" --format=custom --file=- "$POSTGRES_DB"'\'' > /root/external-shortlink-backups/postgres-$(date -u +%Y%m%dT%H%M%SZ).dump'
+
+sudo systemctl stop external-shortlink
+sudo tar -C /var/lib/external-shortlink -czf /root/external-shortlink-backups/spool-$(date -u +%Y%m%dT%H%M%SZ).tar.gz \
+  click-spool.sqlite3*
+sudo systemctl start external-shortlink
+sudo systemctl is-active --quiet external-shortlink
+```
+
+Copy the resulting backup files to encrypted off-host storage and test restore
+procedures on a non-production host. Do not overwrite a live PostgreSQL volume
+or spool as an ad-hoc recovery action.
 
 The process starts when PostgreSQL is down so that existing cached mappings can
 continue to redirect after a transient outage. On initial cold start without a
