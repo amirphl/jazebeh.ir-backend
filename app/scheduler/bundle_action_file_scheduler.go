@@ -14,24 +14,43 @@ type BundleActionFileExecutor interface {
 }
 
 type BundleActionFileScheduler struct {
-	flow     BundleActionFileExecutor
-	repo     repository.BundleActionRepository
-	logger   *log.Logger
-	interval time.Duration
-	maxRuns  int
+	flow          BundleActionFileExecutor
+	repo          repository.BundleActionRepository
+	logger        *log.Logger
+	interval      time.Duration
+	maxRuns       int
+	jobTimeout    time.Duration
+	leaseDuration time.Duration
 }
 
-func NewBundleActionFileScheduler(flow BundleActionFileExecutor, repo repository.BundleActionRepository, logger *log.Logger, interval time.Duration, maxRuns int) *BundleActionFileScheduler {
+const (
+	defaultBundleActionFileJobTimeout    = 30 * time.Minute
+	defaultBundleActionFileLeaseDuration = 35 * time.Minute
+)
+
+func NewBundleActionFileScheduler(flow BundleActionFileExecutor, repo repository.BundleActionRepository, logger *log.Logger, interval time.Duration, maxRuns int, jobTimeout, leaseDuration time.Duration) *BundleActionFileScheduler {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
 	if maxRuns < 1 {
 		maxRuns = 1
 	}
+	if jobTimeout <= 0 {
+		jobTimeout = defaultBundleActionFileJobTimeout
+	}
+	if leaseDuration <= 0 {
+		leaseDuration = defaultBundleActionFileLeaseDuration
+	}
+	// A lease must outlive the worker deadline. Otherwise another scheduler
+	// replica can reclaim a still-running file and run the expensive refresh
+	// concurrently.
+	if leaseDuration <= jobTimeout {
+		leaseDuration = jobTimeout + 5*time.Minute
+	}
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &BundleActionFileScheduler{flow: flow, repo: repo, logger: logger, interval: interval, maxRuns: maxRuns}
+	return &BundleActionFileScheduler{flow: flow, repo: repo, logger: logger, interval: interval, maxRuns: maxRuns, jobTimeout: jobTimeout, leaseDuration: leaseDuration}
 }
 
 func (s *BundleActionFileScheduler) Start(parent context.Context) func() {
@@ -61,7 +80,8 @@ func (s *BundleActionFileScheduler) runOnce(ctx context.Context) {
 	if s.flow == nil || s.repo == nil {
 		return
 	}
-	rows, err := s.repo.ClaimPending(ctx, s.maxRuns, time.Now().UTC().Add(-30*time.Minute), time.Now().UTC())
+	now := time.Now().UTC()
+	rows, err := s.repo.ClaimPending(ctx, s.maxRuns, now.Add(-s.leaseDuration), now)
 	if err != nil {
 		s.logger.Printf("bundle action file scheduler: claim failed: %v", err)
 		return
@@ -74,7 +94,7 @@ func (s *BundleActionFileScheduler) runOnce(ctx context.Context) {
 		wg.Add(1)
 		go func(id int64, lease time.Time) {
 			defer wg.Done()
-			work, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			work, cancel := context.WithTimeout(ctx, s.jobTimeout)
 			defer cancel()
 			if err := s.flow.ExecuteBundleActionFile(work, id, lease); err != nil {
 				s.logger.Printf("bundle action file scheduler: file %d failed: %v", id, err)
