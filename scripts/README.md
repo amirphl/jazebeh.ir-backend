@@ -13,6 +13,7 @@ The complete ordered procedure is in
 | `restore-yamata-audience-profiles.sh` | Atomically restores an `audience_profiles`-only PostgreSQL 17 plain dump |
 | `audience-profile-csv-import/run-yamata-audience-profiles-csv-import.sh` | Starts the validated, atomic large-CSV audience-profile upsert in a transient systemd unit |
 | `audience-profile-csv-import/monitor-yamata-audience-profiles-csv-import.sh` | Shows the import backend, COPY progress, blockers, and table-maintenance status |
+| `audience-profile-csv-import/run-yamata-audience-profiles-batched.fish` | Starts a resumable, sequential 100,000-row atomic audience upsert without stopping application services |
 | `restore-yamata-scheduler-runtime-data.sh` | Atomically restores the exact scheduler table set, normalized selection members, audience/tag attribution, audience-spec sources, and sequence counters |
 | `run-yamata-data-restore.sh` | Starts either large restore in the background with systemd/journal progress |
 | `tune-yamata-restore.sh` | Enables/resets temporary PostgreSQL checkpoint tuning |
@@ -84,6 +85,9 @@ Key rules:
   PostgreSQL container. The API and campaign scheduler must remain stopped
   until the import finishes; the merge deliberately blocks profile writes and
   `SELECT ... FOR UPDATE` operations on `audience_profiles`.
+  See the complete archive, backup, monitoring, failure, and verification
+  procedure in
+  [`docs/JAZEBEH_AUDIENCE_CSV_IMPORT_RUNBOOK.md`](../docs/JAZEBEH_AUDIENCE_CSV_IMPORT_RUNBOOK.md).
 - To replace the complete statistics snapshot and upsert supplied tags and
   tag references, keep both writers stopped and run:
 
