@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -197,15 +199,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
+	if cfg.MockExternal {
+		if transport, ok := http.DefaultTransport.(*http.Transport); ok {
+			http.DefaultTransport = mockHTTPTransport(transport, cfg.Deployment.Environment == "staging")
+		} else {
+			log.Fatal("cannot install mock-mode HTTP egress guard")
+		}
+	}
 
 	if err := observability.InitSentry(observability.SentryConfig{
-		DSN:         cfg.Sentry.DSN,
-		Environment: cfg.Sentry.Environment,
-		Release:     cfg.Sentry.Release,
-		ServerName:  cfg.Sentry.ServerName,
-		Timeout:     cfg.Sentry.Timeout,
-		Capture4xx:  cfg.Sentry.Capture4xx,
-		Capture5xx:  cfg.Sentry.Capture5xx,
+		DSN:           cfg.Sentry.DSN,
+		Environment:   cfg.Sentry.Environment,
+		Release:       cfg.Sentry.Release,
+		ServerName:    cfg.Sentry.ServerName,
+		Timeout:       cfg.Sentry.Timeout,
+		Capture4xx:    cfg.Sentry.Capture4xx,
+		Capture5xx:    cfg.Sentry.Capture5xx,
+		HTTPTransport: http.DefaultTransport,
 	}); err != nil {
 		log.Fatalf("Failed to initialize sentry transport: %v", err)
 	}
@@ -343,7 +353,7 @@ func initializeCache(cfg config.CacheConfig) (*redis.Client, error) {
 		return nil, fmt.Errorf("failed to connect to redis: %w", err)
 	}
 
-	log.Printf("Redis connection established to %s (db=%d)", cfg.RedisURL, cfg.RedisDB)
+	log.Printf("Redis connection established to %s (db=%d)", opt.Addr, cfg.RedisDB)
 	return rc, nil
 }
 
@@ -375,31 +385,16 @@ func startCacheHealthMonitor(parent context.Context, client *redis.Client, inter
 
 // initializeNotificationService initializes the notification service
 func initializeNotificationService(cfg *config.ProductionConfig) services.NotificationService {
-	// Create SMS service based on configuration
-	var smsService services.SMSService
-	var emailProvider services.EmailProvider
-
-	switch cfg.SMS.ProviderDomain {
-	case "mock":
-		smsService = services.NewMockSMSService()
-	case "payamsms":
-		smsService = services.NewPayamSMSService(&cfg.SMS, &cfg.PayamSMS)
-	default:
-		smsService = services.NewSMSService(&cfg.SMS)
-	}
-
-	// Create email provider (mock for now)
-	emailProvider = services.NewMockEmailProvider()
+	factory := services.ExternalFactory{Mock: cfg.MockExternal}
+	smsService := factory.NotificationSMS(cfg)
+	emailProvider := services.NewMockEmailProvider(cfg.MockExternal)
 
 	return services.NewNotificationService(smsService, emailProvider)
 }
 
 func initializeOTPSMSService(cfg *config.ProductionConfig) services.SMSService {
-	if cfg.SMS.ProviderDomain == "mock" {
-		return services.NewMockSMSService()
-	}
-
-	svc, err := services.NewPayamSMSServiceWithHTTPSProxy(&cfg.SMS, &cfg.PayamSMS, cfg.IRHTTPSProxy)
+	factory := services.ExternalFactory{Mock: cfg.MockExternal}
+	svc, err := factory.OTPSMS(cfg)
 	if err != nil {
 		log.Printf("Failed to initialize proxy-enabled OTP SMS service, falling back to direct connection: %v", err)
 		return services.NewPayamSMSService(&cfg.SMS, &cfg.PayamSMS)
@@ -429,6 +424,11 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	// Init system/tax entities dynamically using config
 	if err := ensureSystemAndTaxEntities(db, cfg); err != nil {
 		return nil, err
+	}
+	if cfg.MockExternal && cfg.Scheduler.CampaignExecutionEnabled {
+		if err := ensureMockBot(db, cfg.Bot); err != nil {
+			return nil, fmt.Errorf("initialize mock scheduler bot: %w", err)
+		}
 	}
 
 	// Initialize repositories
@@ -493,12 +493,16 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	// Initialize services
 	notificationService := initializeNotificationService(cfg)
 
-	var externalShortLinkClient *scheduler.HTTPExternalShortLinkClient
+	var externalShortLinkClient scheduler.ExternalShortLinkAPI
 	var shortLinkPublishers []businessflow.ShortLinkMappingPublisher
 	if cfg.ExternalShortLink.Enabled {
-		externalShortLinkClient, err = scheduler.NewExternalShortLinkClient(cfg.ExternalShortLink)
-		if err != nil {
-			return nil, fmt.Errorf("initialize external short-link client: %w", err)
+		if cfg.ExternalShortLink.Mock {
+			externalShortLinkClient = scheduler.NewMockExternalShortLinkClient()
+		} else {
+			externalShortLinkClient, err = scheduler.NewExternalShortLinkClient(cfg.ExternalShortLink)
+			if err != nil {
+				return nil, fmt.Errorf("initialize external short-link client: %w", err)
+			}
 		}
 		shortLinkPublishers = append(shortLinkPublishers, externalShortLinkClient)
 	}
@@ -596,6 +600,16 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		cfg.IRHTTPSProxy,
 		shortLinkPublishers...,
 	)
+	mockShortLinkDomain := ""
+	if cfg.MockExternal {
+		mockShortLinkDomain = fmt.Sprintf("http://127.0.0.1:%d/s", cfg.Server.Port)
+		if strings.EqualFold(cfg.Deployment.Environment, "staging") {
+			mockShortLinkDomain = "https://staging.jazebeh.ir/s"
+		}
+	}
+	if flow, ok := campaignFlow.(*businessflow.CampaignFlowImpl); ok {
+		flow.SetMockExternalServices(cfg.MockExternal, mockShortLinkDomain)
+	}
 	smartTargetingFlow := businessflow.NewSmartTargetingFlow(
 		campaignRepo,
 		bundleRepo,
@@ -651,12 +665,12 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 
 	// Initialize CryptoPaymentFlow (providers registry)
 	providers := map[string]services.CryptoPaymentProvider{}
-	if cfg.Crypto.Enabled && cfg.Crypto.Oxapay.BaseURL != "" && cfg.Crypto.Oxapay.APIKey != "" {
-		providers["oxapay"] = services.NewOxapayClient(
-			cfg.Crypto.Oxapay.BaseURL,
-			cfg.Crypto.Oxapay.APIKey,
-			cfg.Crypto.Oxapay.Timeout,
-		)
+	if cfg.Crypto.Enabled && (cfg.MockExternal || (cfg.Crypto.Oxapay.BaseURL != "" && cfg.Crypto.Oxapay.APIKey != "")) {
+		provider, err := (services.ExternalFactory{Mock: cfg.MockExternal}).Crypto("oxapay", cfg.Crypto.Oxapay.BaseURL, cfg.Crypto.Oxapay.APIKey, cfg.Crypto.Oxapay.Timeout)
+		if err != nil {
+			return nil, err
+		}
+		providers["oxapay"] = provider
 	}
 	cryptoPaymentFlow := businessflow.NewCryptoPaymentFlow(
 		cryptoPaymentRequestRepo,
@@ -745,8 +759,11 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		rc,
 	)
 	botShortLinkFlow := businessflow.NewBotShortLinkFlow(shortLinkRepo, db, shortLinkPublishers...)
+	if flow, ok := botShortLinkFlow.(*businessflow.BotShortLinkFlowImpl); ok {
+		flow.SetMockShortLinkDomain(mockShortLinkDomain)
+	}
 
-	ticketFlow := businessflow.NewTicketFlow(customerRepo, ticketRepo, notificationService, cfg.Admin)
+	ticketFlow := businessflow.NewTicketFlow(customerRepo, ticketRepo, notificationService, cfg.Admin, cfg.MockExternal)
 	multimediaFlow := businessflow.NewMultimediaFlow(customerRepo, multimediaRepo)
 	multimediaAdminFlow := businessflow.NewMultimediaAdminFlow(customerRepo, multimediaRepo)
 	multimediaBotFlow := businessflow.NewMultimediaBotFlow(multimediaRepo)
@@ -781,6 +798,9 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		adminShortLinkUploadJobRepo,
 		db,
 		shortLinkPublishers...)
+	if flow, ok := adminShortLinkFlow.(*businessflow.AdminShortLinkFlowImpl); ok {
+		flow.SetMockShortLinkDomain(mockShortLinkDomain)
+	}
 	adminShortLinkDownloadFlow := businessflow.NewAdminShortLinkFlow(
 		shortLinkRepo,
 		shortLinkClickRepo,
@@ -824,7 +844,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		bundleActionFlow,
 		campaignAudienceReportJobFlow,
 	)
-	paymentHandler := handlers.NewPaymentHandler(paymentFlow)
+	paymentHandler := handlers.NewPaymentHandler(paymentFlow, cfg.MockExternal)
 	paymentAdminHandler := handlers.NewPaymentAdminHandler(paymentAdminFlow)
 	cryptoPaymentHandler := handlers.NewCryptoPaymentHandler(cryptoPaymentFlow, cfg)
 	agencyHandler := handlers.NewAgencyHandler(agencyFlow)
@@ -896,6 +916,9 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		platformSettingsAdminHandler,
 		accessControlHandler,
 		cfg.Server,
+		cfg.Deployment.Environment,
+		cfg.Security,
+		cfg.MockExternal,
 	)
 
 	if cfg.ExternalShortLink.Enabled {
@@ -942,10 +965,15 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		campaignExecutionLimiter := scheduler.NewCampaignExecutionLimiter(cfg.Scheduler.CampaignExecutionMaxParallelRuns)
 
 		if cfg.Scheduler.PayamBalanceMonitorEnabled {
-			balanceClient, err := scheduler.NewPayamBalanceClientWithHTTPSProxy(cfg.PayamSMS, cfg.IRHTTPSProxy)
-			if err != nil {
-				log.Printf("payamsms balance monitor: proxy client setup failed, using direct connection: %v", err)
-				balanceClient = scheduler.NewPayamBalanceClient(cfg.PayamSMS)
+			var balanceClient scheduler.PayamBalanceClient
+			if cfg.MockExternal {
+				balanceClient = scheduler.NewMockPayamBalanceClient()
+			} else {
+				balanceClient, err = scheduler.NewPayamBalanceClientWithHTTPSProxy(cfg.PayamSMS, cfg.IRHTTPSProxy)
+				if err != nil {
+					log.Printf("payamsms balance monitor: proxy client setup failed, using direct connection: %v", err)
+					balanceClient = scheduler.NewPayamBalanceClient(cfg.PayamSMS)
+				}
 			}
 			balanceScheduler := scheduler.NewPayamBalanceScheduler(
 				balanceClient,
@@ -1180,6 +1208,29 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	return application, nil
 }
 
+func ensureMockBot(db *gorm.DB, cfg config.BotConfig) error {
+	if cfg.Username == "" || cfg.Password == "" {
+		return fmt.Errorf("BOT_USERNAME and BOT_PASSWORD are required")
+	}
+	repo := repository.NewBotRepository(db)
+	bot, err := repo.ByUsername(context.Background(), cfg.Username)
+	if err != nil {
+		return err
+	}
+	if bot != nil {
+		if err := bcrypt.CompareHashAndPassword([]byte(bot.PasswordHash), []byte(cfg.Password)); err != nil {
+			return fmt.Errorf("existing bot password does not match configuration")
+		}
+		return nil
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(cfg.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	active := true
+	return repo.Save(context.Background(), &models.Bot{UUID: uuid.New(), Username: cfg.Username, PasswordHash: string(hash), IsActive: &active})
+}
+
 func ensureSystemAndTaxEntities(db *gorm.DB, cfg *config.ProductionConfig) error {
 	customerRepo := repository.NewCustomerRepository(db)
 	accountTypeRepo := repository.NewAccountTypeRepository(db)
@@ -1196,7 +1247,7 @@ func ensureSystemAndTaxEntities(db *gorm.DB, cfg *config.ProductionConfig) error
 			"Account",
 			cfg.System.SystemUserEmail,
 			cfg.System.SystemUserMobile,
-			"jazebeh.ir",
+			"monstract.ir", // "jazebeh.ir"
 			cfg.System.SystemShebaNumber,
 		); err != nil {
 			return err
@@ -1283,8 +1334,8 @@ func ensureCustomerByUUID(
 		Email:                   email,
 		PasswordHash:            "", // not used
 		IsActive:                utils.ToPtr(true),
-		IsEmailVerified:         utils.ToPtr(false),
-		IsMobileVerified:        utils.ToPtr(false),
+		IsEmailVerified:         utils.ToPtr(true),
+		IsMobileVerified:        utils.ToPtr(true),
 		CreatedAt:               utils.UTCNow(),
 		UpdatedAt:               utils.UTCNow(),
 	}
