@@ -189,3 +189,22 @@ cache preloads, mapping batches, replay deferral/drain, spool quarantine and
 compaction, and click-cursor acknowledgements. It deliberately omits URLs,
 tokens, client IPs, user agents, and phone numbers. Repeated spool-write
 failures are rate-limited; use the Prometheus counters for their full volume.
+
+## Automated short-link visits
+
+Public short-link requests still resolve mappings and record clicks. Explicit
+bot/tool/preview User-Agents (the same tokens as Go reporting), or client IPv4
+addresses in `66.249.0.0/16` and `74.125.0.0/16`, receive HTTP 200 with an empty
+body and no `Location`. This prevents matched preview clients from fetching the
+destination. Other clients receive the usual HTTP 302. Desktop Linux Chrome
+alone and test-link status do not suppress redirects. All public short-link
+responses use `Cache-Control: no-store`; unknown mappings and failures retain
+their existing status codes. Classification uses the existing forwarded-client
+IP handling and is heuristic, not verified bot identity.
+
+Monitor `external_shortlink_suppressed_bot_redirects_total` alongside redirect
+status metrics. For deployment smoke tests, use an explicit browser User-Agent
+for human redirects: the default curl User-Agent is intentionally suppressed.
+Deploy with the existing standalone deployment workflow; roll back the binary
+if ordinary browser redirects regress. Bot clicks remain available to the
+existing synchronization and reporting pipeline.
