@@ -293,6 +293,21 @@ type ExportCampaignAudienceClickReportRequest struct {
 	CampaignIDs []uint `json:"campaign_ids" validate:"required,min=1,max=100,unique,dive,min=1"`
 }
 
+type CampaignAudienceReportJobResponse struct {
+	ID string `json:"id"`
+	Status string `json:"status"`
+	CampaignIDs []uint `json:"campaign_ids"`
+	RowCount int64 `json:"row_count"`
+	SheetCount int `json:"sheet_count"`
+	ByteSize int64 `json:"byte_size"`
+	ErrorCode *string `json:"error_code,omitempty"`
+	ErrorMessage *string `json:"error_message,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
 // AdminListCampaignsFilter holds filters for admin campaign listing
 type AdminListCampaignsFilter struct {
 	CampaignTitle *string    `json:"campaign_title,omitempty" validate:"omitempty,max=255"`
