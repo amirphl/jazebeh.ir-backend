@@ -13,7 +13,7 @@ readonly SCRIPT_DIR PROJECT_ROOT
 
 for argument in "$@"; do
 	case "$argument" in
-		--help|-h) exec "$SCRIPT_DIR/deploy-beta.sh" --help ;;
+	--help | -h) exec "$SCRIPT_DIR/deploy-beta.sh" --help ;;
 	esac
 done
 
@@ -30,6 +30,24 @@ chmod 600 "$PROJECT_ROOT/.env.beta"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/load-yamata-env.sh"
 load_yamata_env_file "$PROJECT_ROOT/.env.beta"
+
+[[ "${APP_ENV:-}" == production && "${EXTERNAL_SERVICES_MODE:-}" == live ]] || {
+	printf '[deploy-production] ERROR: .env.beta must set APP_ENV=production and EXTERNAL_SERVICES_MODE=live\n' >&2
+	exit 1
+}
+
+# Fail before stopping a live service when the selected production dotenv file
+# is incomplete or still contains a template placeholder.
+for key in DB_NAME DB_USER DB_PASSWORD JWT_SECRET_KEY BOT_USERNAME BOT_PASSWORD; do
+	[[ -n "${!key:-}" && "${!key}" != CHANGE_ME ]] || {
+		printf '[deploy-production] ERROR: %s must be set to a non-template value in .env.beta\n' "$key" >&2
+		exit 1
+	}
+done
+[[ "${DB_NAME}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "${DB_USER}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+	printf '[deploy-production] ERROR: DB_NAME and DB_USER must be PostgreSQL identifiers\n' >&2
+	exit 1
+}
 
 [[ "${CAMPAIGN_EXECUTION_ENABLED:-}" == false ]] || {
 	printf '[deploy-production] ERROR: CAMPAIGN_EXECUTION_ENABLED must be false in .env.beta\n' >&2
