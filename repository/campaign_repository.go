@@ -471,8 +471,11 @@ func (r *CampaignRepositoryImpl) AggregateClickCountsByCampaignIDs(ctx context.C
 // 	return out, nil
 // }
 
-// AggregateClickCountsByCustomerIDs returns a map of customer_id -> sum of per-campaign distinct clicking audience counts.
-func (r *CampaignRepositoryImpl) AggregateClickCountsByCustomerIDs(ctx context.Context, customerIDs []uint) (map[uint]int64, error) {
+// AggregateClickCountsByCustomerIDs returns a map of customer_id -> sum of
+// per-campaign distinct clicking audience counts for the requested report
+// period. Bounding this aggregation prevents an admin report from scanning the
+// complete click history for every page.
+func (r *CampaignRepositoryImpl) AggregateClickCountsByCustomerIDs(ctx context.Context, customerIDs []uint, startDate, endDate time.Time) (map[uint]int64, error) {
 	out := make(map[uint]int64)
 	if len(customerIDs) == 0 {
 		return out, nil
@@ -490,9 +493,11 @@ func (r *CampaignRepositoryImpl) AggregateClickCountsByCustomerIDs(ctx context.C
 			SELECT campaign_id, COUNT(DISTINCT uid) AS clicks
 			FROM short_link_clicks
 			WHERE campaign_id IS NOT NULL
+			  AND created_at >= ?
+			  AND created_at <= ?
 			  AND %s
 			GROUP BY campaign_id
-		) AS campaign_clicks ON campaign_clicks.campaign_id = c.id`, nonAutomatedClickTrafficSQL(""))).
+		) AS campaign_clicks ON campaign_clicks.campaign_id = c.id`, nonAutomatedClickTrafficSQL("")), startDate, endDate).
 		Where("c.customer_id IN ?", customerIDs).
 		Group("c.customer_id").
 		Scan(&rows).Error; err != nil {
