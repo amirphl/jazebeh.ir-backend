@@ -332,7 +332,7 @@ func (r *ShortLinkRepositoryImpl) Exists(ctx context.Context, filter models.Shor
 }
 
 func (r *ShortLinkRepositoryImpl) ListByScenarioWithClicks(ctx context.Context, scenarioID uint, orderBy string) ([]*models.ShortLink, error) {
-	db := r.getDB(ctx)
+	db := realShortLinkClickTraffic(r.getDB(ctx))
 	query := db.Table("short_link_clicks").
 		Select(`DISTINCT ON (short_link_id)
 			short_link_id AS id,
@@ -357,7 +357,7 @@ func (r *ShortLinkRepositoryImpl) ListByScenarioWithClicks(ctx context.Context, 
 }
 
 func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenario(ctx context.Context, scenarioID uint, orderBy string) ([]*ShortLinkWithClick, error) {
-	db := r.getDB(ctx)
+	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,
 			uid,
@@ -382,7 +382,7 @@ func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenario(ctx context.Co
 }
 
 func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioRange(ctx context.Context, scenarioFrom, scenarioTo uint, orderBy string) ([]*ShortLinkWithClick, error) {
-	db := r.getDB(ctx)
+	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,
 			uid,
@@ -407,7 +407,7 @@ func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioRange(ctx conte
 }
 
 func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameRegex(ctx context.Context, pattern string, orderBy string) ([]*ShortLinkWithClick, error) {
-	db := r.getDB(ctx)
+	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,
 			uid,
@@ -432,7 +432,7 @@ func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameRegex(ctx c
 }
 
 func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameLike(ctx context.Context, pattern string, orderBy string) ([]*ShortLinkWithClick, error) {
-	db := r.getDB(ctx)
+	db := realShortLinkClickTraffic(r.getDB(ctx))
 	q := db.Table("short_link_clicks").
 		Select(`short_link_id AS id,
 			uid,
@@ -454,6 +454,12 @@ func (r *ShortLinkRepositoryImpl) ListWithClicksDetailsByScenarioNameLike(ctx co
 		return nil, err
 	}
 	return out, nil
+}
+
+// realShortLinkClickTraffic keeps administrative click exports consistent with
+// campaign metrics by omitting test and automated traffic (including Twitterbot).
+func realShortLinkClickTraffic(db *gorm.DB) *gorm.DB {
+	return excludeAutomatedClickTraffic(db)
 }
 
 // applyOrder applies a caller-provided order or falls back to a safe default
