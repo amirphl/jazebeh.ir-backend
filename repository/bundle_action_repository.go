@@ -277,10 +277,10 @@ func (r *BundleActionRepositoryImpl) Complete(ctx context.Context, id int64, at 
 	})
 }
 
-// eligibleActionAudienceSQL intentionally joins immutable selection and tag
+// bundleActionEligibleAudienceSQL intentionally joins immutable selection and tag
 // attribution rows. It never consults audience_profiles.tags, which are live
 // mutable profile metadata rather than historical campaign attribution.
-const eligibleActionAudienceSQL = `
+const bundleActionEligibleAudienceSQL = `
 WITH active_actions AS (
  SELECT DISTINCT uid FROM bundle_action_file_uids u JOIN bundle_action_files f ON f.id=u.bundle_action_file_id WHERE f.bundle_id=? AND f.status='processed'
 ), eligible AS (
@@ -313,10 +313,10 @@ func refreshBundleActionMetrics(tx *gorm.DB, bundleID uint, at time.Time) error 
 		return tx.Exec(`INSERT INTO bundle_action_summaries(bundle_id,has_active_action_files,action_count,eligible_delivered_count,updated_at) VALUES (?,false,0,0,?) ON CONFLICT(bundle_id) DO UPDATE SET has_active_action_files=false,action_count=0,eligible_delivered_count=0,updated_at=EXCLUDED.updated_at`, bundleID, at).Error
 	}
 	// Materialize the high-volume delivery join once. Previously each metric
-	// insert reran eligibleActionAudienceSQL, including four correlated delivery
+	// insert reran bundleActionEligibleAudienceSQL, including four correlated delivery
 	// probes per audience. This temp table is local to this transaction and is
 	// dropped automatically on commit/rollback.
-	if err := tx.Exec(`CREATE TEMP TABLE bundle_action_eligible ON COMMIT DROP AS `+eligibleActionAudienceSQL+`
+	if err := tx.Exec(`CREATE TEMP TABLE bundle_action_eligible ON COMMIT DROP AS `+bundleActionEligibleAudienceSQL+`
 SELECT campaign_id, tag_id, phase, action FROM marked`, bundleID, bundleID).Error; err != nil {
 		return fmt.Errorf("materialize eligible action audience: %w", err)
 	}
