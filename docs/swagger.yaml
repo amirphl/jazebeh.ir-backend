@@ -1441,53 +1441,6 @@ definitions:
       status:
         type: string
     type: object
-  dto.BotCreateShortLinkRequest:
-    properties:
-      campaign_id:
-        type: integer
-      client_id:
-        type: integer
-      long_link:
-        type: string
-      phone_number:
-        maxLength: 20
-        type: string
-      short_link:
-        type: string
-      uid:
-        maxLength: 64
-        type: string
-    required:
-    - long_link
-    - short_link
-    - uid
-    type: object
-  dto.BotCreateShortLinkResponse:
-    properties:
-      item:
-        $ref: '#/definitions/dto.ShortLinkDTO'
-      message:
-        type: string
-    type: object
-  dto.BotCreateShortLinksRequest:
-    properties:
-      items:
-        items:
-          $ref: '#/definitions/dto.BotCreateShortLinkRequest'
-        minItems: 1
-        type: array
-    required:
-    - items
-    type: object
-  dto.BotCreateShortLinksResponse:
-    properties:
-      items:
-        items:
-          $ref: '#/definitions/dto.ShortLinkDTO'
-        type: array
-      message:
-        type: string
-    type: object
   dto.BotDTO:
     properties:
       created_at:
@@ -2909,23 +2862,6 @@ definitions:
       recipient:
         type: string
       warning:
-        type: string
-    type: object
-  dto.ShortLinkDTO:
-    properties:
-      campaign_id:
-        type: integer
-      client_id:
-        type: integer
-      id:
-        type: integer
-      long_link:
-        type: string
-      phone_number:
-        type: string
-      short_link:
-        type: string
-      uid:
         type: string
     type: object
   dto.SignupRequest:
@@ -6041,40 +5977,6 @@ paths:
       summary: Bot download multimedia
       tags:
       - Bot Multimedia
-  /api/v1/bot/short-links:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Short links creation
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/dto.BotCreateShortLinksRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            allOf:
-            - $ref: '#/definitions/dto.APIResponse'
-            - properties:
-                data:
-                  $ref: '#/definitions/dto.BotCreateShortLinksResponse'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/dto.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/dto.APIResponse'
-      summary: Bot Create Short Links (Batch)
-      tags:
-      - Bot ShortLinks
   /api/v1/bot/short-links/allocate:
     post:
       consumes:
@@ -6107,40 +6009,6 @@ paths:
           schema:
             $ref: '#/definitions/dto.APIResponse'
       summary: Bot Allocate Short Links
-      tags:
-      - Bot ShortLinks
-  /api/v1/bot/short-links/one:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Short link creation
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/dto.BotCreateShortLinkRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            allOf:
-            - $ref: '#/definitions/dto.APIResponse'
-            - properties:
-                data:
-                  $ref: '#/definitions/dto.BotCreateShortLinkResponse'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/dto.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/dto.APIResponse'
-      summary: Bot Create Short Link
       tags:
       - Bot ShortLinks
   /api/v1/bundles:
