@@ -114,7 +114,7 @@ For an existing installation, add
 `EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS=10` to
 `/etc/external-shortlink.env` before deploying this version. This is separate
 from the command timeout so transient PostgreSQL lock holders get a bounded
-chance to clear. The default spool-operation wait is now two seconds; set
+chance to clear. The default spool-operation wait is now 30 seconds; set
 `EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS` only when a different
 durability-versus-redirect-latency trade-off is required.
 
