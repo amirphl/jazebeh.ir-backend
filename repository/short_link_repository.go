@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -17,6 +18,10 @@ import (
 type ShortLinkRepositoryImpl struct {
 	*BaseRepository[models.ShortLink, models.ShortLinkFilter]
 }
+
+// ErrShortLinkUIDSequenceExhausted is returned before a reservation can be
+// committed when the fixed-width public token namespace has no capacity left.
+var ErrShortLinkUIDSequenceExhausted = errors.New("short-link UID sequence exhausted")
 
 func NewShortLinkRepository(db *gorm.DB) ShortLinkRepository {
 	return &ShortLinkRepositoryImpl{BaseRepository: NewBaseRepository[models.ShortLink, models.ShortLinkFilter](db)}
@@ -43,6 +48,11 @@ type ShortLinkWithClick struct {
 func (r *ShortLinkRepositoryImpl) SaveBatch(ctx context.Context, entities []*models.ShortLink) error {
 	if len(entities) == 0 {
 		return nil
+	}
+	for _, entity := range entities {
+		if err := validateNewShortLink(entity); err != nil {
+			return err
+		}
 	}
 	now := time.Now().UTC()
 	for _, entity := range entities {
@@ -72,6 +82,12 @@ func (r *ShortLinkRepositoryImpl) SaveBatch(ctx context.Context, entities []*mod
 
 	// Fallback: use GORM batching
 	return r.BaseRepository.SaveBatch(ctx, entities)
+}
+
+func validateNewShortLink(entity *models.ShortLink) error {
+	// GORM applies ShortLink.BeforeCreate for regular inserts. The COPY path
+	// above bypasses callbacks, so validate via the model hook here as well.
+	return entity.BeforeCreate(nil)
 }
 
 func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *sql.DB, entities []*models.ShortLink) (err error) {
@@ -470,22 +486,94 @@ func (r *ShortLinkRepositoryImpl) NextScenarioID(ctx context.Context) (uint, err
 	return id, nil
 }
 
-// GetMaxUIDSince returns the highest UID (by numeric base36 order) among
-// short links created strictly after the provided timestamp. It orders by
-// character length first, then lexicographically, which is correct for fixed-length
-// base36 strings used as UIDs.
-func (r *ShortLinkRepositoryImpl) GetMaxUIDSince(ctx context.Context, since time.Time) (string, error) {
-	db := r.getDB(ctx)
-	var uids []string
-	q := db.Model(&models.ShortLink{}).
-		Where("created_at > ?", since).
-		Order("length(uid) DESC, uid DESC").
-		Limit(1)
-	if err := q.Pluck("uid", &uids).Error; err != nil {
-		return "", err
+// ReserveSequentialUIDs serializes every generated short-link token through a
+// single durable row. It deliberately requires an existing transaction: the
+// counter update and the corresponding short_links insert must commit or roll
+// back together, otherwise failed requests would consume tokens.
+func (r *ShortLinkRepositoryImpl) ReserveSequentialUIDs(ctx context.Context, count int) ([]string, error) {
+	if count < 0 {
+		return nil, fmt.Errorf("short-link UID reservation count must not be negative")
 	}
-	if len(uids) == 0 {
-		return "", nil
+	if count == 0 {
+		return []string{}, nil
 	}
-	return uids[0], nil
+	tx, ok := ctx.Value(TxContextKey).(*gorm.DB)
+	if !ok || tx == nil {
+		return nil, errors.New("short-link UID reservation requires a transaction")
+	}
+
+	var state struct {
+		NextValue int64 `gorm:"column:next_value"`
+	}
+	result := tx.Raw(`SELECT next_value FROM short_link_uid_allocator WHERE allocator_name = 'default' FOR UPDATE`).Scan(&state)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 || state.NextValue < 0 {
+		return nil, errors.New("short-link UID allocator state is missing or invalid")
+	}
+	nextValue := uint64(state.NextValue)
+	if nextValue >= models.ShortLinkUIDCapacity {
+		return nil, fmt.Errorf("%w: requested %d token(s)", ErrShortLinkUIDSequenceExhausted, count)
+	}
+
+	// Historical rows can already occupy otherwise-valid six-character tokens
+	// (for example, a random legacy token of "100000").  Treat the allocator
+	// state as the next value to inspect, not a guarantee that that value is
+	// free.  The allocator row lock, collision check, counter update, and link
+	// insert share one transaction, so retries do not burn free tokens.
+	const collisionScanFloor uint64 = 4096
+	codes := make([]string, 0, count)
+	for len(codes) < count {
+		remainingCapacity := models.ShortLinkUIDCapacity - nextValue
+		if remainingCapacity == 0 {
+			return nil, fmt.Errorf("%w: requested %d token(s)", ErrShortLinkUIDSequenceExhausted, count)
+		}
+
+		windowSize := uint64(count - len(codes))
+		if windowSize < collisionScanFloor {
+			windowSize = collisionScanFloor
+		}
+		if windowSize > remainingCapacity {
+			windowSize = remainingCapacity
+		}
+
+		candidates := make([]string, windowSize)
+		for index := range candidates {
+			code, err := models.FormatShortLinkUID(nextValue + uint64(index))
+			if err != nil {
+				return nil, err
+			}
+			candidates[index] = code
+		}
+
+		var occupiedRows []struct {
+			UID string `gorm:"column:uid"`
+		}
+		if err := tx.Raw(`SELECT uid FROM short_links WHERE uid = ANY(?)`, pq.Array(candidates)).Scan(&occupiedRows).Error; err != nil {
+			return nil, err
+		}
+		occupied := make(map[string]struct{}, len(occupiedRows))
+		for _, row := range occupiedRows {
+			occupied[row.UID] = struct{}{}
+		}
+
+		for index, code := range candidates {
+			if _, exists := occupied[code]; exists {
+				continue
+			}
+			codes = append(codes, code)
+			if len(codes) == count {
+				nextValue += uint64(index) + 1
+				break
+			}
+		}
+		if len(codes) < count {
+			nextValue += windowSize
+		}
+	}
+	if err := tx.Exec(`UPDATE short_link_uid_allocator SET next_value = ?, updated_at = CURRENT_TIMESTAMP WHERE allocator_name = 'default'`, int64(nextValue)).Error; err != nil {
+		return nil, err
+	}
+	return codes, nil
 }
