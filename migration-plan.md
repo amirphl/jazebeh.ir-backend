@@ -612,8 +612,7 @@ bash docker/postgres/process-init-beta.sh
 
 # Regenerate nginx config
 mkdir -p docker/nginx/sites-available/generated/beta
-envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN \
-          $HSTS_MAX_AGE $GLOBAL_RATE_LIMIT $AUTH_RATE_LIMIT' \
+envsubst '$DOMAIN $API_DOMAIN $MONITORING_DOMAIN $SENTRY_UI_DOMAIN' \
   < docker/nginx/sites-available/yamata-beta.conf \
   > docker/nginx/sites-available/generated/beta/yamata-beta.conf
 docker-compose.beta.yml — items to verify:
