@@ -1099,6 +1099,18 @@ definitions:
     required:
     - id
     type: object
+  dto.AdminUpdateLineNumberPriceFactorRequest:
+    properties:
+      line_number:
+        maxLength: 50
+        minLength: 3
+        type: string
+      price_factor:
+        type: number
+    required:
+    - line_number
+    - price_factor
+    type: object
   dto.AdminUpdateLineNumbersRequest:
     properties:
       items:
@@ -1764,6 +1776,35 @@ definitions:
         type: integer
       eligible_delivered_count:
         type: integer
+    type: object
+  dto.CampaignAudienceReportJobResponse:
+    properties:
+      byte_size:
+        type: integer
+      campaign_ids:
+        items:
+          type: integer
+        type: array
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error_code:
+        type: string
+      error_message:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      row_count:
+        type: integer
+      sheet_count:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
     type: object
   dto.CancelCampaignRequest:
     properties:
@@ -4373,6 +4414,45 @@ paths:
           schema:
             $ref: '#/definitions/dto.APIResponse'
       summary: Batch Update Line Numbers (Admin)
+      tags:
+      - Admin Line Numbers
+  /api/v1/admin/line-numbers/price-factor:
+    put:
+      consumes:
+      - application/json
+      description: Update the price factor for a line number identified by its value.
+      parameters:
+      - description: Price factor update payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AdminUpdateLineNumberPriceFactorRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.AdminLineNumberDTO'
+              type: object
+        "400":
+          description: Invalid request or validation error
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "404":
+          description: Line number not found
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "500":
+          description: Price factor update failed
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      summary: Update Line Number Price Factor (Admin)
       tags:
       - Admin Line Numbers
   /api/v1/admin/line-numbers/report:
@@ -7460,8 +7540,11 @@ paths:
       - application/json
       description: Export one Excel worksheet containing every unique audience UID,
         click result, and current Bundle action membership for selected campaigns
-        owned by the authenticated customer. Delivery status is unavailable in the
-        stored audience mapping and is reported as unknown.
+        owned by the authenticated customer. This synchronous compatibility endpoint
+        supports at most 250,000 rows. For larger reports, create an asynchronous
+        job at POST /api/v1/campaigns/audience-click-report/jobs, poll its status,
+        then download the completed XLSX. Delivery status is unavailable in the stored
+        audience mapping and is reported as unknown.
       parameters:
       - description: Campaign IDs to export
         in: body
@@ -7497,6 +7580,91 @@ paths:
           schema:
             $ref: '#/definitions/dto.APIResponse'
       summary: Export Campaign Audience Report
+      tags:
+      - Campaigns
+  /api/v1/campaigns/audience-click-report/jobs:
+    post:
+      consumes:
+      - application/json
+      description: Queues a large audience report. Poll the returned job and download
+        it after completion; completed files expire after 24 hours.
+      parameters:
+      - description: Campaign IDs to export
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ExportCampaignAudienceClickReportRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.CampaignAudienceReportJobResponse'
+              type: object
+        "429":
+          description: Too many active report jobs
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      summary: Create Campaign Audience Report Job
+      tags:
+      - Campaigns
+  /api/v1/campaigns/audience-click-report/jobs/{id}:
+    get:
+      parameters:
+      - description: Report job UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.CampaignAudienceReportJobResponse'
+              type: object
+      summary: Get Campaign Audience Report Job
+      tags:
+      - Campaigns
+  /api/v1/campaigns/audience-click-report/jobs/{id}/download:
+    get:
+      parameters:
+      - description: Report job UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: Excel file
+          schema:
+            type: string
+        "404":
+          description: Report job or output file not found
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "409":
+          description: Report is not ready
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "410":
+          description: Report expired
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      summary: Download Campaign Audience Report Job
       tags:
       - Campaigns
   /api/v1/campaigns/audience-spec:
