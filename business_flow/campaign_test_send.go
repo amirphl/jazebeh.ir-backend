@@ -428,7 +428,7 @@ func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
 		if err != nil {
 			return nil, err
 		}
-		if strings.TrimSpace(s.baleConfig.APIAccessKey) == "" {
+		if !s.mockExternal && strings.TrimSpace(s.baleConfig.APIAccessKey) == "" {
 			return nil, fmt.Errorf("bale api-access-key is not configured")
 		}
 		botID, err := extractBaleBotIDFromSettings(settings)
@@ -486,7 +486,7 @@ func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
 		if err != nil {
 			return nil, err
 		}
-		if strings.TrimSpace(s.rubikaConfig.Token) == "" {
+		if !s.mockExternal && strings.TrimSpace(s.rubikaConfig.Token) == "" {
 			return nil, fmt.Errorf("rubika token is not configured")
 		}
 		serviceID, err := extractRubikaServiceIDFromSettings(settings)
@@ -623,6 +623,9 @@ func formatOptionalPayamSMSResponseValue(value *string) string {
 }
 
 func (s *CampaignFlowImpl) newTestPayamSMSClient() (scheduler.PayamSMSClient, error) {
+	if s.mockExternal {
+		return scheduler.NewMockPayamSMSClient(), nil
+	}
 	if strings.TrimSpace(s.irHTTPSProxy) == "" {
 		return scheduler.NewPayamSMSClient(s.payamSMSConfig), nil
 	}
@@ -630,6 +633,9 @@ func (s *CampaignFlowImpl) newTestPayamSMSClient() (scheduler.PayamSMSClient, er
 }
 
 func (s *CampaignFlowImpl) newTestCandooSMSProvider() (scheduler.SMSProvider, error) {
+	if s.mockExternal {
+		return scheduler.NewMockCandooSMSProvider(scheduler.NewCandooSMSProvider(s.candooSMSConfig)), nil
+	}
 	if strings.TrimSpace(s.irHTTPSProxy) == "" {
 		return scheduler.NewCandooSMSProvider(s.candooSMSConfig), nil
 	}
@@ -637,6 +643,9 @@ func (s *CampaignFlowImpl) newTestCandooSMSProvider() (scheduler.SMSProvider, er
 }
 
 func (s *CampaignFlowImpl) newTestBaleClient() (scheduler.BaleClient, error) {
+	if s.mockExternal {
+		return scheduler.NewMockBaleClient(), nil
+	}
 	if strings.TrimSpace(s.irHTTPSProxy) == "" {
 		return scheduler.NewBaleClient(s.baleConfig), nil
 	}
@@ -644,6 +653,9 @@ func (s *CampaignFlowImpl) newTestBaleClient() (scheduler.BaleClient, error) {
 }
 
 func (s *CampaignFlowImpl) newTestRubikaClient() (scheduler.RubikaClient, error) {
+	if s.mockExternal {
+		return scheduler.NewMockRubikaClient(), nil
+	}
 	if strings.TrimSpace(s.irHTTPSProxy) == "" {
 		return scheduler.NewRubikaClient(s.rubikaConfig), nil
 	}
@@ -651,6 +663,9 @@ func (s *CampaignFlowImpl) newTestRubikaClient() (scheduler.RubikaClient, error)
 }
 
 func (s *CampaignFlowImpl) newTestSplusClient() (scheduler.SplusClient, error) {
+	if s.mockExternal {
+		return scheduler.NewMockSplusClient(), nil
+	}
 	if strings.TrimSpace(s.irHTTPSProxy) == "" {
 		return scheduler.NewSplusClient(s.splusConfig), nil
 	}
