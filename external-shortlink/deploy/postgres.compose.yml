@@ -22,6 +22,14 @@ services:
       - effective_cache_size=2GB
       - -c
       - wal_compression=on
+      - -c
+      - 'log_line_prefix=external_shortlink_postgres ts=%m pid=%p db=%d user=%u app=%a client=%h '
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_lock_waits=on
+      - -c
+      - deadlock_timeout=1s
     shm_size: 512mb
     mem_limit: 1536m
     cpus: 2.5
