@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	"github.com/amirphl/Yamata-no-Orochi/models"
@@ -57,59 +58,13 @@ func (f *BundleFlowImpl) CreateBundle(ctx context.Context, req *dto.CreateBundle
 		return nil, NewBusinessError("CREATE_BUNDLE_FAILED", "Failed to create bundle", err)
 	}
 
-	title, err := validateRequiredBundleField(req.Title, 255, "title")
-	if err != nil {
-		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	objective, err := validateRequiredBundleField(req.Objective, 1023, "objective")
-	if err != nil {
-		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	targetAudiencePersona, err := validateRequiredBundleField(req.TargetAudiencePersona, 1023, "target audience persona")
-	if err != nil {
-		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-
-	shortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
-	if err != nil {
-		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-
-	description, err := sanitizeOptionalBundleField(req.Description, 2047, "description")
-	if err != nil {
-		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	adLink, err := sanitizeOptionalBundleField(req.AdLink, 2047, "adlink")
-	if err != nil {
-		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	targetCustomerName, err := sanitizeOptionalBundleField(req.TargetCustomerName, 255, "target customer name")
-	if err != nil {
-		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-
-	category, job, err := sanitizeCategoryAndJob(customer.AccountType.TypeName, req.Category, req.Job, false)
+	bundleInput, err := validateBundleInput(customer, req.Title, req.Objective, req.TargetAudiencePersona, req.ShortLinkDomain, req.Description, req.AdLink, req.TargetCustomerName, req.Category, req.Job)
 	if err != nil {
 		return nil, NewBusinessError("CREATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
 	}
 
 	now := utils.UTCNow()
-	row := &models.Bundle{
-		Title:                 title,
-		Objective:             objective,
-		TargetAudiencePersona: targetAudiencePersona,
-		Adlink:                adLink,
-		Description:           description,
-		ShortLinkDomain:       shortLinkDomain,
-		TargetCustomerName:    targetCustomerName,
-		Category:              category,
-		Job:                   job,
-		Metadata:              json.RawMessage(`{}`),
-		Statistics:            json.RawMessage(`{}`),
-		CustomerID:            customer.ID,
-		CreatedAt:             now,
-		UpdatedAt:             now,
-	}
+	row := bundleInput.newBundle(customer.ID, now)
 
 	if err := repository.WithTransaction(ctx, f.db, func(txCtx context.Context) error {
 		if err := f.bundleRepo.Save(txCtx, row); err != nil {
@@ -123,7 +78,7 @@ func (f *BundleFlowImpl) CreateBundle(ctx context.Context, req *dto.CreateBundle
 
 		return nil
 	}); err != nil {
-		errMsg := fmt.Sprintf("Bundle creation failed for customer %d title=%q: %s", customer.ID, title, err.Error())
+		errMsg := fmt.Sprintf("Bundle creation failed for customer %d title=%q: %s", customer.ID, bundleInput.title, err.Error())
 		_ = createAuditLog(ctx, f.auditRepo, &customer, models.AuditActionBundleCreationFailed, errMsg, false, &errMsg, metadata)
 
 		return nil, NewBusinessError("CREATE_BUNDLE_FAILED", "Failed to create bundle", err)
@@ -146,35 +101,7 @@ func (f *BundleFlowImpl) UpdateBundle(ctx context.Context, req *dto.UpdateBundle
 		return nil, NewBusinessError("UPDATE_BUNDLE_FAILED", "Failed to update bundle", err)
 	}
 
-	title, err := validateRequiredBundleField(req.Title, 255, "title")
-	if err != nil {
-		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	objective, err := validateRequiredBundleField(req.Objective, 1023, "objective")
-	if err != nil {
-		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	targetAudiencePersona, err := validateRequiredBundleField(req.TargetAudiencePersona, 1023, "target audience persona")
-	if err != nil {
-		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	shortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
-	if err != nil {
-		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	description, err := sanitizeOptionalBundleField(req.Description, 2047, "description")
-	if err != nil {
-		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	adLink, err := sanitizeOptionalBundleField(req.AdLink, 2047, "adlink")
-	if err != nil {
-		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	targetCustomerName, err := sanitizeOptionalBundleField(req.TargetCustomerName, 255, "target customer name")
-	if err != nil {
-		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
-	}
-	category, job, err := sanitizeCategoryAndJob(customer.AccountType.TypeName, req.Category, req.Job, false)
+	bundleInput, err := validateBundleInput(customer, req.Title, req.Objective, req.TargetAudiencePersona, req.ShortLinkDomain, req.Description, req.AdLink, req.TargetCustomerName, req.Category, req.Job)
 	if err != nil {
 		return nil, NewBusinessError("UPDATE_BUNDLE_VALIDATION_FAILED", "Bundle validation failed", err)
 	}
@@ -190,15 +117,7 @@ func (f *BundleFlowImpl) UpdateBundle(ctx context.Context, req *dto.UpdateBundle
 		return nil, NewBusinessError("BUNDLE_ACCESS_DENIED", "Bundle access denied", ErrBundleAccessDenied)
 	}
 
-	row.Title = title
-	row.Objective = objective
-	row.TargetAudiencePersona = targetAudiencePersona
-	row.Adlink = adLink
-	row.Description = description
-	row.ShortLinkDomain = shortLinkDomain
-	row.TargetCustomerName = targetCustomerName
-	row.Category = category
-	row.Job = job
+	bundleInput.applyTo(row)
 
 	if err := repository.WithTransaction(ctx, f.db, func(txCtx context.Context) error {
 		if err := f.bundleRepo.Update(txCtx, row); err != nil {
@@ -212,7 +131,7 @@ func (f *BundleFlowImpl) UpdateBundle(ctx context.Context, req *dto.UpdateBundle
 
 		return nil
 	}); err != nil {
-		errMsg := fmt.Sprintf("Bundle update failed for customer %d bundle %d title=%q: %s", customer.ID, req.ID, title, err.Error())
+		errMsg := fmt.Sprintf("Bundle update failed for customer %d bundle %d title=%q: %s", customer.ID, req.ID, bundleInput.title, err.Error())
 		_ = createAuditLog(ctx, f.auditRepo, &customer, models.AuditActionBundleUpdateFailed, errMsg, false, &errMsg, metadata)
 		return nil, NewBusinessError("UPDATE_BUNDLE_FAILED", "Failed to update bundle", err)
 	}
@@ -244,28 +163,7 @@ func (f *BundleFlowImpl) GetBundle(ctx context.Context, req *dto.GetBundleReques
 		return nil, NewBusinessError("BUNDLE_ACCESS_DENIED", "Bundle access denied", ErrBundleAccessDenied)
 	}
 
-	item := &dto.BundleItem{
-		ID:                    row.ID,
-		Title:                 row.Title,
-		Objective:             row.Objective,
-		TargetAudiencePersona: row.TargetAudiencePersona,
-		AdLink:                row.Adlink,
-		Description:           row.Description,
-		ShortLinkDomain:       row.ShortLinkDomain,
-		TargetCustomerName:    row.TargetCustomerName,
-		Category:              row.Category,
-		Job:                   row.Job,
-		CustomerID:            row.CustomerID,
-		CreatedAt:             row.CreatedAt,
-		UpdatedAt:             row.UpdatedAt,
-	}
-
-	// if len(row.Metadata) > 0 {
-	// 	_ = json.Unmarshal(row.Metadata, &item.Metadata)
-	// }
-	if len(row.Statistics) > 0 {
-		_ = json.Unmarshal(row.Statistics, &item.Statistics)
-	}
+	item := bundleItemFromModel(row)
 	if err := f.injectBundleStatistics(ctx, req.CustomerID, []*dto.BundleItem{item}); err != nil {
 		return nil, NewBusinessError("GET_BUNDLE_FAILED", "Failed to get bundle", err)
 	}
@@ -328,30 +226,7 @@ func (f *BundleFlowImpl) ListBundles(ctx context.Context, req *dto.ListBundlesRe
 
 	items := make([]dto.BundleItem, 0, len(rows))
 	for _, row := range rows {
-		item := dto.BundleItem{
-			ID:                    row.ID,
-			Title:                 row.Title,
-			Objective:             row.Objective,
-			TargetAudiencePersona: row.TargetAudiencePersona,
-			AdLink:                row.Adlink,
-			Description:           row.Description,
-			ShortLinkDomain:       row.ShortLinkDomain,
-			TargetCustomerName:    row.TargetCustomerName,
-			Category:              row.Category,
-			Job:                   row.Job,
-			CustomerID:            row.CustomerID,
-			CreatedAt:             row.CreatedAt,
-			UpdatedAt:             row.UpdatedAt,
-		}
-
-		// if len(row.Metadata) > 0 {
-		// 	_ = json.Unmarshal(row.Metadata, &item.Metadata)
-		// }
-		if len(row.Statistics) > 0 {
-			_ = json.Unmarshal(row.Statistics, &item.Statistics)
-		}
-
-		items = append(items, item)
+		items = append(items, *bundleItemFromModel(row))
 	}
 	if err := f.injectBundleStatistics(ctx, req.CustomerID, bundleItemsToPointers(items)); err != nil {
 		return nil, NewBusinessError("LIST_BUNDLES_FAILED", "Failed to list bundles", err)
@@ -372,6 +247,115 @@ func (f *BundleFlowImpl) ListBundles(ctx context.Context, req *dto.ListBundlesRe
 			TotalPages: totalPages,
 		},
 	}, nil
+}
+
+func bundleItemFromModel(bundle *models.Bundle) *dto.BundleItem {
+	item := &dto.BundleItem{
+		ID:                    bundle.ID,
+		Title:                 bundle.Title,
+		Objective:             bundle.Objective,
+		TargetAudiencePersona: bundle.TargetAudiencePersona,
+		AdLink:                bundle.Adlink,
+		Description:           bundle.Description,
+		ShortLinkDomain:       bundle.ShortLinkDomain,
+		TargetCustomerName:    bundle.TargetCustomerName,
+		Category:              bundle.Category,
+		Job:                   bundle.Job,
+		CustomerID:            bundle.CustomerID,
+		CreatedAt:             bundle.CreatedAt,
+		UpdatedAt:             bundle.UpdatedAt,
+	}
+	if len(bundle.Statistics) > 0 {
+		_ = json.Unmarshal(bundle.Statistics, &item.Statistics)
+	}
+	return item
+}
+
+type bundleInput struct {
+	title                 string
+	objective             string
+	targetAudiencePersona string
+	adLink                *string
+	description           *string
+	shortLinkDomain       *string
+	targetCustomerName    *string
+	category              *string
+	job                   *string
+}
+
+func validateBundleInput(
+	customer models.Customer,
+	title, objective, targetAudiencePersona string,
+	shortLinkDomain, description, adLink, targetCustomerName, category, job *string,
+) (bundleInput, error) {
+	validatedTitle, err := validateRequiredBundleField(title, 255, "title")
+	if err != nil {
+		return bundleInput{}, err
+	}
+	validatedObjective, err := validateRequiredBundleField(objective, 1023, "objective")
+	if err != nil {
+		return bundleInput{}, err
+	}
+	validatedPersona, err := validateRequiredBundleField(targetAudiencePersona, 1023, "target audience persona")
+	if err != nil {
+		return bundleInput{}, err
+	}
+	validatedShortLinkDomain, err := sanitizeShortLinkDomain(shortLinkDomain)
+	if err != nil {
+		return bundleInput{}, err
+	}
+	validatedDescription, err := sanitizeOptionalBundleField(description, 2047, "description")
+	if err != nil {
+		return bundleInput{}, err
+	}
+	validatedAdLink, err := sanitizeOptionalBundleField(adLink, 2047, "adlink")
+	if err != nil {
+		return bundleInput{}, err
+	}
+	validatedTargetCustomerName, err := sanitizeOptionalBundleField(targetCustomerName, 255, "target customer name")
+	if err != nil {
+		return bundleInput{}, err
+	}
+	validatedCategory, validatedJob, err := sanitizeCategoryAndJob(customer.AccountType.TypeName, category, job, false)
+	if err != nil {
+		return bundleInput{}, err
+	}
+
+	return bundleInput{
+		title:                 validatedTitle,
+		objective:             validatedObjective,
+		targetAudiencePersona: validatedPersona,
+		adLink:                validatedAdLink,
+		description:           validatedDescription,
+		shortLinkDomain:       validatedShortLinkDomain,
+		targetCustomerName:    validatedTargetCustomerName,
+		category:              validatedCategory,
+		job:                   validatedJob,
+	}, nil
+}
+
+func (input bundleInput) newBundle(customerID uint, now time.Time) *models.Bundle {
+	bundle := &models.Bundle{
+		Metadata:   json.RawMessage(`{}`),
+		Statistics: json.RawMessage(`{}`),
+		CustomerID: customerID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	input.applyTo(bundle)
+	return bundle
+}
+
+func (input bundleInput) applyTo(bundle *models.Bundle) {
+	bundle.Title = input.title
+	bundle.Objective = input.objective
+	bundle.TargetAudiencePersona = input.targetAudiencePersona
+	bundle.Adlink = input.adLink
+	bundle.Description = input.description
+	bundle.ShortLinkDomain = input.shortLinkDomain
+	bundle.TargetCustomerName = input.targetCustomerName
+	bundle.Category = input.category
+	bundle.Job = input.job
 }
 
 func validateRequiredBundleField(value string, maxLen int, fieldName string) (string, error) {
