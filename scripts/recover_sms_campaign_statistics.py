@@ -38,6 +38,7 @@ from typing import Any
 
 from script_common import (
     read_secret,
+    require_live_provider_mode,
     validate_database_port,
     validate_https_origin,
 )
@@ -579,6 +580,7 @@ def require_requests():
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    require_live_provider_mode()
     os.umask(0o077)
     args.db_password = read_secret("DB_PASSWORD", "Database password: ")
     payam_config = require_payam_config()
