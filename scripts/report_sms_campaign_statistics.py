@@ -41,7 +41,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("campaign_id", type=int, help="campaigns.id to inspect")
     parser.add_argument("--db-host", default=os.getenv("DB_HOST", "127.0.0.1"))
-    parser.add_argument("--db-port", type=int, default=int(os.getenv("DB_PORT", "5432")))
+    parser.add_argument(
+        "--db-port", type=int, default=int(os.getenv("DB_PORT", "5432"))
+    )
     parser.add_argument("--db-name", default=os.getenv("DB_NAME", ""))
     parser.add_argument("--db-user", default=os.getenv("DB_USER", ""))
     parser.add_argument("--db-sslmode", default=os.getenv("DB_SSL_MODE", "require"))
@@ -58,7 +60,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=0.0,
         help="extra delay after each successful request in seconds (default: 0)",
     )
-    parser.add_argument("--verbose", action="store_true", help="log progress for every provider batch")
+    parser.add_argument(
+        "--verbose", action="store_true", help="log progress for every provider batch"
+    )
     parser.add_argument(
         "--include-unjobbed-sent-sms",
         action=argparse.BooleanOptionalAction,
@@ -116,7 +120,9 @@ def fresh_status_rows(messages, results: Mapping[str, Mapping[str, Mapping[str, 
                 {
                     "total_parts": as_nonnegative_int(item, "totalParts"),
                     "delivered_parts": as_nonnegative_int(item, "totalDeliveredParts"),
-                    "undelivered_parts": as_nonnegative_int(item, "totalUnDeliveredParts"),
+                    "undelivered_parts": as_nonnegative_int(
+                        item, "totalUnDeliveredParts"
+                    ),
                     "unknown_parts": as_nonnegative_int(item, "totalUnKnownParts"),
                 }
             )
@@ -144,7 +150,9 @@ def aggregate(rows: Sequence[Mapping[str, int]]) -> dict[str, int]:
         ),
         "aggregatedTotalParts": sum(row["total_parts"] for row in rows),
         "aggregatedTotalDeliveredParts": sum(row["delivered_parts"] for row in rows),
-        "aggregatedTotalUnDeliveredParts": sum(row["undelivered_parts"] for row in rows),
+        "aggregatedTotalUnDeliveredParts": sum(
+            row["undelivered_parts"] for row in rows
+        ),
         "aggregatedTotalUnKnownParts": sum(row["unknown_parts"] for row in rows),
     }
 
@@ -159,7 +167,14 @@ def log_provider_batch(
 ) -> None:
     """Log a small provider-debug sample without exposing recipient data."""
     output_keys = (
-        ("customerId", "status", "totalParts", "totalDeliveredParts", "totalUnDeliveredParts", "totalUnKnownParts")
+        (
+            "customerId",
+            "status",
+            "totalParts",
+            "totalDeliveredParts",
+            "totalUnDeliveredParts",
+            "totalUnKnownParts",
+        )
         if provider == "payamsms"
         else ("customerId", "messageId", "status")
     )
@@ -184,6 +199,9 @@ def log_provider_batch(
 def main(argv: Sequence[str] | None = None) -> int:
     load_repository_env()
     args = parse_args(argv)
+    from script_common import require_live_provider_mode
+
+    require_live_provider_mode()
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -192,9 +210,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         import requests
     except ImportError as exc:
-        raise RuntimeError("requests is required; install scripts/requirements.txt") from exc
+        raise RuntimeError(
+            "requests is required; install scripts/requirements.txt"
+        ) from exc
 
-    logger.info("campaign_id=%d connecting to PostgreSQL in read-only mode", args.campaign_id)
+    logger.info(
+        "campaign_id=%d connecting to PostgreSQL in read-only mode", args.campaign_id
+    )
     # connect_read_only prompts for DB_PASSWORD only when it was not exported.
     with connect_read_only(args) as connection, connection.cursor() as cur:
         messages = fetch_messages(cur, args.campaign_id, args.include_unjobbed_sent_sms)
@@ -233,7 +255,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     results: dict[str, dict[str, dict[str, Any]]] = {}
     if lookup_ids["payamsms"]:
-        logger.info("campaign_id=%d fetching PayamSMS delivery statuses", args.campaign_id)
+        logger.info(
+            "campaign_id=%d fetching PayamSMS delivery statuses", args.campaign_id
+        )
         results["payamsms"] = payam_statuses(
             session,
             payam_config(),
@@ -249,9 +273,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 response,
             ),
         )
-        logger.info("campaign_id=%d provider=payamsms results=%d", args.campaign_id, len(results["payamsms"]))
+        logger.info(
+            "campaign_id=%d provider=payamsms results=%d",
+            args.campaign_id,
+            len(results["payamsms"]),
+        )
     if lookup_ids["candoo"]:
-        logger.info("campaign_id=%d fetching Candoo delivery statuses", args.campaign_id)
+        logger.info(
+            "campaign_id=%d fetching Candoo delivery statuses", args.campaign_id
+        )
         results["candoo"] = candoo_statuses(
             session,
             sorted(lookup_ids["candoo"]),
@@ -266,9 +296,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 response,
             ),
         )
-        logger.info("campaign_id=%d provider=candoo results=%d", args.campaign_id, len(results["candoo"]))
+        logger.info(
+            "campaign_id=%d provider=candoo results=%d",
+            args.campaign_id,
+            len(results["candoo"]),
+        )
 
-    rows, missing_lookup, missing_result, unsupported = fresh_status_rows(messages, results)
+    rows, missing_lookup, missing_result, unsupported = fresh_status_rows(
+        messages, results
+    )
     report = {
         "campaignID": args.campaign_id,
         "checkedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -276,12 +312,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "statistics": aggregate(rows),
         "coverage": {
             "messagesDiscovered": len(messages),
-            "messagesWithProviderLookupID": sum(len(ids) for ids in lookup_ids.values()),
+            "messagesWithProviderLookupID": sum(
+                len(ids) for ids in lookup_ids.values()
+            ),
             "freshProviderResults": len(rows),
             "missingProviderLookupID": missing_lookup,
             "missingProviderResult": missing_result,
             "unsupportedProviderMessages": unsupported,
-            "lookupIDsByProvider": {provider: len(ids) for provider, ids in lookup_ids.items()},
+            "lookupIDsByProvider": {
+                provider: len(ids) for provider, ids in lookup_ids.items()
+            },
         },
         "note": "Statistics include only fresh provider results; no database rows were written.",
     }
