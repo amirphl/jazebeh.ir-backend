@@ -1065,7 +1065,11 @@ func (s *BaleCampaignScheduler) handleStatusJob(ctx context.Context, job *models
 		if pc == nil {
 			return fmt.Errorf("processed campaign not found for processed campaign id=%d", job.ProcessedCampaignID)
 		}
-		if shouldPushCurrentProcessedCampaignStatistics(pc, stats) {
+		publish, err := shouldPublishCurrentProcessedCampaignStatistics(ctx, s.jobRepo, pc, stats)
+		if err != nil {
+			return fmt.Errorf("check Bale delivery statistics finality: %w", err)
+		}
+		if publish {
 			if err := s.botClient.PushCampaignStatistics(ctx, pc.CampaignID, stats); err != nil {
 				return err
 			}
