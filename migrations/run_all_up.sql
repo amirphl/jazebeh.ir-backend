@@ -508,5 +508,11 @@
 \echo 'Running 0166_create_campaign_audience_report_jobs.sql...'
 \i migrations/0166_create_campaign_audience_report_jobs.sql
 
+\echo 'Running 0167_harden_campaign_audience_report_jobs.sql...'
+\i migrations/0167_harden_campaign_audience_report_jobs.sql
+
+\echo 'Running 0168_add_campaign_audience_report_customer_limit_index.sql...'
+\i migrations/0168_add_campaign_audience_report_customer_limit_index.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
