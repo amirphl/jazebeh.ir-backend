@@ -162,7 +162,7 @@ services:
       - |
         mkdir -p /backups
         export PGPASSWORD="$${DB_PASSWORD}"
-        touch /backups/.scheduler-started
+        test -e /backups/.scheduler-started || touch /backups/.scheduler-started
         # Record the dumps that predate this policy.  They were retained
         # manually and must never be removed by the rolling-retention job.
         legacy_backups_file=/backups/.legacy-backups-before-two-day-retention
@@ -201,7 +201,7 @@ services:
             # dumps. Cleanup happens only after validation and atomic publish,
             # so a failed backup never reduces the restore set.
             find /backups -maxdepth 1 -type f -name '*.dump' -print | sed 's#^.*/##' | sort -r |
-              awk 'NR == FNR { legacy[$$0] = 1; next } !($$0 in legacy)' "$${legacy_backups_file}" - | sed -n '4,$p' |
+              awk 'FILENAME == ARGV[1] { legacy[$$0] = 1; next } !($$0 in legacy)' "$${legacy_backups_file}" - | sed -n '4,$$p' |
               while IFS= read -r expired_backup; do
                 rm -f -- "/backups/$${expired_backup}"
                 echo "[backup] $$(date -u +%Y-%m-%dT%H:%M:%SZ) removed expired backup: $${expired_backup}"
@@ -229,9 +229,7 @@ services:
           reference=$$(stat -c %Y /backups/.scheduler-started)
           if test -f /backups/.last-success; then
             last_success=$$(stat -c %Y /backups/.last-success)
-            if test "$${last_success}" -gt "$${reference}"; then
-              reference=$${last_success}
-            fi
+            reference=$${last_success}
           fi
           age=$$(($$(date -u +%s) - reference))
           test "$${age}" -le "$${BACKUP_HEALTH_MAX_AGE_SECONDS}"
@@ -372,38 +370,15 @@ services:
       SERVER_ENABLE_METRICS: ${SERVER_ENABLE_METRICS}
       SERVER_TRUSTED_PROXIES: ${SERVER_TRUSTED_PROXIES}
       SERVER_PROXY_HEADER: ${SERVER_PROXY_HEADER}
-      SERVER_ENABLE_COMPRESSION: ${SERVER_ENABLE_COMPRESSION}
-      SERVER_COMPRESSION_LEVEL: ${SERVER_COMPRESSION_LEVEL}
 
       # Security Configuration
       TLS_ENABLED: ${TLS_ENABLED}
       TLS_CERT_FILE: ${TLS_CERT_FILE}
       TLS_KEY_FILE: ${TLS_KEY_FILE}
       TLS_MIN_VERSION: ${TLS_MIN_VERSION}
-      HSTS_MAX_AGE: ${HSTS_MAX_AGE}
-      HSTS_INCLUDE_SUBDOMAINS: ${HSTS_INCLUDE_SUBDOMAINS}
-      HSTS_PRELOAD: ${HSTS_PRELOAD}
 
       # CORS Configuration
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      CORS_ALLOWED_METHODS: ${CORS_ALLOWED_METHODS}
-      CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS}
-      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS}
-      CORS_MAX_AGE: ${CORS_MAX_AGE}
-
-      # Rate Limiting
-      AUTH_RATE_LIMIT: ${AUTH_RATE_LIMIT}
-      GLOBAL_RATE_LIMIT: ${GLOBAL_RATE_LIMIT}
-      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW}
-      RATE_LIMIT_MEMORY: ${RATE_LIMIT_MEMORY}
-
-      # Content Security Policy
-      CSP_POLICY: ${CSP_POLICY}
-      X_FRAME_OPTIONS: ${X_FRAME_OPTIONS}
-      X_CONTENT_TYPE_OPTIONS: ${X_CONTENT_TYPE_OPTIONS}
-      XSS_PROTECTION: ${XSS_PROTECTION}
-      REFERRER_POLICY: ${REFERRER_POLICY}
 
       # API Security
       REQUIRE_API_KEY: ${REQUIRE_API_KEY}
@@ -432,9 +407,6 @@ services:
       JWT_ALGORITHM: ${JWT_ALGORITHM}
 
       # Session Security
-      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE}
-      SESSION_COOKIE_HTTPONLY: ${SESSION_COOKIE_HTTPONLY}
-      SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE}
       SESSION_TIMEOUT: ${SESSION_TIMEOUT}
       SESSION_CLEANUP_INTERVAL: ${SESSION_CLEANUP_INTERVAL}
 
@@ -517,6 +489,7 @@ services:
       BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY}
       BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY}
       APP_ENV: ${APP_ENV}
+      EXTERNAL_SERVICES_MODE: ${EXTERNAL_SERVICES_MODE:-live}
       VERSION: ${VERSION:-1.0.0}
       COMMIT_HASH: ${COMMIT_HASH:-unknown}
       BUILD_TIME: ${BUILD_TIME:-unknown}
