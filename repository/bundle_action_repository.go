@@ -114,6 +114,50 @@ FOR UPDATE OF f SKIP LOCKED`, []models.BundleActionFileStatus{models.BundleActio
 // per-file diagnostics in the same transaction.  These snapshots explain the
 // result of this upload; live ATRs continue to be derived from current source
 // data when the file is completed.
+//
+// It first replaces this file's stored UIDs, inserting the supplied unique,
+// syntactically valid UIDs in batches of 1,000 with a pending validation status.
+// It then executes two SQL statements: resolveUIDs classifies each UID, and
+// updateResult saves the file-level summary counts.
+//
+// The resolveUIDs statement uses WITH resolved AS (...) to build an intermediate
+// result for every UID belonging to this file. For each UID, it finds audience
+// membership within the same Bundle, follows that membership to its audience
+// selection and campaign, finds its assigned tag, and checks for a fully
+// delivered message. LEFT JOIN LATERAL performs the membership lookup using the
+// current UID row; the LEFT JOINs preserve UIDs with missing membership, campaign,
+// or tag data so those failures can be classified.
+//
+// The CASE expression assigns the first matching status, in this order:
+//   - outside_bundle: no campaign can be resolved through membership in this Bundle.
+//   - unassigned_tag: a campaign was found, but no assigned tag exists.
+//   - missing_delivery: a campaign and tag exist, but no qualifying fully delivered
+//     message exists.
+//   - eligible: all checks passed.
+//
+// The delivery check searches SMS, Bale, Rubika, and Splus. A qualifying delivery
+// must belong to a current processed campaign (p.is_current), the resolved
+// campaign and audience selection, and the audience's phone number. Its status
+// must have total_parts > 0 and total_parts = total_delivered_parts, meaning every
+// part was delivered. UNION ALL combines matches across channels; NOT EXISTS
+// means none of the four channels has a qualifying delivery. One qualifying
+// delivery on any channel is sufficient. UPDATE ... FROM resolved then writes
+// the campaign, assigned tag, phase, and validation status back to each UID row.
+//
+// The updateResult statement saves the parser counts (total rows, unique valid
+// UIDs, duplicates within the upload, and invalid UIDs), new and duplicate UID
+// counts across files, and counts for each of the four validation statuses.
+// A UID is new when it is absent from every other processed file in the same
+// Bundle; it is a duplicate across files when it appears in at least one such
+// file. These checks exclude this file and consider only files with processed
+// status. Newness and eligibility are independent: a new UID may be outside the
+// Bundle, and an eligible UID may already appear in another file. The new and
+// duplicate counts do not filter by validation status.
+//
+// The file-level update requires status = 'processing'. If exactly one file is
+// not updated, the function returns an error. Any error rolls back all changes
+// in this transaction. Complete is called afterward by the business flow to mark
+// the file complete and publish live metrics.
 func (r *BundleActionRepositoryImpl) StoreUIDsAndResult(ctx context.Context, fileID int64, bundleID uint, uids []string, total, duplicates, invalid int64, at time.Time) error {
 	return r.getDB(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("bundle_action_file_id = ?", fileID).Delete(&models.BundleActionFileUID{}).Error; err != nil {
@@ -126,7 +170,13 @@ func (r *BundleActionRepositoryImpl) StoreUIDsAndResult(ctx context.Context, fil
 			}
 			rows := make([]models.BundleActionFileUID, 0, end-start)
 			for _, uid := range uids[start:end] {
-				rows = append(rows, models.BundleActionFileUID{BundleActionFileID: fileID, BundleID: bundleID, UID: uid, ValidationStatus: "pending", CreatedAt: at})
+				rows = append(rows, models.BundleActionFileUID{
+					BundleActionFileID: fileID,
+					BundleID:           bundleID,
+					UID:                uid,
+					ValidationStatus:   "pending",
+					CreatedAt:          at,
+				})
 			}
 			if len(rows) > 0 {
 				if err := tx.Create(&rows).Error; err != nil {
