@@ -47,6 +47,16 @@ type processedCampaignStatsRepositoryStub struct {
 	updated *models.ProcessedCampaign
 }
 
+type deliveryStatusFinalRepositoryStub struct {
+	repository.CampaignStatusJobRepository
+	final bool
+	err   error
+}
+
+func (s deliveryStatusFinalRepositoryStub) DeliveryStatusFinal(context.Context, uint) (bool, error) {
+	return s.final, s.err
+}
+
 func (s *processedCampaignStatsRepositoryStub) UpdateMeta(_ context.Context, campaign *models.ProcessedCampaign) error {
 	copy := *campaign
 	s.updated = &copy
@@ -223,6 +233,26 @@ func TestShouldPushCurrentProcessedCampaignStatistics(t *testing.T) {
 	}
 	if !shouldPushCurrentProcessedCampaignStatistics(&models.ProcessedCampaign{IsCurrent: true}, positive) {
 		t.Fatal("current processed campaign with sent messages must publish statistics")
+	}
+}
+
+func TestShouldPublishCurrentProcessedCampaignZeroStatisticsOnlyAfterFinalStatus(t *testing.T) {
+	pc := &models.ProcessedCampaign{ID: 47, IsCurrent: true}
+	zero := map[string]any{"aggregatedTotalSent": int64(0)}
+
+	publish, err := shouldPublishCurrentProcessedCampaignStatistics(t.Context(), deliveryStatusFinalRepositoryStub{final: false}, pc, zero)
+	if err != nil || publish {
+		t.Fatalf("non-final zero publication = (%t, %v), want (false, nil)", publish, err)
+	}
+
+	publish, err = shouldPublishCurrentProcessedCampaignStatistics(t.Context(), deliveryStatusFinalRepositoryStub{final: true}, pc, zero)
+	if err != nil || !publish {
+		t.Fatalf("final zero publication = (%t, %v), want (true, nil)", publish, err)
+	}
+
+	publish, err = shouldPublishCurrentProcessedCampaignStatistics(t.Context(), nil, pc, zero)
+	if err != nil || publish {
+		t.Fatalf("unknown finality zero publication = (%t, %v), want (false, nil)", publish, err)
 	}
 }
 
