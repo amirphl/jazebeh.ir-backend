@@ -2,8 +2,13 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/amirphl/Yamata-no-Orochi/config"
+	"github.com/amirphl/Yamata-no-Orochi/models"
 )
 
 func TestMockPayamSMSClientReturnsSuccessfulResponsePerItem(t *testing.T) {
@@ -23,6 +28,77 @@ func TestMockPayamSMSClientReturnsSuccessfulResponsePerItem(t *testing.T) {
 		if response.TrackingID == "" || response.ServerID == nil || !strings.HasPrefix(*response.ServerID, "mock-sms-") {
 			t.Fatalf("response[%d] = %+v, want successful mock response", i, response)
 		}
+	}
+}
+
+func TestMockStatusClientsAreOfflineAndStable(t *testing.T) {
+	ctx := context.Background()
+	ids := make([]string, 1000)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("message-%d", i)
+	}
+	payam := maybeMockPayamSMSClient(nil, true)
+	if _, err := payam.GetToken(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first, err := payam.FetchStatus(ctx, "", ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := payam.FetchStatus(ctx, "", ids)
+	if err != nil || !reflect.DeepEqual(first, again) {
+		t.Fatal("status must be stable")
+	}
+	failed := 0
+	for _, item := range first.Items {
+		if item.TotalUndeliveredParts == 1 {
+			failed++
+		}
+	}
+	if failed < 150 || failed > 250 {
+		t.Fatalf("failure count %d outside expected range", failed)
+	}
+	bale := maybeMockBaleClient(nil, true)
+	if !bale.SupportsStatusTracking() {
+		t.Fatal("Bale mock does not support status")
+	}
+	if _, err := bale.UploadFile(ctx, "unused"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := bale.FetchStatus(ctx, ids); err != nil || len(got.Items) != len(ids) {
+		t.Fatal("Bale status failed", err)
+	}
+	rubika := maybeMockRubikaClient(nil, true)
+	if !rubika.SupportsStatusTracking() {
+		t.Fatal("Rubika mock does not support status")
+	}
+	if _, err := rubika.UploadFile(ctx, "unused"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := rubika.FetchStatus(ctx, ids); err != nil || len(got) != len(ids) {
+		t.Fatal("Rubika status failed", err)
+	}
+	splus := maybeMockSplusClient(nil, true)
+	if !splus.SupportsStatusTracking() {
+		t.Fatal("Splus mock does not support status")
+	}
+	if _, err := splus.UploadFile(ctx, "", "unused"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := splus.FetchStatus(ctx, ids); err != nil || len(got) != len(ids) {
+		t.Fatal("Splus status failed", err)
+	}
+}
+
+func TestMockCandooStatusCorrelatesCustomerIDs(t *testing.T) {
+	provider := maybeMockSMSProvider(NewCandooSMSProvider(config.CandooSMSConfig{}), true)
+	ids := []string{"101", "102", "103"}
+	result, err := provider.FetchStatus(context.Background(), ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing := missingExternalSMSStatusLookupIDs(models.SMSProviderCandoo, ids, result.Items); len(missing) != 0 {
+		t.Fatalf("mock statuses missing customer IDs: %v", missing)
 	}
 }
 
