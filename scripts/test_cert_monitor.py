@@ -5,6 +5,13 @@ import cert_monitor
 
 
 class CertMonitorSMSTests(unittest.TestCase):
+    def test_mock_alert_never_contacts_provider(self):
+        config = {"EXTERNAL_SERVICES_MODE": "mock"}
+        cert_monitor._validate_sms_config(config)
+        with mock.patch("cert_monitor.requests.post") as post:
+            cert_monitor.send_sms("989121234567", "alert", config, 5)
+        post.assert_not_called()
+
     def test_payamsms_uses_oauth_and_payamsms_send_endpoint(self):
         token_response = mock.MagicMock()
         token_response.json.return_value = {"access_token": "access-token"}
@@ -64,7 +71,9 @@ class CertMonitorSMSTests(unittest.TestCase):
         with mock.patch("cert_monitor.requests.post", return_value=response) as post:
             cert_monitor.send_sms("989121234567", "certificate alert", config, 5)
 
-        self.assertEqual(post.call_args.args[0], "https://sms.example.com/api/v3.0.1/send")
+        self.assertEqual(
+            post.call_args.args[0], "https://sms.example.com/api/v3.0.1/send"
+        )
         self.assertEqual(post.call_args.kwargs["headers"]["x-api-key"], "api-key")
 
 
