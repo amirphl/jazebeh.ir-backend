@@ -537,7 +537,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="validate/build only; do not connect to or modify Redis",
     )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="confirm production Redis updates; default is dry-run",
+    )
     args = parser.parse_args(argv)
+    from guard_environment import environment_banner, require_production_confirmation
+
+    if args.execute and args.dry_run:
+        parser.error("--execute and --dry-run cannot be combined")
+    args.dry_run = not args.execute
+    if args.execute:
+        require_production_confirmation(True)
+    else:
+        environment_banner()
     args.redis_url = os.getenv("CACHE_REDIS_URL")
     if args.redis_db is not None and args.redis_db < 0:
         parser.error("--redis-db must be greater than or equal to zero")
