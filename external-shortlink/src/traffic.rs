@@ -13,7 +13,10 @@ pub fn is_automated_request(user_agent: &str, client_ip: &str) -> bool {
         return true;
     }
     match client_ip.parse::<Ipv4Addr>() {
-        Ok(ip) => matches!(ip.octets(), [66, 249, _, _] | [74, 125, _, _]),
+        Ok(ip) => matches!(
+            ip.octets(),
+            [66, 102, _, _] | [66, 249, _, _] | [74, 125, _, _] | [192, 178, _, _]
+        ),
         Err(_) => false,
     }
 }
