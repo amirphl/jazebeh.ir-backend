@@ -1287,7 +1287,7 @@ func (h *CampaignHandler) CalculateCampaignCostV2(c fiber.Ctx) error {
 // @Produce json
 // @Param page query int true "Page number"
 // @Param limit query int true "Items per page (max 100)"
-// @Param orderby query string false "Order by (newest|oldest)" default(newest)
+// @Param orderby query string false "Order by (newest|oldest|phase_test_first|phase_execution_first|highest_click_rate|lowest_click_rate|schedule_at_asc|schedule_at_desc)" default(newest)
 // @Param title query string false "Filter by title (contains)"
 // @Param status query string false "Filter by status (initiated|in-progress|waiting-for-approval|approved|rejected|running|executed|expired|cancelled|cancelled-by-admin)"
 // @Success 200 {object} dto.APIResponse{data=dto.ListCampaignsResponse}
