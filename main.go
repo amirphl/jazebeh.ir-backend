@@ -432,6 +432,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	bundleActionRepo := repository.NewBundleActionRepository(db)
 	shortLinkRepo := repository.NewShortLinkRepository(db)
 	adminShortLinkUploadJobRepo := repository.NewAdminShortLinkUploadJobRepository(db)
+	campaignAudienceReportJobRepo := repository.NewCampaignAudienceReportJobRepository(db)
 	shortLinkClickRepo := repository.NewShortLinkClickRepository(db)
 	externalShortLinkSyncRepo := repository.NewExternalShortLinkSyncRepository(db)
 	tagTestPerformanceRepo := repository.NewTagTestPerformanceRepository(db)
@@ -742,13 +743,14 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	profileFlow := businessflow.NewProfileFlow(customerRepo)
 
 	segmentPriceFactorFlow := businessflow.NewSegmentPriceFactorFlow(segmentPriceFactorRepo, audienceSpecRepo)
+	campaignAudienceReportJobFlow := businessflow.NewCampaignAudienceReportJobFlow(campaignAudienceReportJobRepo, campaignRepo, customerRepo, auditRepo, db, cfg.Scheduler.CampaignAudienceReportStorageRoot, cfg.Scheduler.CampaignAudienceReportMaxRows, cfg.Scheduler.CampaignAudienceReportMaxOutputBytes, cfg.Scheduler.CampaignAudienceReportMaxJobsPerCustomer)
 
 	accessControlFlow := businessflow.NewAccessControlFlow(adminRepo, repository.NewACLChangeRequestRepository(db), auditRepo)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(signupFlow, loginFlow)
 	bundleHandler := handlers.NewBundleHandler(bundleFlow, bundleTagEvaluationFlow, bundleActionFlow)
-	campaignHandler := handlers.NewCampaignHandler(campaignFlow, smartTargetingFlow, smartTargetingCapacityFlow, bundleActionFlow)
+	campaignHandler := handlers.NewCampaignHandler(campaignFlow, smartTargetingFlow, smartTargetingCapacityFlow, bundleActionFlow, campaignAudienceReportJobFlow)
 	paymentHandler := handlers.NewPaymentHandler(paymentFlow)
 	paymentAdminHandler := handlers.NewPaymentAdminHandler(paymentAdminFlow)
 	cryptoPaymentHandler := handlers.NewCryptoPaymentHandler(cryptoPaymentFlow, cfg)
@@ -1048,6 +1050,11 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			cfg.Scheduler.BundleActionFileSchedulerLeaseDuration,
 		)
 		stopFuncs = append(stopFuncs, bundleActionScheduler.Start(context.Background()))
+	}
+
+	if cfg.Scheduler.CampaignAudienceReportSchedulerEnabled {
+		reportScheduler := scheduler.NewCampaignAudienceReportScheduler(campaignAudienceReportJobFlow, log.Default(), cfg.Scheduler.CampaignAudienceReportSchedulerInterval, cfg.Scheduler.CampaignAudienceReportJobTimeout, cfg.Scheduler.CampaignAudienceReportLeaseDuration, cfg.Scheduler.CampaignAudienceReportMaxParallelRuns)
+		stopFuncs = append(stopFuncs, reportScheduler.Start(context.Background()))
 	}
 
 	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
