@@ -252,7 +252,7 @@ func NewBundleTagEvaluationFlow(
 		readRepo:           readRepo,
 		db:                 db,
 		cfg:                cfg,
-		newClient:          services.NewSmartTagOpenAIClient,
+		newClient:          (services.ExternalFactory{Mock: cfg.OpenAI.Mock}).OpenAI,
 		requestPacer:       newBundleTagEvaluationRequestPacer(cfg.OpenAI.MaxRequestsPerMinute),
 	}
 }
