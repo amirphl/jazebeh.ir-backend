@@ -44,6 +44,8 @@ Use these files when documentation and implementation differ:
 | [Production security checklist](PRODUCTION_SECURITY_CHECKLIST.md) | Implementation-aware host, application, container, and operational review |
 | [Multi-server deployment](MULTI_SERVER_DEPLOYMENT.md) | Supported one-stack-per-host model and promotion/cutover guidance |
 | [Selective PostgreSQL backup/restore](SELECTIVE_POSTGRES_BACKUP_RESTORE_README.md) | Four-table local dataset export with phone-number anonymization |
+| [Jazebeh audience CSV import runbook](JAZEBEH_AUDIENCE_CSV_IMPORT_RUNBOOK.md) | Production procedure for validating, importing, monitoring, and verifying large mixed new/update audience exports |
+| [Resumable audience CSV batch import](JAZEBEH_AUDIENCE_CSV_BATCH_IMPORT_RUNBOOK.md) | Nightly 100,000-row atomic audience upserts that retain checkpointed progress while application services remain running |
 | [Smart Targeting API](smart-targeting-api.md) | Tag selection, exact capacity, Test sampling, and Execution ordering |
 | [Normal-targeting campaign diagnostics](normal-targeting-campaign-diagnostics/) | Reporting and validation queries for standard campaign selection and delivery |
 | [Bale integration](bale.md) | Implemented Najva v2/Safir v3 client, batching, uploads, status, and retries |
