@@ -1,0 +1,3 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_processed_campaigns_current_campaign_selection;
+DROP INDEX CONCURRENTLY IF EXISTS idx_campaign_audience_tag_bundle_campaign_audience;
+DROP INDEX CONCURRENTLY IF EXISTS idx_bundle_audience_members_bundle_selection_audience;
