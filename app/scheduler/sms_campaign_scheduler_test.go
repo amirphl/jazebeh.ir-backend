@@ -237,7 +237,7 @@ func (s *stubSMSCampaignStatusJobRepo) Update(ctx context.Context, job *models.C
 	return nil
 }
 
-func TestScheduleStatusCheckJobsSchedulesCandooThirdCheckAt12Hours(t *testing.T) {
+func TestScheduleStatusCheckJobsSchedulesCandooFinalCheckAt18Hours(t *testing.T) {
 	repo := &stubSMSCampaignStatusJobRepo{}
 	scheduler := &SMSCampaignScheduler{jobRepo: repo}
 
@@ -247,15 +247,15 @@ func TestScheduleStatusCheckJobsSchedulesCandooThirdCheckAt12Hours(t *testing.T)
 	if len(repo.batched) != 1 {
 		t.Fatalf("Candoo status job batches = %d, want 1", len(repo.batched))
 	}
-	if got := len(repo.batched[0]); got != 5 {
-		t.Fatalf("Candoo status jobs = %d, want 5", got)
+	if got := len(repo.batched[0]); got != 6 {
+		t.Fatalf("Candoo status jobs = %d, want 6", got)
 	}
-	if got := repo.batched[0][4].ScheduledAt.Sub(repo.batched[0][4].CreatedAt); got != 12*time.Hour {
-		t.Fatalf("Candoo final status job delay = %s, want 12h", got)
+	if got := repo.batched[0][5].ScheduledAt.Sub(repo.batched[0][5].CreatedAt); got != 18*time.Hour {
+		t.Fatalf("Candoo final status job delay = %s, want 18h", got)
 	}
 }
 
-func TestScheduleStatusCheckJobsKeeps30HourPayamSMSCheck(t *testing.T) {
+func TestScheduleStatusCheckJobsKeeps88HourPayamSMSCheck(t *testing.T) {
 	repo := &stubSMSCampaignStatusJobRepo{}
 	scheduler := &SMSCampaignScheduler{jobRepo: repo}
 
@@ -265,11 +265,11 @@ func TestScheduleStatusCheckJobsKeeps30HourPayamSMSCheck(t *testing.T) {
 	if len(repo.batched) != 1 {
 		t.Fatalf("PayamSMS status job batches = %d, want 1", len(repo.batched))
 	}
-	if got := len(repo.batched[0]); got != 5 {
-		t.Fatalf("PayamSMS status jobs = %d, want 5", got)
+	if got := len(repo.batched[0]); got != 6 {
+		t.Fatalf("PayamSMS status jobs = %d, want 6", got)
 	}
-	if got := repo.batched[0][4].ScheduledAt.Sub(repo.batched[0][4].CreatedAt); got != 30*time.Hour {
-		t.Fatalf("PayamSMS final status job delay = %s, want 30h", got)
+	if got := repo.batched[0][5].ScheduledAt.Sub(repo.batched[0][5].CreatedAt); got != 88*time.Hour {
+		t.Fatalf("PayamSMS final status job delay = %s, want 88h", got)
 	}
 }
 
