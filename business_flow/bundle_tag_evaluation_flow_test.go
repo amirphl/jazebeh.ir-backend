@@ -83,11 +83,11 @@ func TestExecutionConfigurationUsesRunSnapshot(t *testing.T) {
 
 func TestUTCDayBounds(t *testing.T) {
 	input := time.Date(2026, time.September, 2, 23, 59, 59, 0, time.FixedZone("UTC+3:30", 3*60*60+30*60))
-	start, end := utcDayBounds(input)
+	start, end := bundleTagEvaluationUTCDayBounds(input)
 	wantStart := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
 	wantEnd := time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC)
 	if !start.Equal(wantStart) || !end.Equal(wantEnd) {
-		t.Fatalf("utcDayBounds(%s) = (%s, %s), want (%s, %s)", input, start, end, wantStart, wantEnd)
+		t.Fatalf("bundleTagEvaluationUTCDayBounds(%s) = (%s, %s), want (%s, %s)", input, start, end, wantStart, wantEnd)
 	}
 }
 
@@ -106,7 +106,7 @@ func TestRunBatchesConcurrentlyBoundsParallelism(t *testing.T) {
 	var calls atomic.Int32
 
 	go func() {
-		done <- runBatchesConcurrently(context.Background(), batches, 2, func(ctx context.Context, _ *models.BundleTagEvaluationBatch) error {
+		done <- runBundleTagEvaluationBatchesConcurrently(context.Background(), batches, 2, func(ctx context.Context, _ *models.BundleTagEvaluationBatch) error {
 			current := active.Add(1)
 			defer active.Add(-1)
 			calls.Add(1)
@@ -148,7 +148,7 @@ func TestRunBatchesConcurrentlyBoundsParallelism(t *testing.T) {
 func TestRunBatchesConcurrentlyPreservesRootError(t *testing.T) {
 	rootErr := errors.New("invalid OpenAI batch response")
 	batches := []*models.BundleTagEvaluationBatch{{BatchNumber: 1}, {BatchNumber: 2}}
-	err := runBatchesConcurrently(context.Background(), batches, 2, func(ctx context.Context, batch *models.BundleTagEvaluationBatch) error {
+	err := runBundleTagEvaluationBatchesConcurrently(context.Background(), batches, 2, func(ctx context.Context, batch *models.BundleTagEvaluationBatch) error {
 		if batch.BatchNumber == 2 {
 			return rootErr
 		}
@@ -164,7 +164,7 @@ func TestRunBatchesConcurrentlyPreservesRootError(t *testing.T) {
 }
 
 func TestOpenAIRequestPacerSpacesRequestsAndHonorsCancellation(t *testing.T) {
-	pacer := newOpenAIRequestPacer(120)
+	pacer := newBundleTagEvaluationRequestPacer(120)
 	if pacer == nil || pacer.interval != 500*time.Millisecond {
 		t.Fatalf("unexpected request interval: %+v", pacer)
 	}
@@ -180,8 +180,8 @@ func TestOpenAIRequestPacerSpacesRequestsAndHonorsCancellation(t *testing.T) {
 }
 
 func TestPacedOpenAIClientPausesAllRequestsAfterRateLimit(t *testing.T) {
-	pacer := newOpenAIRequestPacer(60)
-	client := &pacedOpenAIClient{
+	pacer := newBundleTagEvaluationRequestPacer(60)
+	client := &bundleTagEvaluationPacedOpenAIClient{
 		pacer: pacer,
 		delegate: smartTagOpenAIClientFunc(func(context.Context, map[string]any) (*services.SmartTagOpenAIResult, error) {
 			return &services.SmartTagOpenAIResult{RetryAfter: 2 * time.Second}, &services.SmartTagOpenAIHTTPError{
@@ -332,7 +332,7 @@ func TestExtractOpenAIResponseText(t *testing.T) {
 
 func TestNormalizePersona(t *testing.T) {
 	input := "  cafe\u0301\r\nshop  "
-	got := normalizePersona(input)
+	got := normalizeBundleTagEvaluationPersona(input)
 	want := "caf\u00e9\nshop"
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
