@@ -153,7 +153,7 @@ Note: `make run-dev-simple` currently expects `scripts/run-dev.sh`, which is not
 ## Database Migrations
 
 Migrations live in `migrations/`; the current schema head is
-`0155_create_execution_audience_calculations.sql`. The intended aggregate files are:
+`0166_create_campaign_audience_report_jobs.sql`. The intended aggregate files are:
 
 - `migrations/run_all_up.sql`
 - `migrations/run_all_down.sql`
