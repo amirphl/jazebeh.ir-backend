@@ -38,6 +38,8 @@ type Router interface {
 // FiberRouter implements Router using Fiber v3
 type FiberRouter struct {
 	app                            *fiber.App
+	developmentOrigins             []string
+	mockPayments                   bool
 	authHandler                    handlers.AuthHandlerInterface
 	bundleHandler                  handlers.BundleHandlerInterface
 	campaignHandler                handlers.CampaignHandlerInterface
@@ -69,6 +71,13 @@ type FiberRouter struct {
 	platformSettingsHandler        handlers.PlatformSettingsHandlerInterface
 	platformSettingsAdminHandler   handlers.PlatformSettingsAdminHandlerInterface
 	accessControlHandler           handlers.AccessControlHandlerInterface
+}
+
+func developmentCORSOrigins(environment string, configured []string) []string {
+	if strings.EqualFold(environment, "development") {
+		return append([]string{}, configured...)
+	}
+	return nil
 }
 
 // NewFiberRouter creates a new Fiber router
@@ -105,6 +114,9 @@ func NewFiberRouter(
 	platformSettingsAdminHandler handlers.PlatformSettingsAdminHandlerInterface,
 	accessControlHandler handlers.AccessControlHandlerInterface,
 	serverCfg config.ServerConfig,
+	environment string,
+	securityCfg config.SecurityConfig,
+	mockPayments bool,
 ) Router {
 	// Configure Fiber app
 	app := fiber.New(fiber.Config{
@@ -128,6 +140,8 @@ func NewFiberRouter(
 
 	return &FiberRouter{
 		app:                            app,
+		developmentOrigins:             developmentCORSOrigins(environment, securityCfg.AllowedOrigins),
+		mockPayments:                   mockPayments,
 		authHandler:                    authHandler,
 		bundleHandler:                  bundleHandler,
 		campaignHandler:                campaignHandler,
@@ -462,7 +476,7 @@ func (r *FiberRouter) SetupRoutes() {
 	// Charge wallet endpoint (protected with authentication)
 	payments.Post("/charge-wallet", r.authMiddleware.Authenticate(), r.paymentHandler.ChargeWallet)
 	// Payment callback endpoint (unprotected - called by Atipay)
-	payments.Post("/callback/:invoice_number", r.paymentHandler.PaymentCallback)
+	r.registerPaymentCallback(payments)
 	// Transaction history endpoint (protected with authentication)
 	payments.Get("/history", r.authMiddleware.Authenticate(), r.paymentHandler.GetTransactionHistory)
 	// Deposit receipt submission & listing
@@ -567,6 +581,14 @@ func (r *FiberRouter) SetupRoutes() {
 	log.Println("Routes configured successfully")
 }
 
+func (r *FiberRouter) registerPaymentCallback(payments fiber.Router) {
+	if r.mockPayments {
+		payments.Post("/callback/:invoice_number", r.authMiddleware.Authenticate(), r.paymentHandler.PaymentCallback)
+	} else {
+		payments.Post("/callback/:invoice_number", r.paymentHandler.PaymentCallback)
+	}
+}
+
 // SetupMiddleware configures global middleware
 func (r *FiberRouter) setupMiddleware() {
 	// Request ID middleware - must be first
@@ -601,16 +623,17 @@ func (r *FiberRouter) setupMiddleware() {
 		XPermittedCrossDomain:     "none",
 	}))
 
-	// CORS middleware with production settings
+	// Preserve the existing production CORS policy; development uses its configured origins.
+	origins := []string{
+		"https://yamata-no-orochi.com", "https://api.yamata-no-orochi.com",
+		"https://admin.yamata-no-orochi.com", "https://monitoring.yamata-no-orochi.com",
+		"https://app.yamata-no-orochi.com", "https://*.j0in.ir", "https://*.jo1n.ir",
+	}
+	if r.developmentOrigins != nil {
+		origins = r.developmentOrigins
+	}
 	r.app.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"https://yamata-no-orochi.com",
-			"https://api.yamata-no-orochi.com",
-			"https://admin.yamata-no-orochi.com",
-			"https://monitoring.yamata-no-orochi.com",
-			"https://app.yamata-no-orochi.com",
-			"https://*.j0in.ir",
-		},
+		AllowOrigins: origins,
 		AllowMethods: []string{
 			"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS",
 		},
@@ -822,7 +845,7 @@ func (r *FiberRouter) serveSwaggerUI(c fiber.Ctx) error {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yamata no Orochi API - Swagger UI</title>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+    <link rel="stylesheet" type="text/css" href="/swagger-ui-assets/swagger-ui.css" />
     <style>
         html {
             box-sizing: border-box;
@@ -840,8 +863,8 @@ func (r *FiberRouter) serveSwaggerUI(c fiber.Ctx) error {
 </head>
 <body>
     <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
-    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+    <script src="/swagger-ui-assets/swagger-ui-bundle.js"></script>
+    <script src="/swagger-ui-assets/swagger-ui-standalone-preset.js"></script>
     <script>
         window.onload = function() {
             const ui = SwaggerUIBundle({
