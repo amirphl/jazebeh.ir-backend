@@ -10,6 +10,10 @@
 # no other process may insert audience_profiles or consume its ID sequence.
 
 set -g BATCH_SIZE 100000
+# The observed production batch time is about two minutes. Do not start a new
+# transaction unless there are at least three minutes before the hard cutoff.
+# This leaves a one-minute safety margin for variable load and commit latency.
+set -g MIN_BATCH_TIMEOUT_MS 180000
 set -g EXPECTED_HEADER 'id,uid,phone_number,tags,color,created_at,updated_at,normalized_score'
 set -g POSTGRES_CONTAINER yamata-postgres-beta
 set -g APP_NAME yamata-audience-batch-csv-import
@@ -36,8 +40,9 @@ function in_tehran_window
 end
 
 function batch_timeout_ms
-    # End a batch before 08:00 Tehran time. If there is not at least 30
-    # seconds left, do not start it. A timeout rolls back that whole batch.
+    # End a batch before 08:00 Tehran time. The caller does not start another
+    # batch unless the resulting budget exceeds MIN_BATCH_TIMEOUT_MS. A SQL
+    # timeout remains a final safety net for an unexpectedly slow batch.
     set -l hour (env TZ=Asia/Tehran date +%H)
     set -l cutoff
     if test "$hour" = 23
@@ -258,8 +263,8 @@ tail -n +"$next_line" -- "$csv_file" | begin
 
     function commit_batch
         set -l timeout_ms (batch_timeout_ms)
-        if test "$timeout_ms" -le 0
-            log "WINDOW_CLOSED batch=$IMPORT_BATCH_NUMBER completed_rows=$IMPORT_COMPLETED_ROWS; no new batch started."
+        if test "$timeout_ms" -lt "$MIN_BATCH_TIMEOUT_MS"
+            log "WINDOW_CLOSED batch=$IMPORT_BATCH_NUMBER completed_rows=$IMPORT_COMPLETED_ROWS remaining_timeout_ms=$timeout_ms minimum_timeout_ms=$MIN_BATCH_TIMEOUT_MS; no new batch started."
             return 10
         end
 
@@ -321,12 +326,22 @@ tail -n +"$next_line" -- "$csv_file" | begin
         printf '%s\n' "$row" >>"$IMPORT_BATCH_FILE"; or die "Could not append batch file: $IMPORT_BATCH_FILE"
         set -g IMPORT_ROWS_IN_BATCH (math "$IMPORT_ROWS_IN_BATCH + 1")
         if test "$IMPORT_ROWS_IN_BATCH" -eq "$BATCH_SIZE"
-            commit_batch; or exit $status
+            commit_batch
+            set -l commit_status $status
+            if test "$commit_status" -eq 10
+                exit 0
+            end
+            test "$commit_status" -eq 0; or exit "$commit_status"
         end
     end
 
     if test "$IMPORT_ROWS_IN_BATCH" -gt 0
-        commit_batch; or exit $status
+        commit_batch
+        set -l commit_status $status
+        if test "$commit_status" -eq 10
+            exit 0
+        end
+        test "$commit_status" -eq 0; or exit "$commit_status"
     end
     log "IMPORT_COMPLETE batches=$IMPORT_LAST_BATCH rows=$IMPORT_COMPLETED_ROWS"
 end
