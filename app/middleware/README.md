@@ -134,7 +134,7 @@ The `Require*` helpers return principal-specific missing/invalid ID codes. Admin
 
 ## Service-Account Permission Header
 
-`AuthorizationMiddleware.ServiceAccountAuthorize(required)` checks a comma-separated `X-Service-Permissions` header for a specific permission key. It does not authenticate the caller by itself. Only use it behind a trusted service-authentication boundary.
+There is intentionally no header-based service-account authorization middleware. A caller-controlled permissions header is not an identity. Any future service-to-service route must first authenticate a service identity (for example, mTLS or a signed, audience-bound service token) and derive permissions from that identity.
 
 ## Prometheus Metrics
 
