@@ -157,9 +157,11 @@ var (
 	ErrSystemWalletBalanceSnapshotNotFound = errors.New("system wallet balance snapshot not found")
 
 	// Filter errors
-	ErrInvalidPage           = errors.New("page must be at least 1")
-	ErrInvalidPageSize       = errors.New("page size must be between 1 and 100")
-	ErrStartDateAfterEndDate = errors.New("start date cannot be after end date")
+	ErrInvalidPage             = errors.New("page must be at least 1")
+	ErrInvalidPageSize         = errors.New("page size must be between 1 and 100")
+	ErrStartDateAfterEndDate   = errors.New("start date cannot be after end date")
+	ErrReportDateRangeRequired = errors.New("a start and end date are required")
+	ErrReportDateRangeTooLarge = errors.New("report date range must not exceed 31 days")
 
 	// Agency discount errors
 	ErrDiscountRateOutOfRange              = errors.New("discount rate must be between 0 and 0.5")
