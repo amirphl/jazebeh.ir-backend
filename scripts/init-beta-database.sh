@@ -205,6 +205,20 @@ apply_migrations() {
         last_migration=$(read_migration_tracker) || return 1
         print_status "Last applied migration: $last_migration"
         print_status "Will resume from the next migration after this one"
+    else
+        # A missing filesystem tracker is ambiguous on a populated database:
+        # replaying historical migrations may duplicate data or apply a
+        # destructive historical transformation.  A genuinely new database
+        # has no application tables yet (extensions/functions are fine).
+        local public_tables
+        public_tables=$("${DOCKER[@]}" exec yamata-postgres-beta \
+            psql -X -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -Atc \
+            "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p');")
+        [[ "$public_tables" == 0 ]] || {
+            print_error "Migration tracker is missing but database contains $public_tables public tables"
+            print_error "Refusing to replay historical migrations against an unknown schema state"
+            return 1
+        }
     fi
     
     # Get all migration files
