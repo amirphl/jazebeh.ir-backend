@@ -9062,6 +9062,12 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "Empty response for automated traffic",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "302": {
                         "description": "Redirect",
                         "schema": {
