@@ -55,6 +55,9 @@ type smartTagOpenAIClient struct {
 }
 
 func NewSmartTagOpenAIClient(cfg config.SmartTagOpenAIConfig) (SmartTagOpenAIClient, error) {
+	if cfg.Mock {
+		return mockSmartTagOpenAIClient{model: cfg.Model}, nil
+	}
 	var parsedProxy *url.URL
 	if cfg.HTTPProxy != nil {
 		proxyURL := strings.TrimSpace(*cfg.HTTPProxy)
