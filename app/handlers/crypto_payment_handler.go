@@ -148,7 +148,11 @@ func (h *CryptoPaymentHandler) ManualVerify(c fiber.Ctx) error {
 // @Success 200 {string} string "OK"
 // @Router /api/v1/crypto/providers/{platform}/callback [post]
 func (h *CryptoPaymentHandler) Webhook(c fiber.Ctx) error {
-	if !h.cfg.Crypto.Enabled {
+	// A mock provider is driven exclusively by its local client.  Do not expose
+	// a provider-shaped callback in mock environments: the real callback is
+	// unauthenticated by design and an empty development API key would otherwise
+	// be a predictable HMAC secret.
+	if !h.cfg.Crypto.Enabled || h.cfg.MockExternal {
 		return c.Status(fiber.StatusNotFound).SendString("NOT_SUPPORTED")
 	}
 	platform := c.Params("platform")
