@@ -14,6 +14,12 @@ const LINK_COLUMNS: &str = "
     scenario_id, scenario_name, phone_number, is_test, source_created_at, source_updated_at
 ";
 
+// Retention must never turn into a long-running, table-wide DELETE.  A batch
+// is small enough to keep row locks and WAL pressure bounded, while the loop
+// below still lets a scheduled run drain a meaningful backlog.
+const PURGE_BATCH_SIZE: i64 = 5_000;
+const MAX_PURGE_BATCHES_PER_RUN: usize = 20;
+
 #[derive(Clone)]
 pub struct Database {
     pool: PgPool,
@@ -363,17 +369,9 @@ impl Database {
         if !exists {
             return Err(DatabaseError::UnknownAcknowledgement);
         }
-        sqlx::query(
-            "
-            UPDATE clicks
-            SET acknowledged_at = COALESCE(acknowledged_at, CURRENT_TIMESTAMP)
-            WHERE click_id > $1 AND click_id <= $2
-            ",
-        )
-        .bind(current)
-        .bind(through_click_id)
-        .execute(&mut *transaction)
-        .await?;
+        // The import cursor is the acknowledgement record. Updating every
+        // click in a page turns a cheap cursor advance into thousands of
+        // indexed writes and can starve inserts into the durable spool.
         let acknowledged = sqlx::query_scalar::<_, i64>(
             "
             UPDATE click_acknowledgements
@@ -391,14 +389,47 @@ impl Database {
 
     pub async fn purge_acknowledged(&self, retention_days: i64) -> Result<u64, DatabaseError> {
         let cutoff = Utc::now() - chrono::Duration::days(retention_days);
-        let result = self
-            .with_timeout(
-                sqlx::query("DELETE FROM clicks WHERE acknowledged_at < $1")
+        let mut purged = 0;
+
+        for _ in 0..MAX_PURGE_BATCHES_PER_RUN {
+            // SKIP LOCKED makes retention yield to a concurrent importer or
+            // diagnostic query rather than consuming the entire command
+            // timeout waiting for it. Each DELETE is its own transaction.
+            let result = self
+                .with_timeout(
+                    sqlx::query(
+                        "
+                        WITH deletable AS (
+                            SELECT click_id
+                            FROM clicks
+                            WHERE click_id <= (
+                                SELECT through_click_id
+                                FROM click_acknowledgements
+                                WHERE singleton = TRUE
+                            )
+                              AND clicked_at < $1
+                            ORDER BY click_id
+                            LIMIT $2
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        DELETE FROM clicks AS click
+                        USING deletable
+                        WHERE click.click_id = deletable.click_id
+                        ",
+                    )
                     .bind(cutoff)
+                    .bind(PURGE_BATCH_SIZE)
                     .execute(&self.pool),
-            )
-            .await?;
-        Ok(result.rows_affected())
+                )
+                .await?;
+            let deleted = result.rows_affected();
+            purged += deleted;
+            if deleted < PURGE_BATCH_SIZE as u64 {
+                break;
+            }
+        }
+
+        Ok(purged)
     }
 
     pub async fn database_size(&self) -> Result<i64, DatabaseError> {
