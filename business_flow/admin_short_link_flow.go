@@ -22,6 +22,7 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/repository"
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
+	"gorm.io/gorm"
 )
 
 const (
@@ -40,7 +41,7 @@ func permanentUpload(err error) error        { return permanentUploadError{err: 
 // For each row with a valid long_link, a short link will be generated and inserted
 // The generated short URL format is: <short_link_domain>/s/<uid>
 // Note: This flow assumes a public redirect route exists at /s/:uid
-// UIDs are generated sequentially from "0000" upward using base36 digits (0-9 then a-z), expanding up to 5 chars (max "zzzzz").
+// Newly generated UIDs use one shared, fixed-width six-character allocator.
 // This function skips rows with empty long_link values
 // It returns a summary with counts and the created short links
 // Validations are minimal; consumers may validate long_link formats if needed
@@ -62,14 +63,15 @@ type AdminShortLinkFlowImpl struct {
 	auditRepo repository.AuditLogRepository
 	publisher ShortLinkMappingPublisher
 	jobRepo   repository.AdminShortLinkUploadJobRepository
+	db        *gorm.DB
 }
 
-func NewAdminShortLinkFlow(repo repository.ShortLinkRepository, clickRepo repository.ShortLinkClickRepository, auditRepo repository.AuditLogRepository, jobRepo repository.AdminShortLinkUploadJobRepository, publishers ...ShortLinkMappingPublisher) AdminShortLinkFlow {
+func NewAdminShortLinkFlow(repo repository.ShortLinkRepository, clickRepo repository.ShortLinkClickRepository, auditRepo repository.AuditLogRepository, jobRepo repository.AdminShortLinkUploadJobRepository, db *gorm.DB, publishers ...ShortLinkMappingPublisher) AdminShortLinkFlow {
 	var publisher ShortLinkMappingPublisher
 	if len(publishers) > 0 {
 		publisher = publishers[0]
 	}
-	return &AdminShortLinkFlowImpl{repo: repo, clickRepo: clickRepo, auditRepo: auditRepo, publisher: publisher, jobRepo: jobRepo}
+	return &AdminShortLinkFlowImpl{repo: repo, clickRepo: clickRepo, auditRepo: auditRepo, publisher: publisher, jobRepo: jobRepo, db: db}
 }
 
 func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(ctx context.Context, csvReader io.Reader, shortLinkDomain string, scenarioName string) (*dto.AdminCreateShortLinksResponse, error) {
@@ -223,31 +225,15 @@ func (f *AdminShortLinkFlowImpl) processJob(ctx context.Context, id string) (*mo
 		return f.failJob(ctx, job, err)
 	}
 	expectedLinks := totalRows - skipped
+	allocationProgressPersisted := false
 	if len(links) > 0 && len(links) != expectedLinks {
 		return f.failJob(ctx, job, permanentUpload(fmt.Errorf("short-link allocation is incomplete: got %d rows, expected %d", len(links), expectedLinks)))
 	}
 	if len(links) == 0 {
-		lockShortLinkGen()
-		allocationLocked := true
-		defer func() {
-			if allocationLocked {
-				unlockShortLinkGen()
-			}
-		}()
-		last, e := f.repo.GetMaxUIDSince(ctx, time.Date(2025, 11, 10, 15, 45, 11, 401492000, time.UTC))
-		if e != nil {
-			return f.failJob(ctx, job, e)
+		if f.db == nil {
+			return f.failJob(ctx, job, permanentUpload(errors.New("short-link allocator database is not configured")))
 		}
-		var seq uint64
-		if last != "" {
-			seq, e = decodeBase36(last)
-			if e != nil {
-				return f.failJob(ctx, job, permanentUpload(e))
-			}
-			seq++
-		}
-		batch := make([]*models.ShortLink, 0, 500)
-		pos := 0
+		longLinks := make([]string, 0, expectedLinks)
 		for {
 			rec, e := reader.Read()
 			if e == io.EOF {
@@ -262,27 +248,60 @@ func (f *AdminShortLinkFlowImpl) processJob(ctx context.Context, id string) (*mo
 			if e = validateAdminLongLink(rec[longIdx]); e != nil {
 				return f.failJob(ctx, job, permanentUpload(e))
 			}
-			uid, e := formatSequentialUID(seq)
-			if e != nil {
-				return f.failJob(ctx, job, permanentUpload(e))
+			longLinks = append(longLinks, strings.TrimSpace(rec[longIdx]))
+		}
+		if len(longLinks) != expectedLinks {
+			return f.failJob(ctx, job, permanentUpload(fmt.Errorf("short-link allocation input changed: got %d rows, expected %d", len(longLinks), expectedLinks)))
+		}
+		allocationErr := repository.WithTransaction(ctx, f.db, func(txCtx context.Context) error {
+			codes, err := f.repo.ReserveSequentialUIDs(txCtx, len(longLinks))
+			if err != nil {
+				return err
 			}
-			seq++
-			sid := job.ScenarioID
-			sn := job.ScenarioName
-			p := pos
-			batch = append(batch, &models.ShortLink{UID: uid, ScenarioID: &sid, ScenarioName: &sn, LongLink: strings.TrimSpace(rec[longIdx]), ShortLink: job.Domain + "/" + uid, AllocationKey: &job.AllocationKey, AllocationPosition: &p})
-			pos++
+			batch := make([]*models.ShortLink, 0, len(longLinks))
+			for position, longLink := range longLinks {
+				scenarioID := job.ScenarioID
+				scenarioName := job.ScenarioName
+				allocationPosition := position
+				batch = append(batch, &models.ShortLink{UID: codes[position], ScenarioID: &scenarioID, ScenarioName: &scenarioName, LongLink: longLink, ShortLink: job.Domain + "/" + codes[position], AllocationKey: &job.AllocationKey, AllocationPosition: &allocationPosition})
+			}
+			job.Created = len(batch)
+			return f.jobRepo.PersistAllocation(txCtx, job, batch)
+		})
+		if allocationErr != nil {
+			// A second worker can lose the allocation-key race after waiting on
+			// the allocator row. Its counter update rolls back; the next lookup
+			// below reuses the committed rows.
+			links, err = f.repo.ByAllocationKey(ctx, job.AllocationKey)
+			if err == nil && len(links) == expectedLinks {
+				job.Created = len(links)
+			} else {
+				if err != nil {
+					return f.failJob(ctx, job, err)
+				}
+				if errors.Is(allocationErr, repository.ErrShortLinkUIDSequenceExhausted) {
+					return f.failJob(ctx, job, permanentUpload(allocationErr))
+				}
+				return f.failJob(ctx, job, allocationErr)
+			}
+		} else {
+			allocationProgressPersisted = true
 		}
-		if e = f.jobRepo.PersistAllocation(ctx, job, batch); e != nil {
-			return f.failJob(ctx, job, e)
+		if len(links) == 0 {
+			links, err = f.repo.ByAllocationKey(ctx, job.AllocationKey)
 		}
-		links, e = f.repo.ByAllocationKey(ctx, job.AllocationKey)
-		if e != nil {
-			return f.failJob(ctx, job, e)
+		if err != nil {
+			return f.failJob(ctx, job, err)
 		}
-		job.Created = len(links)
-		unlockShortLinkGen()
-		allocationLocked = false
+	}
+	// Allocation may have been committed by a prior attempt whose external
+	// publication failed. Persist its counters before retrying publication so
+	// a completed retry cannot report created = 0.
+	job.Created = len(links)
+	if !allocationProgressPersisted {
+		if err := f.jobRepo.PersistAllocation(ctx, job, nil); err != nil {
+			return f.failJob(ctx, job, err)
+		}
 	}
 	for start := 0; start < len(links); start += 500 {
 		end := start + 500
@@ -359,58 +378,6 @@ func inspectAdminCSV(data []byte, longIdx int) (totalRows, skipped int, err erro
 			return 0, 0, validationErr
 		}
 	}
-}
-
-func encodeBase36(n uint64) string {
-	const digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-	if n == 0 {
-		return "0"
-	}
-	buf := make([]byte, 0, 16)
-	for n > 0 {
-		r := n % 36
-		buf = append(buf, digits[r])
-		n /= 36
-	}
-	// reverse in place
-	for i, j := 0, len(buf)-1; i < j; i, j = i+1, j-1 {
-		buf[i], buf[j] = buf[j], buf[i]
-	}
-	return string(buf)
-}
-
-func decodeBase36(s string) (uint64, error) {
-	var n uint64
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		var v int
-		switch {
-		case c >= '0' && c <= '9':
-			v = int(c - '0')
-		case c >= 'a' && c <= 'z':
-			v = int(c-'a') + 10
-		case c >= 'A' && c <= 'Z':
-			v = int(c-'A') + 10
-		default:
-			return 0, fmt.Errorf("invalid base36 character: %q", c)
-		}
-		if v >= 36 {
-			return 0, fmt.Errorf("invalid base36 value: %d", v)
-		}
-		n = n*36 + uint64(v)
-	}
-	return n, nil
-}
-
-func formatSequentialUID(seq uint64) (string, error) {
-	s := encodeBase36(seq)
-	if len(s) < 4 {
-		s = strings.Repeat("0", 4-len(s)) + s
-	}
-	if len(s) > 5 {
-		return "", fmt.Errorf("sequence exhausted at %s", s)
-	}
-	return s, nil
 }
 
 func (f *AdminShortLinkFlowImpl) DownloadShortLinksCSV(ctx context.Context, scenarioID uint) (string, []byte, error) {
