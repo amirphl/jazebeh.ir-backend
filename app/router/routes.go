@@ -370,8 +370,6 @@ func (r *FiberRouter) SetupRoutes() {
 	botShortLinks := api.Group("/bot/short-links")
 	botShortLinks.Use(r.authMiddleware.BotAuthenticate())
 	botShortLinks.Use(func(c fiber.Ctx) error { return middleware.RequireBotAuth(c) })
-	botShortLinks.Post("/", r.shortLinkBotHandler.CreateShortLinks)
-	botShortLinks.Post("/one", r.shortLinkBotHandler.CreateShortLink)
 	botShortLinks.Post("/allocate", r.shortLinkBotHandler.AllocateShortLinks)
 
 	// Bot multimedia routes (protected)
