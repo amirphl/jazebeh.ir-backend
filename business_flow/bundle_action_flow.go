@@ -58,7 +58,7 @@ func NewBundleActionFlow(repo repository.BundleActionRepository, bundles reposit
 	}
 	return &BundleActionFlowImpl{repo: repo, bundleRepo: bundles, campaignRepo: campaigns, db: db, storageRoot: storageRoot}
 }
-func (s *BundleActionFlowImpl) ownedBundle(ctx context.Context, customerID, bundleID uint) (*models.Bundle, error) {
+func (s *BundleActionFlowImpl) bundleActionOwnedBundle(ctx context.Context, customerID, bundleID uint) (*models.Bundle, error) {
 	b, err := s.bundleRepo.ByID(ctx, bundleID)
 	if err != nil {
 		return nil, err
@@ -68,11 +68,11 @@ func (s *BundleActionFlowImpl) ownedBundle(ctx context.Context, customerID, bund
 	}
 	return b, nil
 }
-func actionFileItemPath(root string, bundleID uint, id int64) string {
+func bundleActionFileStoragePath(root string, bundleID uint, id int64) string {
 	return filepath.Join(root, fmt.Sprintf("%d", bundleID), fmt.Sprintf("%d.xlsx", id))
 }
 func (s *BundleActionFlowImpl) Upload(ctx context.Context, customerID, bundleID uint, name, actionLevel string, source io.Reader) (*models.BundleActionFile, error) {
-	if _, err := s.ownedBundle(ctx, customerID, bundleID); err != nil {
+	if _, err := s.bundleActionOwnedBundle(ctx, customerID, bundleID); err != nil {
 		return nil, err
 	}
 	if strings.ToLower(filepath.Ext(name)) != ".xlsx" {
@@ -94,7 +94,7 @@ func (s *BundleActionFlowImpl) Upload(ctx context.Context, customerID, bundleID 
 	if err := s.repo.Create(ctx, row); err != nil {
 		return nil, err
 	}
-	path := actionFileItemPath(s.storageRoot, bundleID, row.ID)
+	path := bundleActionFileStoragePath(s.storageRoot, bundleID, row.ID)
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return nil, fmt.Errorf("create action storage: %w", err)
 	}
@@ -108,7 +108,7 @@ func (s *BundleActionFlowImpl) Upload(ctx context.Context, customerID, bundleID 
 	return row, nil
 }
 func (s *BundleActionFlowImpl) Get(ctx context.Context, c, b uint, id int64) (*models.BundleActionFile, error) {
-	if _, err := s.ownedBundle(ctx, c, b); err != nil {
+	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
 		return nil, err
 	}
 	x, err := s.repo.ByID(ctx, id)
@@ -118,13 +118,13 @@ func (s *BundleActionFlowImpl) Get(ctx context.Context, c, b uint, id int64) (*m
 	return x, err
 }
 func (s *BundleActionFlowImpl) List(ctx context.Context, c, b uint, page, limit int) ([]*models.BundleActionFile, int64, error) {
-	if _, err := s.ownedBundle(ctx, c, b); err != nil {
+	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
 		return nil, 0, err
 	}
 	return s.repo.List(ctx, b, limit, (page-1)*limit)
 }
 func (s *BundleActionFlowImpl) Delete(ctx context.Context, c, b uint, id int64) error {
-	if _, err := s.ownedBundle(ctx, c, b); err != nil {
+	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
 		return err
 	}
 	x, err := s.repo.ByID(ctx, id)
@@ -140,13 +140,13 @@ func (s *BundleActionFlowImpl) Delete(ctx context.Context, c, b uint, id int64) 
 	return s.repo.RequestDelete(ctx, id, c, utils.UTCNow())
 }
 func (s *BundleActionFlowImpl) Summary(ctx context.Context, c, b uint) (*models.BundleActionSummary, error) {
-	if _, err := s.ownedBundle(ctx, c, b); err != nil {
+	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
 		return nil, err
 	}
 	return s.repo.Summary(ctx, b)
 }
 func (s *BundleActionFlowImpl) TagMetrics(ctx context.Context, c, b uint) ([]*models.BundleActionTagMetric, error) {
-	if _, err := s.ownedBundle(ctx, c, b); err != nil {
+	if _, err := s.bundleActionOwnedBundle(ctx, c, b); err != nil {
 		return nil, err
 	}
 	return s.repo.TagMetrics(ctx, b)
@@ -172,7 +172,7 @@ func (s *BundleActionFlowImpl) ExecuteBundleActionFile(ctx context.Context, id i
 	if file.Status != models.BundleActionFileProcessing {
 		return nil
 	}
-	uids, total, dupes, invalid, err := parseBundleActionXLSX(file.StoragePath)
+	uids, total, dupes, invalid, err := parseBundleActionFileXLSX(file.StoragePath)
 	if err != nil {
 		_ = s.repo.Fail(context.Background(), id, utils.UTCNow(), "ACTION_FILE_PARSE_FAILED", "The action file could not be parsed")
 		return err
@@ -183,7 +183,7 @@ func (s *BundleActionFlowImpl) ExecuteBundleActionFile(ctx context.Context, id i
 	}
 	return s.repo.Complete(ctx, id, now)
 }
-func parseBundleActionXLSX(path string) (uids []string, total, duplicates, invalid int64, err error) {
+func parseBundleActionFileXLSX(path string) (uids []string, total, duplicates, invalid int64, err error) {
 	f, err := excelize.OpenFile(path, excelize.Options{
 		RawCellValue:      true,
 		UnzipSizeLimit:    maxBundleActionFileUncompressedBytes,
