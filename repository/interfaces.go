@@ -149,7 +149,7 @@ type CampaignRepository interface {
 	GetPendingApproval(ctx context.Context, limit, offset int) ([]*models.Campaign, error)
 	GetScheduledCampaigns(ctx context.Context, from, to time.Time) ([]*models.Campaign, error)
 	AggregateClickCountsByCampaignIDs(ctx context.Context, campaignIDs []uint) (map[uint]int64, error)
-	AggregateClickCountsByCustomerIDs(ctx context.Context, customerIDs []uint) (map[uint]int64, error)
+	AggregateClickCountsByCustomerIDs(ctx context.Context, customerIDs []uint, startDate, endDate time.Time) (map[uint]int64, error)
 	AggregateTotalSentByCustomerIDs(ctx context.Context, customerIDs []uint) (map[uint]uint64, error)
 }
 
@@ -186,7 +186,7 @@ type TransactionRepository interface {
 	// Reports
 	AggregateAgencyTransactionsByCustomers(ctx context.Context, agencyID uint, nameLike string, startDate, endDate *time.Time, orderBy string) ([]*AgencyCustomerTransactionAggregate, error)
 	AggregateAgencyTransactionsByDiscounts(ctx context.Context, agencyID uint, customerID uint, orderBy string) ([]*AgencyCustomerDiscountAggregate, error)
-	AggregateCustomersShares(ctx context.Context, startDate, endDate *time.Time) ([]*CustomerShareAggregate, error)
+	AggregateCustomersShares(ctx context.Context, startDate, endDate *time.Time, limit, offset int) ([]*CustomerShareAggregate, error)
 	AggregateCustomerTransactionsByDiscounts(ctx context.Context, customerID uint, orderBy string) ([]*AgencyCustomerDiscountAggregate, error)
 }
 
