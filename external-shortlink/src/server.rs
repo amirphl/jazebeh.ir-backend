@@ -371,7 +371,10 @@ async fn redirect(
     headers: HeaderMap,
 ) -> Response {
     let started = Instant::now();
-    let response = redirect_inner(&state, code, &headers).await;
+    let mut response = redirect_inner(&state, code, &headers).await;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     state
         .metrics
         .redirect(response.status().as_u16(), started.elapsed().as_secs_f64());
@@ -434,6 +437,17 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
             state.metrics.pool_timeout();
             spool_click(state, &event).await;
         }
+    }
+    // Preserve click tracking, but prevent automated clients from following the destination.
+    if crate::traffic::is_automated_request(
+        headers
+            .get(header::USER_AGENT)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or(""),
+        client_ip(headers).as_deref().unwrap_or(""),
+    ) {
+        state.metrics.suppressed_bot_redirect();
+        return StatusCode::OK.into_response();
     }
     redirect_response(&link.long_url)
 }
@@ -757,9 +771,6 @@ fn redirect_response(destination: &str) -> Response {
     let Ok(location) = HeaderValue::from_str(destination) else {
         return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
     };
-    // Keep this response as a normal redirect. A canonical or og:url value in
-    // a synthetic document does not make an unfurler retrieve the
-    // destination's metadata and can mask the preview it gets after redirect.
     (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
 }
 
@@ -850,6 +861,109 @@ mod tests {
             "https://example.com/destination"
         );
         assert_eq!(state.spool.stats().await.unwrap().events, 1);
+    }
+
+    #[tokio::test]
+    async fn bots_are_tracked_without_redirecting_and_humans_still_redirect() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = AppState::initialize(settings(directory.path().join("spool.sqlite3")))
+            .await
+            .unwrap();
+        let mut mapping = link();
+        mapping.is_test = true; // Test status must not suppress human redirects.
+        state.cache.insert("abc1".to_owned(), Arc::new(mapping));
+        for (index, ua) in [
+            "GoogleMessages",
+            "Mozilla/5.0 (X11; Linux x86_64) Chrome/120",
+            "curl/8.0",
+            "Mozilla/5.0 (iPhone) Safari/604",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let response = router(state.clone())
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri("/abc1")
+                        .header(header::USER_AGENT, *ua)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            if index % 2 == 0 {
+                assert_eq!(response.status(), StatusCode::OK);
+                assert!(!response.headers().contains_key(header::LOCATION));
+                assert!(!response.headers().contains_key("refresh"));
+                assert!(
+                    to_bytes(response.into_body(), 1024)
+                        .await
+                        .unwrap()
+                        .is_empty()
+                );
+            } else {
+                assert_eq!(response.status(), StatusCode::FOUND);
+                assert_eq!(
+                    response.headers()[header::LOCATION],
+                    "https://example.com/destination"
+                );
+            }
+            assert_eq!(
+                state.spool.stats().await.unwrap().events,
+                (index + 1) as u64
+            );
+        }
+        assert!(
+            state
+                .metrics
+                .render()
+                .contains("external_shortlink_suppressed_bot_redirects_total 2")
+        );
+        let events = state.spool.peek(10).await.unwrap();
+        assert_eq!(events[0].user_agent.as_deref(), Some("GoogleMessages"));
+    }
+
+    #[tokio::test]
+    async fn bot_errors_and_ip_detection() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = AppState::initialize(settings(directory.path().join("spool.sqlite3")))
+            .await
+            .unwrap();
+        state.cache.insert("abc1".to_owned(), Arc::new(link()));
+        for ip in ["66.249.1.2", "74.125.1.2"] {
+            let response = router(state.clone())
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri("/abc1")
+                        .header("x-forwarded-for", ip)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(!response.headers().contains_key(header::LOCATION));
+        }
+        for (path, status) in [
+            ("/invalid!", StatusCode::NOT_FOUND),
+            ("/missing", StatusCode::SERVICE_UNAVAILABLE),
+        ] {
+            let response = router(state.clone())
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri(path)
+                        .header(header::USER_AGENT, "Googlebot")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            assert!(!response.headers().contains_key(header::LOCATION));
+        }
+        assert_eq!(state.spool.stats().await.unwrap().events, 2);
     }
 
     #[tokio::test]
