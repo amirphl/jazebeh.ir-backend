@@ -34,8 +34,9 @@ type PaymentHandlerInterface interface {
 
 // PaymentHandler handles payment-related HTTP requests
 type PaymentHandler struct {
-	paymentFlow businessflow.PaymentFlow
-	validator   *validator.Validate
+	paymentFlow  businessflow.PaymentFlow
+	validator    *validator.Validate
+	mockPayments bool
 }
 
 func (h *PaymentHandler) ErrorResponse(c fiber.Ctx, statusCode int, message, errorCode string, details any) error {
@@ -58,10 +59,11 @@ func (h *PaymentHandler) SuccessResponse(c fiber.Ctx, statusCode int, message st
 }
 
 // NewPaymentHandler creates a new payment handler
-func NewPaymentHandler(paymentFlow businessflow.PaymentFlow) *PaymentHandler {
+func NewPaymentHandler(paymentFlow businessflow.PaymentFlow, mockPayments bool) *PaymentHandler {
 	handler := &PaymentHandler{
-		paymentFlow: paymentFlow,
-		validator:   validator.New(),
+		paymentFlow:  paymentFlow,
+		validator:    validator.New(),
+		mockPayments: mockPayments,
 	}
 
 	// Setup custom validations
@@ -222,6 +224,9 @@ func (h *PaymentHandler) PaymentCallback(c fiber.Ctx) error {
 	if callbackReq.ReservationNumber == "" {
 		callbackReq.ReservationNumber = invoiceNumber
 	}
+	if h.mockPayments && callbackReq.ReservationNumber != invoiceNumber {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invoice number mismatch", "INVOICE_MISMATCH", nil)
+	}
 
 	// Fallback: derive status from state if missing (align with Atipay sample)
 	switch callbackReq.Status {
@@ -256,8 +261,18 @@ func (h *PaymentHandler) PaymentCallback(c fiber.Ctx) error {
 	// Process callback
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/payments/callback/"+invoiceNumber, 30*time.Second)
 	defer cancel()
+	if h.mockPayments {
+		customerID, ok := c.Locals("customer_id").(uint)
+		if !ok || customerID == 0 {
+			return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer authentication required", "AUTHENTICATION_REQUIRED", nil)
+		}
+		ctx = businessflow.WithMockPaymentCustomer(ctx, customerID)
+	}
 	resultHTML, err := h.paymentFlow.PaymentCallback(ctx, &callbackReq, metadata)
 	if err != nil {
+		if errors.Is(err, businessflow.ErrForbidden) {
+			return h.ErrorResponse(c, fiber.StatusForbidden, "Payment does not belong to customer", "PAYMENT_FORBIDDEN", nil)
+		}
 		if businessflow.IsCustomerNotFound(err) {
 			return h.ErrorResponse(c, fiber.StatusNotFound, "Customer not found", "CUSTOMER_NOT_FOUND", nil)
 		}
