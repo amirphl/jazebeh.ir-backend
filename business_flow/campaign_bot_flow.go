@@ -37,6 +37,7 @@ type BotCampaignFlowImpl struct {
 	transactionRepo      repository.TransactionRepository
 	platformBaseRepo     repository.PlatformBasePriceRepository
 	selectedTagRepo      repository.CampaignSelectedTagRepository
+	lineNumberRepo       repository.LineNumberRepository
 	cacheConfig          config.CacheConfig
 	db                   *gorm.DB
 	rc                   *redis.Client
@@ -49,6 +50,7 @@ func NewBotCampaignFlow(
 	transactionRepo repository.TransactionRepository,
 	platformBaseRepo repository.PlatformBasePriceRepository,
 	selectedTagRepo repository.CampaignSelectedTagRepository,
+	lineNumberRepo repository.LineNumberRepository,
 	cacheConfig config.CacheConfig,
 	db *gorm.DB,
 	rc *redis.Client,
@@ -60,6 +62,7 @@ func NewBotCampaignFlow(
 		transactionRepo:      transactionRepo,
 		platformBaseRepo:     platformBaseRepo,
 		selectedTagRepo:      selectedTagRepo,
+		lineNumberRepo:       lineNumberRepo,
 		cacheConfig:          cacheConfig,
 		db:                   db,
 		rc:                   rc,
@@ -105,7 +108,7 @@ func (s *BotCampaignFlowImpl) ListReadyCampaigns(ctx context.Context, platform *
 		var smartTestSelectionID *int64
 		numAudiences := c.NumAudience
 		if c.Spec.UsesSmartTargeting() && c.Phase == models.CampaignPhaseTest {
-			intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, c, true)
+			intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, c, true)
 			if intentErr != nil {
 				return nil, NewBusinessError("BOT_LIST_READY_CAMPAIGNS_FAILED", "Smart Targeting Test sampling intent is invalid", intentErr)
 			}

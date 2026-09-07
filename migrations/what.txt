@@ -1,0 +1,110 @@
+WITH params AS (
+    SELECT
+        984::bigint AS campaign_id,
+        24.0::double precision AS p33,
+        29.6::double precision AS p66
+),
+campaign_config AS (
+    SELECT
+        campaign.id AS campaign_id,
+        campaign.bundle_id,
+        ARRAY(
+            SELECT BTRIM(item.value)::integer
+            FROM JSONB_ARRAY_ELEMENTS_TEXT(
+                CASE
+                    WHEN JSONB_TYPEOF(campaign.spec->'tags') = 'array'
+                        THEN campaign.spec->'tags'
+                    ELSE '[]'::jsonb
+                END
+            ) AS item(value)
+            WHERE BTRIM(item.value) <> ''
+        )::integer[] AS tag_ids,
+        params.p33,
+        params.p66
+    FROM params
+    JOIN campaigns AS campaign
+      ON campaign.id = params.campaign_id
+),
+matching_exclusions AS (
+    SELECT
+        used.selection_id,
+        COUNT(*) AS matching_removed_count
+    FROM campaign_config AS config
+    JOIN bundle_audience_selection_members AS used
+      ON used.bundle_id = config.bundle_id
+    JOIN audience_profiles AS audience
+      ON audience.id = used.audience_id
+    WHERE audience.tags && config.tag_ids
+      AND audience.color IN ('white', 'pink')
+      AND audience.normalized_score >= config.p33
+      AND audience.normalized_score <= config.p66
+      AND audience.phone_number IS NOT NULL
+      AND BTRIM(audience.phone_number) <> ''
+    GROUP BY used.selection_id
+),
+attributed AS (
+    SELECT
+        selection.id AS selection_id,
+        selection.created_at AS allocated_at,
+        selection.campaign_id,
+        campaign.status,
+        campaign.spec->>'title' AS campaign_title,
+        CASE
+            WHEN LOWER(BTRIM(COALESCE(
+                    campaign.spec->>'audience_targeting_method', ''
+                ))) IN ('standard', 'smart_targeting', 'excel')
+                THEN LOWER(BTRIM(
+                    campaign.spec->>'audience_targeting_method'
+                ))
+            WHEN NULLIF(BTRIM(
+                    campaign.spec->>'target_audience_excel_file_uuid'
+                ), '') IS NOT NULL
+                THEN 'excel'
+            ELSE 'standard'
+        END AS targeting_method,
+        CASE
+            WHEN campaign.id IS NULL THEN NULL::text[]
+            ELSE ARRAY(
+                SELECT UPPER(BTRIM(grade.value))
+                FROM JSONB_ARRAY_ELEMENTS_TEXT(
+                    CASE
+                        WHEN JSONB_TYPEOF(
+                            campaign.spec->'audience_grades'
+                        ) = 'array'
+                            THEN campaign.spec->'audience_grades'
+                        ELSE '[]'::jsonb
+                    END
+                ) AS grade(value)
+                WHERE BTRIM(grade.value) <> ''
+                ORDER BY UPPER(BTRIM(grade.value))
+            )::text[]
+        END AS audience_grades,
+        processed.id AS current_processed_campaign_id,
+        selection.audience_count AS allocated_member_count,
+        matching.matching_removed_count,
+        ROUND(
+            100.0 * matching.matching_removed_count
+            / NULLIF(selection.audience_count, 0),
+            2
+        ) AS allocation_matching_current_percent
+    FROM matching_exclusions AS matching
+    JOIN bundle_audience_selections AS selection
+      ON selection.id = matching.selection_id
+    LEFT JOIN campaigns AS campaign
+      ON campaign.id = selection.campaign_id
+    LEFT JOIN processed_campaigns AS processed
+      ON processed.campaign_id = campaign.id
+     AND processed.is_current
+)
+SELECT
+    attributed.*,
+    SUM(attributed.matching_removed_count) OVER ()
+        AS total_matching_removed_count,
+    SUM(attributed.matching_removed_count) OVER (
+        ORDER BY attributed.allocated_at, attributed.selection_id
+    ) AS cumulative_matching_removed_count
+FROM attributed
+ORDER BY
+    attributed.selection_id,
+    attributed.matching_removed_count DESC,
+    attributed.allocated_at;

@@ -5,6 +5,9 @@
 
 \echo 'Starting database rollback...'
 
+\echo 'Running 0141_snapshot_smart_targeting_allowed_colors_down.sql...'
+\i migrations/0141_snapshot_smart_targeting_allowed_colors_down.sql
+
 \echo 'Running 0140_persist_smart_targeting_test_sample_selections_down.sql...'
 \i migrations/0140_persist_smart_targeting_test_sample_selections_down.sql
 

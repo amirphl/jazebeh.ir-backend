@@ -1040,7 +1040,7 @@ func (s *RubikaCampaignScheduler) fetchRubikaAudiencePhonesByBundle(
 	var uids []string
 	var selectionID uint
 	if usesSmartAudienceTargeting(c) {
-		phones, ids, uids, selectionID, err = selectAndReserveExactSmartTargetingCandidates(ctx, s.db, c, numAudiences, correlationID)
+		phones, ids, uids, selectionID, err = selectAndReserveExactSmartTargetingCandidates(ctx, s.db, c, numAudiences, correlationID, nil)
 	} else {
 		phones, ids, uids, selectionID, err = selectAndReserveStandardBundleCandidates(
 			ctx, s.db, s.bundleAudienceCache, c.ID, c.CustomerID, bundleID, numAudiences, correlationID,

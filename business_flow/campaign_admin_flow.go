@@ -536,13 +536,13 @@ func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.Ad
 			if s.capacityCalculationRepo == nil {
 				return ErrSmartTargetingExactCapacityRequired
 			}
-			exact, err := CurrentSmartTargetingCapacity(txCtx, s.db, s.selectedTagRepo, s.capacityCalculationRepo, campaign)
+			exact, err := CurrentSmartTargetingCapacity(txCtx, s.db, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, campaign)
 			if err != nil {
 				return err
 			}
 			var requiredAudience uint64
 			if campaign.Phase == models.CampaignPhaseTest {
-				intent, intentErr := currentSmartTargetingTestSamplingIntent(txCtx, s.selectedTagRepo, campaign, true)
+				intent, intentErr := currentSmartTargetingTestSamplingIntent(txCtx, s.selectedTagRepo, s.lineNumberRepo, campaign, true)
 				if intentErr != nil {
 					return intentErr
 				}
@@ -682,7 +682,7 @@ func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.Ad
 	})
 	if err != nil {
 		if errors.Is(err, ErrSmartTargetingExactCapacityRequired) && campaign != nil && s.capacityCalculationRepo != nil {
-			_, ensureErr := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, campaign)
+			_, ensureErr := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, campaign)
 			if ensureErr != nil {
 				err = ensureErr
 			}

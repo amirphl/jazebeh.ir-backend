@@ -10,6 +10,7 @@ import (
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	"github.com/amirphl/Yamata-no-Orochi/models"
+	"github.com/amirphl/Yamata-no-Orochi/repository"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 	"github.com/lib/pq"
 )
@@ -17,6 +18,19 @@ import (
 type samplingSelectedTagRepositoryStub struct {
 	selected    []*models.CampaignSelectedTag
 	validateErr error
+}
+
+type smartTargetingLineNumberRepositoryStub struct {
+	repository.LineNumberRepository
+	line  *models.LineNumber
+	lines map[string]*models.LineNumber
+}
+
+func (s *smartTargetingLineNumberRepositoryStub) ByValue(_ context.Context, value string) (*models.LineNumber, error) {
+	if s.lines != nil {
+		return s.lines[value], nil
+	}
+	return s.line, nil
 }
 
 func (s *samplingSelectedTagRepositoryStub) ListAvailable(context.Context, uint, uint, string, string, string, int, int) ([]*models.SmartTargetingTagRow, int64, error) {
@@ -93,11 +107,11 @@ func TestSmartTargetingTestSamplingHashPreservesTagOrder(t *testing.T) {
 		SampleSizePerTag: &sampleSize,
 		Spec:             models.CampaignSpec{AudienceTargetingMethod: &method},
 	}
-	first, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2, 5}, []string{"A", "C"})
+	first, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2, 5}, []string{"A", "C"}, nil)
 	if err != nil {
 		t.Fatalf("first sampling hash failed: %v", err)
 	}
-	second, err := smartTargetingTestSamplingHash(campaign, []uint{2, 9, 5}, []string{"A", "C"})
+	second, err := smartTargetingTestSamplingHash(campaign, []uint{2, 9, 5}, []string{"A", "C"}, nil)
 	if err != nil {
 		t.Fatalf("second sampling hash failed: %v", err)
 	}
@@ -120,12 +134,12 @@ func TestSmartTargetingTestSamplingHashIncludesEffectiveColorEligibility(t *test
 		},
 	}
 
-	unrestricted, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"})
+	unrestricted, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	campaign.Spec.Platform = models.CampaignPlatformSMS
-	sms, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"})
+	sms, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"}, []string{"white", "pink"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +148,7 @@ func TestSmartTargetingTestSamplingHashIncludesEffectiveColorEligibility(t *test
 	}
 
 	campaign.Spec.Platform = models.CampaignPlatformRubika
-	otherUnrestricted, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"})
+	otherUnrestricted, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +176,7 @@ func TestSmartTargetingTestSamplingAudienceQueryRestrictsSMSColors(t *testing.T)
 		{CampaignID: 17, BundleID: 3, TagID: 9, SelectionOrder: 0},
 	}}
 
-	input, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, campaign)
+	input, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, nil, campaign)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,8 +188,21 @@ func TestSmartTargetingTestSamplingAudienceQueryRestrictsSMSColors(t *testing.T)
 		t.Fatalf("SMS sampling allowed colors = %v, want [white pink]", query.AllowedColors)
 	}
 
+	lineNumber := "30001234"
+	campaign.Spec.LineNumber = &lineNumber
+	input, err = currentSmartTargetingTestSamplingInput(t.Context(), repo, &smartTargetingLineNumberRepositoryStub{
+		line: &models.LineNumber{LineNumber: lineNumber, Provider: models.SMSProviderCandoo},
+	}, campaign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query = smartTargetingTestSamplingAudienceQuery(bundleID, []int64{9}, input)
+	if len(query.AllowedColors) != 0 {
+		t.Fatalf("Candoo SMS sampling allowed colors = %v, want no restriction", query.AllowedColors)
+	}
+
 	campaign.Spec.Platform = models.CampaignPlatformBale
-	input, err = currentSmartTargetingTestSamplingInput(t.Context(), repo, campaign)
+	input, err = currentSmartTargetingTestSamplingInput(t.Context(), repo, nil, campaign)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,19 +319,19 @@ func TestCurrentSmartTargetingTestSamplingIntentValidatesOrderedSubset(t *testin
 		{CampaignID: 17, BundleID: 3, TagID: 2, SelectionOrder: 1},
 		{CampaignID: 17, BundleID: 3, TagID: 5, SelectionOrder: 2},
 	}}
-	hash, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2, 5}, []string{"A", "C"})
+	hash, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2, 5}, []string{"A", "C"}, nil)
 	if err != nil {
 		t.Fatalf("sampling hash failed: %v", err)
 	}
 	campaign.SmartTargetingTestSamplingInputHash = &hash
 
-	intent, err := currentSmartTargetingTestSamplingIntent(t.Context(), repo, campaign, true)
+	intent, err := currentSmartTargetingTestSamplingIntent(t.Context(), repo, nil, campaign, true)
 	if err != nil || intent.effective != 1_200 || len(intent.satisfied) != 2 || intent.satisfied[0] != 9 || intent.satisfied[1] != 5 {
 		t.Fatalf("sampling intent = (%#v, %v), want ordered [9 5] with effective 1200", intent, err)
 	}
 
 	campaign.SmartTargetingTestSatisfiedTagIDs = pq.Int64Array{5, 9}
-	if _, err := currentSmartTargetingTestSamplingIntent(t.Context(), repo, campaign, true); !errors.Is(err, ErrSmartTargetingTestPreviewRequired) {
+	if _, err := currentSmartTargetingTestSamplingIntent(t.Context(), repo, nil, campaign, true); !errors.Is(err, ErrSmartTargetingTestPreviewRequired) {
 		t.Fatalf("out-of-order intent error = %v, want preview required", err)
 	}
 }
@@ -320,7 +347,7 @@ func TestCurrentSmartTargetingTestSamplingInputRejectsMalformedSelectionSnapshot
 	repo := &samplingSelectedTagRepositoryStub{selected: []*models.CampaignSelectedTag{
 		{CampaignID: 17, BundleID: 3, TagID: 9, SelectionOrder: 1},
 	}}
-	if _, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, campaign); !errors.Is(err, ErrSmartTargetingTagInvalid) {
+	if _, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, nil, campaign); !errors.Is(err, ErrSmartTargetingTagInvalid) {
 		t.Fatalf("malformed selection error = %v, want invalid tag", err)
 	}
 }
@@ -338,7 +365,7 @@ func TestCurrentSmartTargetingTestSamplingInputIncludesTagDisplayNames(t *testin
 		{CampaignID: 17, BundleID: 3, TagID: 9, SelectionOrder: 0, TagDisplayTitleSnapshot: &displayName},
 		{CampaignID: 17, BundleID: 3, TagID: 2, SelectionOrder: 1},
 	}}
-	input, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, campaign)
+	input, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, nil, campaign)
 	if err != nil {
 		t.Fatalf("sampling input failed: %v", err)
 	}
@@ -372,34 +399,47 @@ func TestSmartTargetingTestSamplingConfigurationInvalidatesOnlyEffectiveChanges(
 		SampleSizePerTag:        &sampleSize,
 		AudienceGrades:          []string{"C", "A"},
 	}
-	changed, err := smartTargetingTestSamplingConfigurationChanged(campaign, unchanged)
+	changed, err := smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, unchanged)
 	if err != nil || changed {
 		t.Fatalf("unchanged effective sampling configuration = (%t, %v), want (false, nil)", changed, err)
 	}
 
 	changedSampleSize := uint64(601)
-	changed, err = smartTargetingTestSamplingConfigurationChanged(campaign, &dto.UpdateCampaignRequest{SampleSizePerTag: &changedSampleSize})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{SampleSizePerTag: &changedSampleSize})
 	if err != nil || !changed {
 		t.Fatalf("changed sample size = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	execution := string(models.CampaignPhaseExecution)
-	changed, err = smartTargetingTestSamplingConfigurationChanged(campaign, &dto.UpdateCampaignRequest{Phase: &execution})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{Phase: &execution})
 	if err != nil || !changed {
 		t.Fatalf("changed phase = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	campaign.Spec.Platform = models.CampaignPlatformBale
 	sms := models.CampaignPlatformSMS
-	changed, err = smartTargetingTestSamplingConfigurationChanged(campaign, &dto.UpdateCampaignRequest{Platform: &sms})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{Platform: &sms})
 	if err != nil || !changed {
 		t.Fatalf("enabled SMS color eligibility = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	rubika := models.CampaignPlatformRubika
-	changed, err = smartTargetingTestSamplingConfigurationChanged(campaign, &dto.UpdateCampaignRequest{Platform: &rubika})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{Platform: &rubika})
 	if err != nil || changed {
 		t.Fatalf("unchanged non-SMS color eligibility = (%t, %v), want (false, nil)", changed, err)
+	}
+
+	candooLine := "30001234"
+	payamLine := "30005678"
+	campaign.Spec.Platform = models.CampaignPlatformSMS
+	campaign.Spec.LineNumber = &candooLine
+	lineRepo := &smartTargetingLineNumberRepositoryStub{lines: map[string]*models.LineNumber{
+		candooLine: {LineNumber: candooLine, Provider: models.SMSProviderCandoo},
+		payamLine:  {LineNumber: payamLine, Provider: models.SMSProviderPayamSMS},
+	}}
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), lineRepo, campaign, &dto.UpdateCampaignRequest{LineNumber: &payamLine})
+	if err != nil || !changed {
+		t.Fatalf("Candoo-to-Payam color eligibility = (%t, %v), want (true, nil)", changed, err)
 	}
 }
 
@@ -505,7 +545,7 @@ func TestSamplingCalculationFreshnessIgnoresRevisionButRejectsChangedSamplingInp
 		{CampaignID: 17, BundleID: 3, TagID: 9, SelectionOrder: 0},
 		{CampaignID: 17, BundleID: 3, TagID: 2, SelectionOrder: 1},
 	}}
-	hash, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"})
+	hash, err := smartTargetingTestSamplingHash(campaign, []uint{9, 2}, []string{"A", "C"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,34 +554,34 @@ func TestSamplingCalculationFreshnessIgnoresRevisionButRejectsChangedSamplingInp
 		SampleSizePerTag: 600, InputHash: hash, CalculationVersion: smartTargetingTestSamplingCalculationVersion, CampaignUpdatedAt: &calculationRevision,
 		Status: models.CampaignTargetingTestSamplingCalculating, Generation: 4,
 	}
-	currentInput, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, campaign)
+	currentInput, err := currentSmartTargetingTestSamplingInput(t.Context(), repo, nil, campaign)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reusableActiveSmartTargetingTestSampling(campaign, row, currentInput) {
+	if !reusableActiveSmartTargetingTestSampling(t.Context(), nil, campaign, row, currentInput) {
 		t.Fatal("same-input active calculation was not reusable after only updated_at changed")
 	}
 	row.Generation = 0
-	if reusableActiveSmartTargetingTestSampling(campaign, row, currentInput) {
+	if reusableActiveSmartTargetingTestSampling(t.Context(), nil, campaign, row, currentInput) {
 		t.Fatal("generation-zero active calculation was reusable")
 	}
 	row.Generation = 4
 	campaign.SmartTargetingTestSamplingGeneration = 5
-	if reusableActiveSmartTargetingTestSampling(campaign, row, currentInput) {
+	if reusableActiveSmartTargetingTestSampling(t.Context(), nil, campaign, row, currentInput) {
 		t.Fatal("mismatched-generation active calculation was reusable")
 	}
 	campaign.SmartTargetingTestSamplingGeneration = 4
-	input, gotSampleSize, err := currentSmartTargetingTestSamplingCalculationInput(t.Context(), repo, campaign, row)
+	input, gotSampleSize, err := currentSmartTargetingTestSamplingCalculationInput(t.Context(), repo, nil, campaign, row)
 	if err != nil || gotSampleSize != 600 || len(input.order) != 2 || input.order[0] != 9 {
 		t.Fatalf("snapshot input = (%#v, %d, %v)", input, gotSampleSize, err)
 	}
 
 	changedSampleSize := uint64(601)
 	campaign.SampleSizePerTag = &changedSampleSize
-	if reusableActiveSmartTargetingTestSampling(campaign, row, currentInput) {
+	if reusableActiveSmartTargetingTestSampling(t.Context(), nil, campaign, row, currentInput) {
 		t.Fatal("active calculation remained reusable after sample size changed")
 	}
-	if _, _, err := currentSmartTargetingTestSamplingCalculationInput(t.Context(), repo, campaign, row); !errors.Is(err, ErrSmartTargetingTestPreviewRequired) {
+	if _, _, err := currentSmartTargetingTestSamplingCalculationInput(t.Context(), repo, nil, campaign, row); !errors.Is(err, ErrSmartTargetingTestPreviewRequired) {
 		t.Fatalf("changed campaign snapshot error = %v, want preview required", err)
 	}
 }

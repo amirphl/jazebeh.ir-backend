@@ -229,7 +229,7 @@ func TestSelectTagAudiencesPushesLimitAndExclusionsIntoRepository(t *testing.T) 
 	s := &SMSCampaignScheduler{audRepo: audRepo, logger: log.New(io.Discard, "", 0)}
 	tags := pq.Int32Array{10, 20}
 
-	phones, ids, uids, err := s.selectTagAudiences(context.Background(), 99, tags, 3, excluded, nil, nil)
+	phones, ids, uids, err := s.selectTagAudiences(context.Background(), 99, tags, 3, excluded, nil, nil, []string{"white", "pink"})
 	if err != nil {
 		t.Fatalf("select tag audiences: %v", err)
 	}
@@ -244,6 +244,23 @@ func TestSelectTagAudiencesPushesLimitAndExclusionsIntoRepository(t *testing.T) 
 	}
 	if got, want := strings.Join(uids, ","), "u2,u1,u3"; got != want {
 		t.Fatalf("uids = %q, want %q", got, want)
+	}
+}
+
+func TestSelectTagAudiencesDoesNotFilterCandooCandidatesByColor(t *testing.T) {
+	phone := "09120000001"
+	call := 0
+	audRepo := &stubSMSAudienceProfileRepo{selectCandidatesFn: func(_ context.Context, filter models.AudienceProfileFilter, _ []int64, limit int) ([]*models.AudienceProfile, error) {
+		call++
+		if filter.Color != nil || limit != 1 {
+			t.Fatalf("Candoo candidate query color=%v limit=%d, want unrestricted/1", filter.Color, limit)
+		}
+		return []*models.AudienceProfile{{ID: 7, UID: "u7", PhoneNumber: &phone}}, nil
+	}}
+	s := &SMSCampaignScheduler{audRepo: audRepo, logger: log.New(io.Discard, "", 0)}
+	phones, ids, uids, err := s.selectTagAudiences(context.Background(), 99, pq.Int32Array{10}, 1, nil, nil, nil, nil)
+	if err != nil || call != 1 || len(phones) != 1 || len(ids) != 1 || len(uids) != 1 {
+		t.Fatalf("Candoo audience selection = (%v, %v, %v, calls=%d, err=%v)", phones, ids, uids, call, err)
 	}
 }
 

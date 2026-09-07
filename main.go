@@ -560,6 +560,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		campaignRepo,
 		campaignSelectedTagRepo,
 		capacityCalculationRepo,
+		lineNumberRepo,
 		db,
 	)
 
@@ -692,6 +693,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		transactionRepo,
 		platformBasePriceRepo,
 		campaignSelectedTagRepo,
+		lineNumberRepo,
 		cfg.Cache,
 		db,
 		rc,

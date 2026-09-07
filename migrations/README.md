@@ -4,10 +4,10 @@ This directory contains the ordered PostgreSQL schema history for Yamata no
 Orochi. The current schema head is:
 
 ```text
-0138_extend_tag_performance_to_execution.sql
+0141_snapshot_smart_targeting_allowed_colors.sql
 ```
 
-There are 140 numbered up files and 139 numbered down files. Both aggregate
+There are 143 numbered up files and 142 numbered down files. Both aggregate
 manifests currently include every matching file exactly once. The difference is
 `0050_remove_short_links_indexes.sql`, which has no checked-in down migration.
 
@@ -28,15 +28,15 @@ number—is the migration identity:
 - `0104_create_sent_rubika_messages`
 - `0104_create_splus_status_results`
 
-New changes should use the next unused ordinal (`0140` after the current head),
+New changes should use the next unused ordinal (`0142` after the current head),
 include a down file whenever rollback is safe, and update both aggregate
 manifests. Do not edit a migration that may already have been deployed; add a
 corrective migration so every environment retains the same append-only history.
 
 ## Aggregate manifests
 
-[`run_all_up.sql`](run_all_up.sql) includes all 141 up files in filename order.
-[`run_all_down.sql`](run_all_down.sql) includes all 140 available down files
+[`run_all_up.sql`](run_all_up.sql) includes all 143 up files in filename order.
+[`run_all_down.sql`](run_all_down.sql) includes all 142 available down files
 once. Its order is the reverse filename order except for the existing
 `0034`/`0035` swap; treat the checked-in manifest order as canonical and review
 dependencies before changing it.
@@ -244,6 +244,7 @@ every production change.
 | `0138` | Smart Targeting Execution tag attribution metrics and global delivered-based tag CTR summaries |
 | `0139` | Canonical public short-link metadata and explicit campaign test-click exclusion from reporting |
 | `0140` | Immutable Smart Targeting Test sample snapshots and releasable pre-execution audience reservations |
+| `0141` | Provider-aware Smart Targeting capacity eligibility snapshots |
 
 ## Current schema areas
 

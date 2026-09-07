@@ -63,7 +63,7 @@ Some issues fixed.
 Once again Review the following business flows and the repository functions they call then list logical issues/bugs.
 [smart\_targeting\_capacity\_flow.go](business_flow/smart_targeting_capacity_flow.go) .
 
-------
+--------------
 
 I found three remaining logical issues:
 
@@ -79,12 +79,12 @@ I found three remaining logical issues:
 Verification: `go test ./business_flow ./repository` passed; focused Smart Targeting scheduler tests passed. The full scheduler package is blocked by the sandbox preventing an `httptest` listener from binding.
 
 
-------------
+--------------
 
 Review the following business flows and the repository functions they call then list logical issues/bugs.
 [smart\_targeting\_capacity\_flow.go](business_flow/smart_targeting_capacity_flow.go) .
 
--------
+--------------
 
 Found four logical issues. No files were changed.
 
@@ -103,7 +103,7 @@ Targeted tests currently pass: `go test ./business_flow ./repository ./app/sched
 Once again Review the following business flows and the repository functions they call then list logical issues/bugs.
 [smart\_targeting\_capacity\_flow.go](business_flow/smart_targeting_capacity_flow.go) .
 
------
+------------
 
 Fresh review found these concrete issues:
 
@@ -119,7 +119,7 @@ Fresh review found these concrete issues:
 
 Targeted tests pass: `go test ./business_flow ./repository ./app/scheduler`.
 
----------
+------------
 
 What do you mean by "Test exclusion membership"
 
@@ -129,7 +129,7 @@ Assume audiences and tags merely change/evolve over the time. Is the following s
 Explain the following issue more clearly:
 **High — removed/deactivated selected tags can still be approved.** The flow validates tag availability only when creating a job. Reuse/currentness and `CurrentSmartTargetingCapacity` merely load selected IDs; they do not call `selectionRepo.Validate`. Admin approval therefore can accept a stale result, lock budget, then leave the campaign approved but unschedulable when the bot path finally validates those tags. [Start validation (line 305)](business_flow/smart_targeting_capacity_flow.go:305), [missing current validation (line 573)](business_flow/smart_targeting_capacity_flow.go:573), [approval (line 539)](business_flow/campaign_admin_flow.go:539), [bot validation (line 188)](business_flow/campaign_bot_flow.go:188).
 
----
+------------
 
 Yes—but I would qualify the first finding.
 
@@ -156,16 +156,14 @@ In short: the capacity/approval path says “tag 42 is fine,” while the execut
 
 This issue remains high even with normally evolving audiences, because it concerns an invalid targeting configuration, not merely a changing count.
 
------
-
+------------
 Fix following two issues:
-
 
 
 1. **High — removed/deactivated selected tags can still be approved.** The flow validates tag availability only when creating a job. Reuse/currentness and `CurrentSmartTargetingCapacity` merely load selected IDs; they do not call `selectionRepo.Validate`. Admin approval therefore can accept a stale result, lock budget, then leave the campaign approved but unschedulable when the bot path finally validates those tags. [Start validation (line 305)](business_flow/smart_targeting_capacity_flow.go:305), [missing current validation (line 573)](business_flow/smart_targeting_capacity_flow.go:573), [approval (line 539)](business_flow/campaign_admin_flow.go:539), [bot validation (line 188)](business_flow/campaign_bot_flow.go:188).
 2. **High — recalculating a finalized Test campaign counts out its own reserved sample.** The audience CTE excludes every active Test reservation without excluding the current campaign. Since `Start` permits `waiting-for-approval` and `approved`, a recalculation after reservation creation returns a capacity that excludes its own required sample. [Allowed statuses (line 95)](business_flow/smart_targeting_capacity_flow.go:95), [reservation anti-join (line 79)](repository/smart_targeting_audience_repository.go:79).
 
-----
+------------
 
 Implemented both fixes.
 - Capacity currentness now revalidates the selected tags. If a tag was deactivated or removed from the bundle’s available source, the calculation becomes stale and cannot be reused for approval. [smart_targeting_capacity_flow.go (line 590)](business_flow/smart_targeting_capacity_flow.go:590)
@@ -174,14 +172,14 @@ Implemented both fixes.
 Verified with:
 GOCACHE=/tmp/yamata-smart-targeting-go-build go test ./business_flow ./repository ./app/scheduler
 
----
+------------
 
 Explain the following issues too:
 
 1. **Medium — bundle exclusions do not invalidate results.** Test capacity applies `bundle_audience_exclusions`, but the allocation fingerprint omits them, and the input hash includes only the boolean “apply exclusions,” not the actual exclusion set. Adding/removing an exclusion leaves an old capacity marked current; final reservation later fails its hard availability check. [Fingerprint construction (line 615)](business_flow/smart_targeting_capacity_flow.go:615), [exclusion query (line 83)](repository/smart_targeting_audience_repository.go:83), [reservation safety check (line 147)](repository/campaign_targeting_test_sample_selection_repository.go:147).
 2. **Medium — approved-campaign deduction is intentionally approximate, but presented as exact.** It subtracts each other unmaterialized campaign’s whole `NumAudience` regardless of overlap with this campaign’s tags, grades, platform colors, or exclusions. Disjoint campaigns can therefore receive zero/insufficient capacity even when all of their actual audiences remain available. [Deduction (line 643)](business_flow/smart_targeting_capacity_flow.go:643), [source rows (line 137)](repository/campaign_execution_repository.go:137).
 
----
+------------
 
 1. Bundle exclusions not invalidating results
 
@@ -228,12 +226,12 @@ The deduction is deliberately conservative: it avoids approving two campaigns ba
 
 This is medium severity because it causes false insufficient-capacity responses or prevents approval unnecessarily; it does not create audience reuse.
 
----
+------------
 
 I think "Bundle exclusions not invalidating results" is not an issue because that "200" audiences were part of another tag sampling for another campaign within the same bundle which its capacity was excluded already. Is this true?
 
 
-----
+------------
 
 Not necessarily. In this code, those are two separate mechanisms:
 
@@ -246,7 +244,7 @@ The exclusion-invalidating finding matters only if `bundle_audience_exclusions` 
 
 If your system guarantees that every exclusion-table change always has a matching active reservation change, then the exclusion fingerprint is redundant and this is not a practical issue. Otherwise, it remains a stale-result risk.
 
----
+------------
 
 State the following issues somewhere in a file or in codebase so that later we solve them:
 **High — stale capacity survives audience-data changes.** Currentness checks only campaign inputs, expiry, and allocation fingerprint; they do not detect changed audience tags, phone values, scores, delivery colors, additions/deletions, or Test exclusion membership. Counts can be treated as exact long after their query population changed—especially because expiry may extend past the scheduled date. [Validation (line 573)](business_flow/smart_targeting_capacity_flow.go:573) vs. [query inputs (line 61)](repository/smart_targeting_audience_repository.go:61).
@@ -255,19 +253,19 @@ State the following issues somewhere in a file or in codebase so that later we s
 
 **Medium — approved-campaign deduction is intentionally approximate, but presented as exact.** It subtracts each other unmaterialized campaign’s whole `NumAudience` regardless of overlap with this campaign’s tags, grades, platform colors, or exclusions. Disjoint campaigns can therefore receive zero/insufficient capacity even when all of their actual audiences remain available. [Deduction (line 643)](business_flow/smart_targeting_capacity_flow.go:643), [source rows (line 137)](repository/campaign_execution_repository.go:137).
 
----
+------------
 
 Some issues fixed.
 Once again Review the following business flows and the repository functions they call then list logical issues/bugs.
 [smart\_targeting\_capacity\_flow.go](business_flow/smart_targeting_capacity_flow.go) .
 
-----
+------------
 
 Review the following business flows and the repository functions they call then list logical issues/bugs.
 [smart\_targeting\_sampling\_flow.go](business_flow/smart_targeting_sampling_flow.go)
 
 
----
+------------
 
 Review findings:
 
@@ -285,80 +283,16 @@ Review findings:
 
 Focused `business_flow` and `repository` tests passed.
 
----
+------------
 
-Review the following business flows and the repository functions they call then list logical issues/bugs.
-[smart\_targeting\_sampling\_flow.go](business_flow/smart_targeting_sampling_flow.go)
+High — A preview can remain marked current after bundle exclusions change. Sampling excludes bundle_audience_exclusions, but currentness fingerprints only campaign allocations and active reservations. Finalization then rejects the saved selection as unavailable. This produces a misleading usable preview followed by a forced re-sample. See [audience query (line 376)](/Users/mac/Downloads/sources/Yamata-no-Orochi/repository/smart_targeting_audience_repository.go:376), [freshness check (line 520)](/Users/mac/Downloads/sources/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:520), and [reservation rejection (line 150)](/Users/mac/Downloads/sources/Yamata-no-Orochi/repository/campaign_targeting_test_sample_selection_repository.go:150).
 
----
+High — Profile changes can make delivery violate the requested targeting. Sampling checks tag membership, SMS colors, and score grades, but ReserveForCampaign rechecks only phone presence, prior materialization, other reservations, and exclusions—not tags/colors/scores. A profile changed after preview can still be reserved and sent despite no longer matching the campaign. See [sampling predicates (line 348)](/Users/mac/Downloads/sources/Yamata-no-Orochi/repository/smart_targeting_audience_repository.go:348) and [reservation validation (line 150)](/Users/mac/Downloads/sources/Yamata-no-Orochi/repository/campaign_targeting_test_sample_selection_repository.go:150).
 
-Found three material issues; no code changed.
+Medium — “Random per tag” is neither random nor reproducible. The selection SQL uses LIMIT without ORDER BY; PostgreSQL may return planner/storage-dependent rows. Yet delivery attribution records the method as random_per_tag. This biases experiments and makes results unreproducible. See [repository implementation (line 260)](/Users/mac/Downloads/sources/Yamata-no-Orochi/repository/smart_targeting_audience_repository.go:260) and [attribution (line 92)](/Users/mac/Downloads/sources/Yamata-no-Orochi/app/scheduler/smart_targeting_capacity_candidates.go:92).
 
-1. **High — a “current” Test sample can remain valid forever despite audience eligibility changing.** Unlike capacity, sampling has no expiry or audience-population version check. It persists exact IDs, and reservation only rechecks existence, usable phone, existing allocations/reservations, and bundle exclusions—not tag membership, score-grade eligibility, or SMS color. A later delivery can therefore include people who no longer match the campaign’s targeting criteria. [sampling currentness](/home/amirphl/Downloads/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:487), [reservation recheck](/home/amirphl/Downloads/Yamata-no-Orochi/repository/campaign_targeting_test_sample_selection_repository.go:147).
+Medium — Greedy per-tag allocation can understate feasible test capacity. Earlier satisfied tags permanently exclude their chosen profiles before later tags are considered. With overlapping tags, an arbitrary early choice can starve a later tag even where a different assignment satisfies both. See [allocation loop (line 188)](/Users/mac/Downloads/sources/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:188). This needs a matching/rarity-aware allocation strategy, unless strict first-tag priority is an explicit product rule.
 
-2. **Medium — greedy tag processing can falsely mark later tags unsatisfied.** The flow assigns candidates to tags sequentially and permanently excludes them before evaluating later tags. With sample size 1, tag A `{x,y}` and tag B `{x}`, selecting `x` for A makes B fail, although assigning `y` to A and `x` to B satisfies both. No reassignment/backtracking occurs. [sequential exclusion](/home/amirphl/Downloads/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:187).
+Medium — Normal allocation churn permanently fails jobs rather than marking them stale/retrying. The worker snapshots an allocation fingerprint before the scan; any later change returns ErrSmartTargetingTestPreviewRequired, and the deferred handler records a generic failed calculation. The user must manually request another preview. See [fingerprint mismatch (line 649)](/Users/mac/Downloads/sources/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:649) and [failure handling (line 594)](/Users/mac/Downloads/sources/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:594).
 
-3. **Medium — sampling and persisted send order are nondeterministic.** `SelectForTag` uses `LIMIT` without `ORDER BY`; PostgreSQL may return different rows and orders as plans/storage change. Since those rows become the immutable selection and `selection_order` drives later processing, identical requests can produce different recipients and delivery order. The repository explicitly documents this as an unresolved TODO. [repository query](/home/amirphl/Downloads/Yamata-no-Orochi/repository/smart_targeting_audience_repository.go:260).
-
-Verification: `business_flow` and `repository` tests passed. `app/scheduler` tests could not run in this sandbox because an `httptest` listener was blocked by permissions.
-
----
-
-Once again:
-Review the following business flows and the repository functions they call then list logical issues/bugs.
-[smart\_targeting\_capacity\_flow.go](business_flow/smart_targeting_capacity_flow.go) .
-
----
-
-I found three remaining issues. The prior two fixes are present.
-
-- **High — a tag deactivated after approval can block the entire platform’s ready queue.** Tag availability is checked at approval, but tags can change before scheduled delivery. `ListReadyCampaigns` iterates all ready campaigns and returns an error on the first invalid Smart Targeting selection instead of skipping/quarantining that one campaign. The scheduler then abandons the whole platform poll. [Ready-campaign loop](business_flow/campaign_bot_flow.go:96), [tag validation](business_flow/campaign_bot_flow.go:188). Affected Test campaigns can also retain their active sample reservation until separately resolved.
-
-- **Medium — active Test reservations can be deducted twice from another campaign’s capacity.** The audience query already removes active Test-reserved audience IDs. But the allocation query also includes the approved, unmaterialized Test campaign, and the capacity flow subtracts its full `NumAudience` again. When its reserved members overlap the candidate campaign’s population, the capacity can be understated by up to the Test sample size. [Audience reservation exclusion](repository/smart_targeting_audience_repository.go:83), [allocation source includes approved Smart campaigns](repository/campaign_execution_repository.go:137), [numeric deduction](business_flow/smart_targeting_capacity_flow.go:660), [combining count and deduction](business_flow/smart_targeting_capacity_flow.go:765). The allocation deduction should omit campaigns with active Test reservations; retain them only in the fingerprint.
-
-- **Medium — an approved campaign can be falsely rejected at execution after an allowed capacity refresh.** Capacity refresh is permitted while a campaign is `approved`. The execution lookup selects the latest unexpired calculation based only on static inputs—not its allocation fingerprint—then rejects immediately if that old snapshot’s usable count is below the requested count, before running the authoritative live query. If availability subsequently improves (for example, another campaign is cancelled and releases its reservation), delivery remains blocked until someone recalculates. [Approved refresh permitted](business_flow/smart_targeting_capacity_flow.go:95), [execution lookup](repository/campaign_targeting_capacity_repository.go:73), [early rejection before live query](app/scheduler/smart_targeting_capacity_candidates.go:149).
-
-I did not repeat the already documented audience-data freshness, bundle-exclusion, and approximate-deduction limitations.
-
-Verification: `go test ./business_flow ./repository ./app/scheduler` passed.
-
----
-
-Once again:
-Review the following business flows and the repository functions they call then list logical issues/bugs.
-[smart\_targeting\_flow.go](business_flow/smart_targeting_flow.go)
-
----
-
-Current review: the offset-overflow and auto-select candidate-lock issues are fixed. Remaining issues:
-
-1. **High — replace/auto-select can return another request’s selection.**  
-   Both mutations commit, then call `GetSelection` outside the transaction. A second replacement can commit in that gap, so request A can report success while returning request B’s IDs/summary.  
-   [replace response](business_flow/smart_targeting_flow.go:388), [auto-select response](business_flow/smart_targeting_flow.go:477)  
-   Build the response from the rows/summary inside the committing transaction, or introduce a selection version and read that exact version.
-
-2. **High — list responses are not a consistent selection snapshot.**  
-   `ListTags` reads visible rows, selected IDs, and the summary as separate statements. Under normal PostgreSQL read-committed semantics, a concurrent atomic replacement can make `items[].selected`, `selected_tag_ids`, and `summary` refer to different selection versions. `GetSelection` has the same IDs-versus-summary race.  
-   [ListTags](business_flow/smart_targeting_flow.go:180), [GetSelection](business_flow/smart_targeting_flow.go:320)  
-   Use a read-only repeatable-read transaction or one repository query that returns selection rows plus the aggregate.
-
-3. **Medium — evaluation availability and the actual tag source can disagree.**  
-   The flow first counts current score rows to choose default sort/`evaluation_available`, then the repository independently resolves the source again. An evaluation can complete—or the last active scored tag can deactivate—between statements. The result can say `evaluation_available: false` while returning evaluated rows, or choose database order instead of the expected fit-score default. This also remains possible in auto-select because its transaction is read committed and does not lock evaluation/tag state.  
-   [availability decision](business_flow/smart_targeting_flow.go:166), [independent source resolution](repository/campaign_selected_tag_repository.go:110)  
-   Resolve source/version and list results in one snapshot query, or use repeatable-read isolation for the whole operation.
-
-4. **Medium — nullable tag capacities are silently treated as zero in the selection summary.**  
-   Live tags permit `audience_count = NULL`; replacement accepts it. `SUM` ignores nulls and `COALESCE(..., 0)` turns an entirely unknown capacity into `0`, or produces a partial sum without indicating that it is incomplete.  
-   [nullable model field](models/tag.go:15), [replacement acceptance](repository/campaign_selected_tag_repository.go:325), [summary query](repository/campaign_selected_tag_repository.go:254)  
-   Reject unknown capacities for selection, or expose the raw-capacity summary as nullable/with a completeness flag.
-
-5. **Medium — tag identity and evaluation explanation are fetched then discarded.**  
-   The repository selects `tag_name`, persona, and `reason`, but the DTO and mapper omit them. In the live fallback, a tag with no display title is returned only as an ID; callers also cannot see the evaluation explanation described by the API documentation.  
-   [repository projection](repository/campaign_selected_tag_repository.go:187), [DTO](app/dto/smart_targeting_dto.go:22), [mapper](business_flow/smart_targeting_flow.go:276), [documented explanation fields](docs/smart-targeting-api.md:43)
-
-`go test ./business_flow ./repository ./app/handlers` passes.
-
----
-
-Candoo Black Send:
-P2 — Execution does not validate the persisted color-eligibility snapshot. allowed_colors is stored, but CurrentForExecution only matches platform, tags, grades, and version. If an admin changes a line’s provider after capacity calculation, scheduler selection uses the new provider rule against a capacity count made with the old one—leading to a late execution failure or stale capacity use. [capacity lookup (line 73)](/home/amirphl/Downloads/Yamata-no-Orochi/repository/campaign_targeting_capacity_repository.go:73)
+Low/Medium — Polling a current preview loads every persisted member merely to compare its count. There is no practical upper bound on sample_size_per_tag, so large previews can turn status/cost/finalization checks into large memory and query loads. See [sample-size validation (line 78)](/Users/mac/Downloads/sources/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:78), [freshness lookup (line 492)](/Users/mac/Downloads/sources/Yamata-no-Orochi/business_flow/smart_targeting_sampling_flow.go:492), and [member loading (line 111)](/Users/mac/Downloads/sources/Yamata-no-Orochi/repository/campaign_targeting_test_sample_selection_repository.go:111).

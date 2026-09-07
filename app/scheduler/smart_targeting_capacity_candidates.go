@@ -14,8 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const schedulerSmartTargetingCapacityVersion = 3
-
 // selectAndReserveExactSmartTargetingCandidates selects execution campaigns
 // after a scheduler claim. Test campaigns materialize their already persisted
 // snapshot; only execution-phase campaigns select new candidate rows here.
@@ -25,6 +23,7 @@ func selectAndReserveExactSmartTargetingCandidates(
 	campaign dto.BotGetCampaignResponse,
 	requested int64,
 	correlationID string,
+	allowedColors []string,
 ) ([]string, []int64, []string, uint, error) {
 	if db == nil || campaign.BundleID == nil || *campaign.BundleID == 0 || requested <= 0 {
 		return nil, nil, nil, 0, fmt.Errorf("current exact Smart Targeting capacity is unavailable for campaign %d", campaign.ID)
@@ -140,7 +139,8 @@ func selectAndReserveExactSmartTargetingCandidates(
 			applyBundleAudienceExclusions,
 			capacityTagIDs,
 			classes,
-			schedulerSmartTargetingCapacityVersion,
+			allowedColors,
+			models.SmartTargetingCapacityAlgorithmVersion,
 			time.Now().UTC(),
 		)
 		if err != nil {
@@ -165,7 +165,7 @@ func selectAndReserveExactSmartTargetingCandidates(
 		// candidate query below is the authoritative current population and the
 		// exact-count check fails safely if capacity has genuinely disappeared.
 		audienceRepo := repository.NewSmartTargetingAudienceRepository(txDB)
-		query := smartTargetingSchedulerAudienceQuery(campaign, *campaign.BundleID, tagIDs, classes)
+		query := smartTargetingSchedulerAudienceQuery(campaign, *campaign.BundleID, tagIDs, classes, allowedColors)
 		var rows []*models.AudienceProfile
 		assignedTags := make([]uint, 0)
 		selectionMethod := "score_desc"
@@ -282,16 +282,12 @@ func isSmartTargetingTestCampaign(campaign dto.BotGetCampaignResponse) bool {
 	return usesSmartAudienceTargeting(campaign) && campaign.Phase != nil && strings.EqualFold(strings.TrimSpace(*campaign.Phase), string(models.CampaignPhaseTest))
 }
 
-func smartTargetingSchedulerAllowedColors(platform string) []string {
-	return models.SmartTargetingAllowedColors(platform)
-}
-
-func smartTargetingSchedulerAudienceQuery(campaign dto.BotGetCampaignResponse, bundleID uint, tagIDs []int64, classes []string) repository.SmartTargetingAudienceQuery {
+func smartTargetingSchedulerAudienceQuery(campaign dto.BotGetCampaignResponse, bundleID uint, tagIDs []int64, classes, allowedColors []string) repository.SmartTargetingAudienceQuery {
 	query := repository.SmartTargetingAudienceQuery{
 		BundleID:      bundleID,
 		TagIDs:        tagIDs,
 		ScoreClasses:  classes,
-		AllowedColors: smartTargetingSchedulerAllowedColors(campaign.Platform),
+		AllowedColors: allowedColors,
 	}
 	if isSmartTargetingTestCampaign(campaign) {
 		query.ApplyBundleAudienceExclusions = true
