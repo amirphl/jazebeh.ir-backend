@@ -698,6 +698,11 @@ main() {
 		print_error "Smart Targeting Test sampling jobs are managed by the main API instance"
 		exit 1
 	fi
+	if [ "${SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED:-${SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED:-false}}" != "true" ]; then
+		print_error "SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED must remain true in .env.beta"
+		print_error "Execution audience calculation jobs are managed by the main API instance"
+		exit 1
+	fi
 	if [ "${TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED:-}" != "true" ]; then
 		print_error "TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED must remain true in .env.beta"
 		print_error "Tag Test performance jobs are managed by the main API instance"

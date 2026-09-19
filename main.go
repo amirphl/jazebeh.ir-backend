@@ -412,6 +412,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	campaignSelectedTagRepo := repository.NewCampaignSelectedTagRepository(db)
 	capacityCalculationRepo := repository.NewCampaignTargetingCapacityRepository(db)
 	testSamplingCalculationRepo := repository.NewCampaignTargetingTestSamplingRepository(db)
+	executionCalculationRepo := repository.NewCampaignTargetingExecutionCalculationRepository(db)
 	srcLayerAllStatsRepo := repository.NewSrcLayerAllStatsRepository(db)
 	audienceSpecRepo := repository.NewAudienceSpecRepository(db)
 	sentSMSRepo := repository.NewSentSMSRepository(db)
@@ -992,6 +993,17 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		)
 		stopTestSamplingScheduler := testSamplingScheduler.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopTestSamplingScheduler)
+	}
+
+	if cfg.Scheduler.SmartTargetingExecutionCalculationSchedulerEnabled {
+		executionCalculationScheduler := scheduler.NewSmartTargetingExecutionCalculationScheduler(
+			campaignFlow,
+			executionCalculationRepo,
+			log.Default(),
+			5*time.Second,
+			cfg.Scheduler.SmartTargetingExecutionCalculationMaxParallelRuns,
+		)
+		stopFuncs = append(stopFuncs, executionCalculationScheduler.Start(context.Background()))
 	}
 
 	if cfg.Scheduler.TagTestPerformanceSchedulerEnabled {

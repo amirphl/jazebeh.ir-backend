@@ -43,6 +43,10 @@ load_yamata_env_file "$PROJECT_ROOT/.env.beta"
 	printf '[deploy-production] ERROR: SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED must be true (or inherit true capacity scheduling) in .env.beta\n' >&2
 	exit 1
 }
+[[ "${SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED:-${SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED:-false}}" == true ]] || {
+	printf '[deploy-production] ERROR: SMART_TARGETING_EXECUTION_CALCULATION_SCHEDULER_ENABLED must be true (or inherit true capacity scheduling) in .env.beta\n' >&2
+	exit 1
+}
 [[ "${TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED:-}" == true ]] || {
 	printf '[deploy-production] ERROR: TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED must be true in .env.beta\n' >&2
 	exit 1
