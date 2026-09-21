@@ -382,6 +382,7 @@ func (r *FiberRouter) SetupRoutes() {
 	adminShortLinks.Use(func(c fiber.Ctx) error { return middleware.RequireAdminAuth(c) })
 	adminShortLinks.Use(r.authzMiddleware.AdminAuthorize())
 	adminShortLinks.Post("/upload-csv", r.shortLinkAdminHandler.UploadCSV)
+	adminShortLinks.Get("/upload-csv/:id", r.shortLinkAdminHandler.UploadStatus)
 	adminShortLinks.Post("/download", r.shortLinkAdminHandler.DownloadByScenario)
 	adminShortLinks.Post("/download-with-clicks", r.shortLinkAdminHandler.DownloadWithClicksByScenario)
 	adminShortLinks.Post("/download-with-clicks-range", r.shortLinkAdminHandler.DownloadWithClicksByScenarioRange)

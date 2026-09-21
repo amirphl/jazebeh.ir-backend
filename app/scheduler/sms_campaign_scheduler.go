@@ -1052,7 +1052,12 @@ func (s *SMSCampaignScheduler) scheduleStatusCheckJobs(ctx context.Context, proc
 
 	corrID := uuid.NewString()
 	now := utils.UTCNow()
-	offsets := []time.Duration{1 * time.Minute, 5 * time.Minute, 15 * time.Minute, 24 * time.Hour, 48 * time.Hour}
+	offsets := []time.Duration{1 * time.Minute, 3 * time.Minute, 5 * time.Minute, 7 * time.Minute, 24 * time.Hour}
+	// Candoo delivery status is not queried after the first day. Keep the
+	// existing 48-hour check for PayamSMS campaigns.
+	if provider != models.SMSProviderCandoo {
+		offsets = append(offsets, 48*time.Hour)
+	}
 	jobs := make([]*models.CampaignStatusJob, 0, len(offsets))
 	for _, off := range offsets {
 		jobs = append(jobs, &models.CampaignStatusJob{

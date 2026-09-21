@@ -282,6 +282,8 @@ definitions:
     properties:
       created:
         type: integer
+      job:
+        $ref: '#/definitions/dto.AdminShortLinkUploadJobDTO'
       message:
         type: string
       scenario_id:
@@ -967,6 +969,29 @@ definitions:
         type: boolean
       message:
         type: string
+    type: object
+  dto.AdminShortLinkUploadJobDTO:
+    properties:
+      attempts:
+        type: integer
+      created:
+        type: integer
+      id:
+        type: string
+      last_error:
+        type: string
+      next_attempt_at:
+        type: string
+      published:
+        type: integer
+      scenario_id:
+        type: integer
+      skipped:
+        type: integer
+      status:
+        type: string
+      total_rows:
+        type: integer
     type: object
   dto.AdminTransactionCustomerInfo:
     properties:
@@ -1775,6 +1800,17 @@ definitions:
     required:
     - campaign_id
     - num_messages
+    type: object
+  dto.CampaignActionMetricResponse:
+    properties:
+      action_count:
+        type: integer
+      campaign_atr:
+        type: number
+      campaign_id:
+        type: integer
+      eligible_delivered_count:
+        type: integer
     type: object
   dto.CancelCampaignRequest:
     properties:
@@ -3014,6 +3050,38 @@ definitions:
       usable_unique_audience_count:
         type: integer
     type: object
+  dto.SmartTargetingExecutionCalculationResponse:
+    properties:
+      bundle_id:
+        type: integer
+      calculation_id:
+        type: integer
+      campaign_id:
+        type: integer
+      created_at:
+        type: string
+      error_code:
+        type: string
+      error_message:
+        type: string
+      finished_at:
+        type: string
+      is_current:
+        type: boolean
+      recalculation_required:
+        type: boolean
+      requested_audience_count:
+        type: integer
+      reused:
+        description: |-
+          Reused is true only on a POST response when an equivalent pending or
+          current ready calculation was returned instead of creating a new job.
+        type: boolean
+      started_at:
+        type: string
+      status:
+        type: string
+    type: object
   dto.SmartTargetingSelectionResponse:
     properties:
       selected_tag_ids:
@@ -3042,10 +3110,12 @@ definitions:
         type: integer
       fit_level:
         type: string
+      overall_avg_atr:
+        type: number
       overall_avg_ctr:
         description: |-
-          OverallAvgCTR is global across attributable Test and Execution Campaigns
-          and remains null when no attributed audience has been delivered.
+          OverallAvgCTR is Bundle-scoped across attributable Test and Execution
+          Campaigns and remains null when no attributed audience has been delivered.
         type: number
       relation_type:
         type: string
@@ -3067,6 +3137,9 @@ definitions:
       tag_id:
         type: integer
       test_campaign_ctr:
+        type: number
+      test_phase_avg_atr:
+        description: ATR values use the same Bundle scope as CTR.
         type: number
       test_phase_avg_ctr:
         description: |-
@@ -3426,6 +3499,12 @@ definitions:
         maxLength: 4096
         minLength: 1
         type: string
+      execution_audience_calculation_id:
+        description: |-
+          Required only when finalizing a Smart Targeting Execution campaign. The
+          ID identifies the exact ready, non-reserving proposal to commit.
+        minimum: 1
+        type: integer
       finalize:
         type: boolean
       job:
@@ -6216,7 +6295,7 @@ paths:
     get:
       description: Returns a page of tags for an owned bundle before a campaign exists,
         including whether each tag was scheduler-used in an operational campaign of
-        the bundle, materialized Bundle/tag Test totals and CTR, plus global overall
+        the bundle, materialized Bundle/tag Test totals and CTR, plus Bundle/tag overall
         CTR. A tag is scheduler-used only when an audience attribution exists for
         a running, interrupted, executed, or expired campaign; both Test and Execution
         phases count. When current score rows exist, their tag and score snapshots
@@ -6665,6 +6744,45 @@ paths:
       summary: Update Campaign
       tags:
       - Campaigns
+  /api/v1/campaigns/{uuid}/action-metrics:
+    get:
+      parameters:
+      - description: Campaign UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Retrieved
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.CampaignActionMetricResponse'
+              type: object
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      summary: Get Campaign Action Metrics
+      tags:
+      - Campaigns
   /api/v1/campaigns/{uuid}/click-report:
     get:
       description: Export a CSV showing which targeted audience members clicked the
@@ -6876,6 +6994,158 @@ paths:
       summary: Get an exact Smart Targeting capacity generation
       tags:
       - Campaigns
+  /api/v1/campaigns/{uuid}/smart-targeting/execution-audience-calculations:
+    get:
+      description: Retrieves the current execution-audience calculation for an owned
+        Smart Targeting Execution campaign. A ready calculation is finalizable only
+        when is_current is true and recalculation_required is false.
+      parameters:
+      - description: Owned Smart Targeting Execution campaign UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Current execution audience calculation retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.SmartTargetingExecutionCalculationResponse'
+              type: object
+        "401":
+          description: Authentication required
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "403":
+          description: Campaign access denied
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "404":
+          description: Campaign not found
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "409":
+          description: A current exact capacity calculation is pending or required
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "500":
+          description: Execution audience calculation lookup failed
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current Smart Targeting Execution audience calculation
+      tags:
+      - Campaigns
+    post:
+      description: Queues an asynchronous, non-reserving audience selection for an
+        editable Smart Targeting Execution campaign. Finalization must provide the
+        returned calculation ID after its status becomes ready and current.
+      parameters:
+      - description: Owned Smart Targeting Execution campaign UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Execution audience calculation requested successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.SmartTargetingExecutionCalculationResponse'
+              type: object
+        "401":
+          description: Authentication required
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "403":
+          description: Campaign access denied or campaign is not editable
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "404":
+          description: Campaign not found
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "409":
+          description: A current exact capacity calculation is pending or required
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "500":
+          description: Execution audience calculation request failed
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Request Smart Targeting Execution audience calculation
+      tags:
+      - Campaigns
+  /api/v1/campaigns/{uuid}/smart-targeting/execution-audience-calculations/{calculation_id}:
+    get:
+      description: Retrieves an owned execution-audience calculation by ID. A calculation
+        can be finalized only when status is ready, is_current is true, and recalculation_required
+        is false.
+      parameters:
+      - description: Owned Smart Targeting Execution campaign UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Execution audience calculation ID
+        in: path
+        minimum: 1
+        name: calculation_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Execution audience calculation retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/dto.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.SmartTargetingExecutionCalculationResponse'
+              type: object
+        "400":
+          description: Invalid calculation ID
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "401":
+          description: Authentication required
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "403":
+          description: Campaign access denied
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "404":
+          description: Campaign or execution audience calculation not found
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "500":
+          description: Execution audience calculation lookup failed
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Smart Targeting Execution audience calculation
+      tags:
+      - Campaigns
   /api/v1/campaigns/{uuid}/smart-targeting/selection:
     get:
       description: Returns every selected tag ID and the raw-capacity summary for
@@ -7043,7 +7313,7 @@ paths:
     get:
       description: Returns a page of tags for an owned campaign, each row's selected
         state, whether the tag was scheduler-used in an operational campaign of the
-        bundle, materialized Bundle/tag Test CTR, global overall CTR, nullable per-Campaign
+        bundle, materialized Bundle/tag Test CTR and overall CTR, nullable per-Campaign
         Test totals and CTR, the complete selected_tag_ids set across all pages, and
         the complete selection capacity summary. A tag is scheduler-used only when
         an audience attribution exists for a running, interrupted, executed, or expired
@@ -7293,9 +7563,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Export one Excel worksheet containing audience UID and click results
-        for selected campaigns owned by the authenticated customer. Delivery status
-        is unavailable in the stored audience mapping and is reported as unknown.
+      description: Export one Excel worksheet containing every unique audience UID,
+        click result, and current Bundle action membership for selected campaigns
+        owned by the authenticated customer. Delivery status is unavailable in the
+        stored audience mapping and is reported as unknown.
       parameters:
       - description: Campaign IDs to export
         in: body
@@ -7330,7 +7601,7 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/dto.APIResponse'
-      summary: Export Campaign Audience Click Report
+      summary: Export Campaign Audience Report
       tags:
       - Campaigns
   /api/v1/campaigns/audience-spec:

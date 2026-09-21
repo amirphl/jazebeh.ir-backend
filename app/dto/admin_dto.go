@@ -58,11 +58,25 @@ type AdminLoginResponse struct {
 // Contains summary and the created short links
 // Items use ShortLinkDTO defined in bot_dto.go for consistency
 type AdminCreateShortLinksResponse struct {
-	Message    string `json:"message"`
-	TotalRows  int    `json:"total_rows"`
-	Created    int    `json:"created"`
-	Skipped    int    `json:"skipped"`
-	ScenarioID uint   `json:"scenario_id"`
+	Message    string                     `json:"message"`
+	TotalRows  int                        `json:"total_rows"`
+	Created    int                        `json:"created"`
+	Skipped    int                        `json:"skipped"`
+	ScenarioID uint                       `json:"scenario_id"`
+	Job        AdminShortLinkUploadJobDTO `json:"job"`
+}
+
+type AdminShortLinkUploadJobDTO struct {
+	ID            string     `json:"id"`
+	ScenarioID    uint       `json:"scenario_id"`
+	Status        string     `json:"status"`
+	TotalRows     int        `json:"total_rows"`
+	Created       int        `json:"created"`
+	Skipped       int        `json:"skipped"`
+	Published     int        `json:"published"`
+	Attempts      int        `json:"attempts"`
+	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
+	LastError     *string    `json:"last_error,omitempty"`
 }
 
 // Admin download short links request

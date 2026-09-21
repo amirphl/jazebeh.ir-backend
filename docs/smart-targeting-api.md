@@ -272,10 +272,10 @@ complete history. The setting name is retained for backward compatibility.
 Its polling interval is configured with
 `TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL`. Multi-tag audiences contribute only
 to their persisted `assigned_tag_id`; repeated clicks and repeated provider
-status rows do not inflate audience-level counts. Test CTR remains scoped to
-the Bundle's Test Campaigns. Overall CTR is global across both eligible phases;
-both divide clicking audiences by delivered audiences and remain null when the
-delivery denominator is zero.
+status rows do not inflate audience-level counts. Test CTR is scoped to the
+Bundle's Test Campaigns. Overall CTR is scoped to the same Bundle across both
+eligible phases; both divide clicking audiences by delivered audiences and
+remain null when the delivery denominator is zero.
 
 The Execution tag table's default order is materialized Test CTR descending,
 then Bundle persona-fit score descending for tags without Test CTR, then tag ID

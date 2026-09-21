@@ -479,5 +479,14 @@
 \echo 'Running 0156_create_bundle_action_reporting.sql...'
 \i migrations/0156_create_bundle_action_reporting.sql
 
+\echo 'Running 0157_scope_overall_tag_ctr_to_bundle.sql...'
+\i migrations/0157_scope_overall_tag_ctr_to_bundle.sql
+
+\echo 'Running 0159_create_admin_short_link_upload_jobs.sql...'
+\i migrations/0159_create_admin_short_link_upload_jobs.sql
+
+\echo 'Running 0158_cascade_bundle_overall_tag_ctr_summary.sql...'
+\i migrations/0158_cascade_bundle_overall_tag_ctr_summary.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 

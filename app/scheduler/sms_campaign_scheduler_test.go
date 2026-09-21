@@ -39,6 +39,7 @@ func (s *stubSMSClient) FetchStatus(ctx context.Context, token string, ids []str
 
 type stubSMSCampaignStatusJobRepo struct {
 	updated []*models.CampaignStatusJob
+	batched [][]*models.CampaignStatusJob
 }
 
 type stubSMSAudienceProfileRepo struct {
@@ -114,6 +115,12 @@ func (s *stubSMSCampaignStatusJobRepo) Save(ctx context.Context, entity *models.
 }
 
 func (s *stubSMSCampaignStatusJobRepo) SaveBatch(ctx context.Context, entities []*models.CampaignStatusJob) error {
+	batch := make([]*models.CampaignStatusJob, len(entities))
+	for i, entity := range entities {
+		clone := *entity
+		batch[i] = &clone
+	}
+	s.batched = append(s.batched, batch)
 	return nil
 }
 
@@ -137,6 +144,41 @@ func (s *stubSMSCampaignStatusJobRepo) Update(ctx context.Context, job *models.C
 	clone := *job
 	s.updated = append(s.updated, &clone)
 	return nil
+}
+
+func TestScheduleStatusCheckJobsSkips48HourCandooCheck(t *testing.T) {
+	repo := &stubSMSCampaignStatusJobRepo{}
+	scheduler := &SMSCampaignScheduler{jobRepo: repo}
+
+	if err := scheduler.scheduleStatusCheckJobs(context.Background(), 42, models.SMSProviderCandoo, []string{"tracking-id"}); err != nil {
+		t.Fatalf("schedule Candoo status checks: %v", err)
+	}
+	if len(repo.batched) != 1 {
+		t.Fatalf("Candoo status job batches = %d, want 1", len(repo.batched))
+	}
+	for _, job := range repo.batched[0] {
+		if job.ScheduledAt.Sub(job.CreatedAt) == 48*time.Hour {
+			t.Fatal("Candoo status checks must not include a 48-hour job")
+		}
+	}
+}
+
+func TestScheduleStatusCheckJobsKeeps48HourPayamSMSCheck(t *testing.T) {
+	repo := &stubSMSCampaignStatusJobRepo{}
+	scheduler := &SMSCampaignScheduler{jobRepo: repo}
+
+	if err := scheduler.scheduleStatusCheckJobs(context.Background(), 42, models.SMSProviderPayamSMS, []string{"tracking-id"}); err != nil {
+		t.Fatalf("schedule PayamSMS status checks: %v", err)
+	}
+	if len(repo.batched) != 1 {
+		t.Fatalf("PayamSMS status job batches = %d, want 1", len(repo.batched))
+	}
+	for _, job := range repo.batched[0] {
+		if job.ScheduledAt.Sub(job.CreatedAt) == 48*time.Hour {
+			return
+		}
+	}
+	t.Fatal("PayamSMS status checks must retain the 48-hour job")
 }
 
 func TestDispatchPendingSMSCampaignsSerializesSameBundle(t *testing.T) {

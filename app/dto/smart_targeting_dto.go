@@ -72,10 +72,10 @@ type SmartTargetingTagItem struct {
 	ClickCount      *int64   `json:"click_count"`
 	TestCampaignCTR *float64 `json:"test_campaign_ctr"`
 
-	// OverallAvgCTR is global across attributable Test and Execution Campaigns
-	// and remains null when no attributed audience has been delivered.
+	// OverallAvgCTR is Bundle-scoped across attributable Test and Execution
+	// Campaigns and remains null when no attributed audience has been delivered.
 	OverallAvgCTR *float64 `json:"overall_avg_ctr"`
-	// ATR values are deliberately Bundle-scoped, unlike the legacy global CTR.
+	// ATR values use the same Bundle scope as CTR.
 	TestPhaseAvgATR *float64 `json:"test_phase_avg_atr"`
 	OverallAvgATR   *float64 `json:"overall_avg_atr"`
 	// UsedInBundle reports whether the scheduler has actually attributed this

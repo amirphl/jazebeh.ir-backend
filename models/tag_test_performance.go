@@ -83,9 +83,10 @@ func (TagTestPhasePerformanceSummary) TableName() string {
 	return "tag_test_phase_performance_summaries"
 }
 
-// TagOverallPerformanceSummary is the global weighted performance of one tag
-// across all materialized Smart Targeting Test and Execution Campaigns.
+// TagOverallPerformanceSummary is the Bundle-scoped weighted performance of
+// one tag across materialized Smart Targeting Test and Execution Campaigns.
 type TagOverallPerformanceSummary struct {
+	BundleID            uint      `gorm:"primaryKey" json:"bundle_id"`
 	TagID               uint      `gorm:"primaryKey" json:"tag_id"`
 	TotalSelectedCount  int64     `gorm:"not null" json:"total_selected_count"`
 	TotalSentCount      int64     `gorm:"not null" json:"total_sent_count"`
