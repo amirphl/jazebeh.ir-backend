@@ -3,6 +3,9 @@
 
 \set ON_ERROR_STOP on
 
+\echo 'Running 0169_add_asiatech_sms_down.sql...'
+\i migrations/0169_add_asiatech_sms_down.sql
+
 \echo 'Running 0168_add_campaign_audience_report_customer_limit_index_down.sql...'
 \i migrations/0168_add_campaign_audience_report_customer_limit_index_down.sql
 

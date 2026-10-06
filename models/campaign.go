@@ -187,13 +187,14 @@ func IsValidCampaignAudienceTargetingMethod(method string) bool {
 }
 
 // SmartTargetingAllowedColors returns the audience colors eligible for Smart
-// Targeting. Candoo Smart Targeting uses only black audiences, while PayamSMS
-// retains its white/pink restriction. An empty result means no restriction.
+// Targeting. Candoo and AsiaTech Smart Targeting use only black audiences,
+// while PayamSMS retains its white/pink restriction. An empty result means no
+// restriction.
 func SmartTargetingAllowedColors(platform string, provider SMSProvider) []string {
 	if !strings.EqualFold(strings.TrimSpace(platform), CampaignPlatformSMS) {
 		return nil
 	}
-	if provider == SMSProviderCandoo {
+	if provider == SMSProviderCandoo || provider == SMSProviderAsiaTech {
 		return []string{"black"}
 	}
 	return []string{"white", "pink"}
@@ -204,6 +205,9 @@ func SmartTargetingAllowedColors(platform string, provider SMSProvider) []string
 // SmartTargetingAllowedColors: Candoo standard delivery remains unrestricted.
 func SMSDeliveryAllowedColors(platform string, provider SMSProvider) []string {
 	if strings.EqualFold(strings.TrimSpace(platform), CampaignPlatformSMS) && provider != SMSProviderCandoo {
+		if provider == SMSProviderAsiaTech {
+			return []string{"black"}
+		}
 		return []string{"white", "pink"}
 	}
 	return nil

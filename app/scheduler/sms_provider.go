@@ -52,6 +52,9 @@ type SMSProviderSendItem struct {
 	TrackDeliveryStatus bool
 	ErrorCode           *string
 	Description         *string
+	// Metadata is provider-owned, valid JSON data used by durable integrations.
+	// It is never written to scheduler logs.
+	Metadata json.RawMessage
 }
 
 type SMSProviderSendResult struct {

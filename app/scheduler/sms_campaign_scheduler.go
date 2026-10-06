@@ -23,6 +23,7 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 )
 
 // TODO: Tx management in queries, especially around processed_campaign creation and audience fetching to ensure consistency
@@ -52,9 +53,11 @@ type SMSCampaignScheduler struct {
 	adminCfg config.AdminConfig
 	botCfg   config.BotConfig
 
-	botClient BotClient
-	smsClient PayamSMSClient
-	providers *SMSProviderRegistry
+	botClient        BotClient
+	smsClient        PayamSMSClient
+	providers        *SMSProviderRegistry
+	asiaTechProvider SMSProvider
+	asiaTechConfig   config.AsiaTechSMSConfig
 
 	logFile *os.File
 
@@ -95,10 +98,12 @@ func NewCampaignScheduler(
 	statsRepo repository.SrcLayerAllStatsRepository,
 	notifier NotificationSender,
 	db *gorm.DB,
+	tokenCache *redis.Client,
 	logger *log.Logger,
 	interval time.Duration,
 	payamSMSCfg config.PayamSMSConfig,
 	candooSMSCfg config.CandooSMSConfig,
+	asiaTechSMSCfg config.AsiaTechSMSConfig,
 	botCfg config.BotConfig,
 	adminCfg config.AdminConfig,
 	messageSendMockEnabled bool,
@@ -118,8 +123,10 @@ func NewCampaignScheduler(
 
 	payamClient := maybeMockPayamSMSClient(newHTTPPayamSMSClient(payamSMSCfg), messageSendMockEnabled)
 	candooProvider := NewCandooSMSProvider(candooSMSCfg)
+	asiaTechProvider := NewAsiaTechSMSProviderWithRedis(asiaTechSMSCfg, tokenCache)
 	if messageSendMockEnabled {
 		candooProvider = maybeMockSMSProvider(candooProvider, true)
+		asiaTechProvider = maybeMockSMSProvider(asiaTechProvider, true)
 	}
 	s := &SMSCampaignScheduler{
 		audRepo:                         audRepo,
@@ -138,7 +145,9 @@ func NewCampaignScheduler(
 		botCfg:                          botCfg,
 		botClient:                       newHTTPBotClient(botCfg),
 		smsClient:                       payamClient,
-		providers:                       NewSMSProviderRegistry(newPayamSMSProvider(payamClient), candooProvider),
+		providers:                       NewSMSProviderRegistry(newPayamSMSProvider(payamClient), candooProvider, asiaTechProvider),
+		asiaTechProvider:                asiaTechProvider,
+		asiaTechConfig:                  asiaTechSMSCfg,
 		bundleAudienceCache:             NewBundleAudienceCache(repository.NewBundleAudienceSelectionRepository(db)),
 		executionLimiter:                executionLimiter,
 		batchSendConcurrency:            batchSendConcurrency,
@@ -184,8 +193,18 @@ func (s *SMSCampaignScheduler) Start(parent context.Context) func() {
 	}()
 
 	go s.startStatusJobWorker(parent)
+	go s.startAsiaTechDLRWorker(parent)
+	var asiaTechMonitorStop func()
+	if s.asiaTechConfig.Enabled && s.asiaTechConfig.MonitorEnabled {
+		if operations, ok := s.asiaTechProvider.(AsiaTechProviderOperations); ok {
+			asiaTechMonitorStop = NewAsiaTechMonitor(operations, s.notifier, s.adminCfg, s.logger, s.asiaTechConfig).Start(parent)
+		}
+	}
 
 	return func() {
+		if asiaTechMonitorStop != nil {
+			asiaTechMonitorStop()
+		}
 		if s.logFile != nil {
 			_ = s.logFile.Close()
 		}
@@ -650,8 +669,8 @@ func (s *SMSCampaignScheduler) processSMSProviderBatchResult(ctx context.Context
 	if batchErr != nil {
 		s.logger.Printf("SMS scheduler: provider=%s send batch [%d,%d) failed for campaign id=%d: %v", providerName, batch.start, batch.end, c.ID, batchErr)
 		smsProviderSendBatchesTotal.WithLabelValues(string(providerName), "error").Inc()
-		if providerName == models.SMSProviderCandoo {
-			s.notifyAdmin(fmt.Sprintf("SMS Scheduler: Candoo send batch failed for campaign id=%d: %v", c.ID, batchErr))
+		if providerName == models.SMSProviderCandoo || providerName == models.SMSProviderAsiaTech {
+			s.notifyAdmin(fmt.Sprintf("SMS Scheduler: %s send batch failed for campaign id=%d: %v", providerName, c.ID, batchErr))
 		}
 	} else {
 		smsProviderSendBatchesTotal.WithLabelValues(string(providerName), "success").Inc()
@@ -689,7 +708,10 @@ func (s *SMSCampaignScheduler) processSMSProviderBatchResult(ctx context.Context
 		update := buildGenericSMSProviderUpdate(providerName, trackingID, item.ProviderCustomerID, outcome, batchErr)
 		update.ProcessedCampaignID = utils.ToPtr(pc.ID)
 		sendUpdates = append(sendUpdates, update)
-		if providerName == models.SMSProviderPayamSMS || (outcome != nil && outcome.TrackDeliveryStatus) {
+		if providerName == models.SMSProviderAsiaTech {
+			// AsiaTech needs message-ID based, finality-aware polling. It is
+			// persisted below and intentionally does not use generic status jobs.
+		} else if providerName == models.SMSProviderPayamSMS || (outcome != nil && outcome.TrackDeliveryStatus) {
 			statusTrackingIDs = append(statusTrackingIDs, trackingID)
 		} else {
 			if outcome == nil {
@@ -711,6 +733,12 @@ func (s *SMSCampaignScheduler) processSMSProviderBatchResult(ctx context.Context
 	if len(sendUpdates) > 0 {
 		if err := s.sentRepo.UpdateProviderFieldsByTrackingIDs(ctx, sendUpdates); err != nil {
 			s.logger.Printf("SMS scheduler: failed to batch update sent_sms provider fields for campaign id=%d: %v", c.ID, err)
+		}
+	}
+	if providerName == models.SMSProviderAsiaTech {
+		if err := s.persistAsiaTechSubmissions(ctx, pc.ID, senderForCampaign(c), batch.items, batchResult.Items); err != nil {
+			s.logger.Printf("SMS scheduler: failed to persist AsiaTech submissions for campaign id=%d: %v", c.ID, err)
+			s.notifyAdmin(fmt.Sprintf("SMS Scheduler: failed to persist AsiaTech submissions for campaign id=%d: %v", c.ID, err))
 		}
 	}
 	if err := s.recordImmediateSMSOutcomes(ctx, pc.ID, providerName, immediateOutcomes); err != nil {
@@ -1178,6 +1206,250 @@ func (s *SMSCampaignScheduler) scheduleStatusCheckJobs(ctx context.Context, proc
 		})
 	}
 	return s.jobRepo.SaveBatch(ctx, jobs)
+}
+
+func senderForCampaign(c dto.BotGetCampaignResponse) string {
+	if c.LineNumber == nil {
+		return ""
+	}
+	return strings.TrimSpace(*c.LineNumber)
+}
+
+// persistAsiaTechSubmissions creates the message-ID driven DLR queue only
+// after sent_sms has been updated with the provider response.
+func (s *SMSCampaignScheduler) persistAsiaTechSubmissions(ctx context.Context, processedCampaignID uint, sender string, outbound []SMSProviderMessage, outcomes []SMSProviderSendItem) error {
+	rows, err := s.sentRepo.ListByTrackingIDs(ctx, processedCampaignID, trackingIDsFromProviderMessages(outbound))
+	if err != nil {
+		return err
+	}
+	byTracking := make(map[string]*models.SentSMS, len(rows))
+	for _, row := range rows {
+		byTracking[row.TrackingID] = row
+	}
+	for _, outcome := range outcomes {
+		if outcome.ProviderMessageID == nil || strings.TrimSpace(*outcome.ProviderMessageID) == "" {
+			continue
+		}
+		row := byTracking[strings.TrimSpace(outcome.TrackingID)]
+		if row == nil {
+			continue
+		}
+		var meta struct {
+			Part            json.RawMessage `json:"part"`
+			UpstreamGateway string          `json:"upstream_gateway"`
+			UDH             string          `json:"udh"`
+			Source          string          `json:"source_address"`
+			Destination     string          `json:"destination_address"`
+		}
+		_ = json.Unmarshal(outcome.Metadata, &meta)
+		partCount := parseAsiaTechPartCount(meta.Part)
+		if partCount < 1 {
+			partCount = 1
+		}
+		now := utils.UTCNow()
+		source := sender
+		if meta.Source != "" {
+			source = meta.Source
+		}
+		udh := meta.UDH
+		if udh == "" {
+			udh = row.TrackingID
+		}
+		destination := row.PhoneNumber
+		if meta.Destination != "" {
+			destination = meta.Destination
+		}
+		message := &models.AsiaTechSMSMessage{SentSMSID: row.ID, ProviderMessageID: strings.TrimSpace(*outcome.ProviderMessageID), SourceAddress: source, DestinationAddress: destination, UDH: udh, APIVersion: "4", PartCount: partCount, UpstreamGateway: meta.UpstreamGateway, OperatorGroup: asiaTechOperatorGroup(meta.UpstreamGateway), SubmittedAt: now, NextPollAt: now.Add(time.Minute), CreatedAt: now, UpdatedAt: now}
+		if err := s.db.WithContext(ctx).Where("sent_sms_id = ?", row.ID).FirstOrCreate(message).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func trackingIDsFromProviderMessages(items []SMSProviderMessage) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if id := strings.TrimSpace(item.TrackingID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+func parseAsiaTechPartCount(raw json.RawMessage) int {
+	var n int
+	if json.Unmarshal(raw, &n) == nil {
+		return n
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		n, _ = strconv.Atoi(strings.TrimSpace(text))
+		return n
+	}
+	return 0
+}
+
+// startAsiaTechDLRWorker owns only AsiaTech's time-dependent status lifecycle.
+// It deliberately does not reuse generic status jobs, whose fixed schedule
+// cannot represent a Delivered result that remains mutable for 20 minutes.
+func (s *SMSCampaignScheduler) startAsiaTechDLRWorker(parent context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-parent.Done():
+			return
+		case <-ticker.C:
+			s.runAsiaTechDLRWorker(parent)
+		}
+	}
+}
+func (s *SMSCampaignScheduler) runAsiaTechDLRWorker(parent context.Context) {
+	provider, err := s.providers.Provider(models.SMSProviderAsiaTech)
+	if err != nil {
+		return
+	}
+	if readiness, ok := provider.(SMSProviderReadinessChecker); ok && readiness.Validate() != nil {
+		return
+	}
+	now := utils.UTCNow()
+	var messages []*models.AsiaTechSMSMessage
+	if err := s.db.WithContext(parent).Where("finalized_at IS NULL AND next_poll_at <= ?", now).Order("next_poll_at ASC").Limit(1000).Find(&messages).Error; err != nil || len(messages) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(messages))
+	byID := make(map[string]*models.AsiaTechSMSMessage, len(messages))
+	for _, m := range messages {
+		ids = append(ids, m.ProviderMessageID)
+		byID[m.ProviderMessageID] = m
+	}
+	result, err := provider.FetchStatus(parent, ids)
+	if err != nil {
+		s.logger.Printf("AsiaTech DLR fetch failed ids=%d: %v", len(ids), err)
+		return
+	}
+	for _, item := range result.Items {
+		message := byID[item.ProviderMessageID]
+		if message == nil {
+			continue
+		}
+		if err := s.persistAsiaTechDLRItem(parent, message, item, rawOrEmpty(result.RawResponse)); err != nil {
+			s.logger.Printf("AsiaTech DLR persist message_id=%s: %v", message.ProviderMessageID, err)
+		} else {
+			var sent models.SentSMS
+			if err := s.db.WithContext(parent).First(&sent, message.SentSMSID).Error; err == nil {
+				if err := s.publishSMSStatusStatistics(parent, sent.ProcessedCampaignID); err != nil {
+					s.logger.Printf("AsiaTech DLR statistics campaign_id=%d: %v", sent.ProcessedCampaignID, err)
+				}
+			}
+		}
+	}
+}
+func rawOrEmpty(raw *string) string {
+	if raw == nil {
+		return ""
+	}
+	return *raw
+}
+func (s *SMSCampaignScheduler) persistAsiaTechDLRItem(ctx context.Context, message *models.AsiaTechSMSMessage, item SMSProviderStatusItem, raw string) error {
+	var metadata struct {
+		PartStatus     []asiaTechDLRPart `json:"part_status"`
+		DeliveryStatus int               `json:"delivery_status"`
+	}
+	if err := json.Unmarshal(item.Metadata, &metadata); err != nil {
+		return err
+	}
+	// The scheduler mock intentionally returns the generic provider result.
+	// Give it a documented Delivered DLR shape so mock campaign runs exercise
+	// the same durable AsiaTech projection rather than remaining pending.
+	if metadata.DeliveryStatus == 0 && item.InternalStatus == models.SMSSendStatusSuccessful {
+		metadata.DeliveryStatus = 1
+		metadata.PartStatus = []asiaTechDLRPart{{Number: 1, Status: 1}}
+		item.Metadata, _ = json.Marshal(map[string]any{"part_status": metadata.PartStatus, "delivery_status": metadata.DeliveryStatus})
+	}
+	now := utils.UTCNow()
+	final := asiaTechDeliveryFinal(metadata.DeliveryStatus, message.SubmittedAt)
+	text := asiaTechDeliveryStatusText(metadata.DeliveryStatus)
+	return repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+		var sent models.SentSMS
+		if err := s.db.WithContext(txCtx).First(&sent, message.SentSMSID).Error; err != nil {
+			return err
+		}
+		poll := &models.AsiaTechDLRPoll{AsiaTechSMSMessageID: message.ID, PolledAt: now, OverallStatusCode: metadata.DeliveryStatus, OverallStatusText: text, IsFinal: final, RawResponse: raw}
+		if err := s.db.WithContext(txCtx).Create(poll).Error; err != nil {
+			return err
+		}
+		for _, part := range metadata.PartStatus {
+			at, _ := time.Parse(time.RFC3339Nano, part.At)
+			var atPtr *time.Time
+			if !at.IsZero() {
+				atPtr = &at
+			}
+			record := &models.AsiaTechDLRPart{AsiaTechDLRPollID: poll.ID, PartNumber: part.Number, StatusCode: part.Status, StatusText: asiaTechDeliveryStatusText(part.Status), ProviderStatusAt: atPtr, ChargebackEligible: asiaTechChargebackEligible(message.OperatorGroup, part.Status)}
+			if err := s.db.WithContext(txCtx).Create(record).Error; err != nil {
+				return err
+			}
+		}
+		status := models.SMSSendStatusPending
+		if final {
+			if item.DeliveredParts > 0 && item.DeliveredParts == item.TotalParts {
+				status = models.SMSSendStatusSuccessful
+			} else {
+				status = models.SMSSendStatusUnsuccessful
+			}
+		}
+		delivered := int(item.DeliveredParts)
+		if err := s.sentRepo.UpdateProviderFieldsByTrackingIDs(txCtx, []repository.SentSMSProviderUpdate{{ProcessedCampaignID: utils.ToPtr(sent.ProcessedCampaignID), TrackingID: sent.TrackingID, Provider: utils.ToPtr(models.SMSProviderAsiaTech), Status: &status, PartsDelivered: &delivered}}); err != nil {
+			return err
+		}
+		job := &models.CampaignStatusJob{ProcessedCampaignID: sent.ProcessedCampaignID, CorrelationID: uuid.NewString(), Platform: models.CampaignPlatformSMS, Provider: utils.ToPtr(models.SMSProviderAsiaTech), TrackingIDs: pq.StringArray{sent.TrackingID}, ScheduledAt: now, ExecutedAt: &now, CreatedAt: now, UpdatedAt: now}
+		if err := s.jobRepo.Save(txCtx, job); err != nil {
+			return err
+		}
+		statusRow := &models.SMSStatusResult{JobID: job.ID, ProcessedCampaignID: sent.ProcessedCampaignID, TrackingID: sent.TrackingID, ServerID: &message.ProviderMessageID, Provider: models.SMSProviderAsiaTech, ProviderStatusCode: utils.ToPtr(strconv.Itoa(metadata.DeliveryStatus)), ProviderStatusText: &text, InternalStatus: &status, TotalParts: &item.TotalParts, TotalDeliveredParts: &item.DeliveredParts, TotalUndeliveredParts: &item.UndeliveredParts, TotalUnknownParts: &item.UnknownParts, Status: &text, Metadata: item.Metadata}
+		if err := s.resRepo.SaveBatch(txCtx, []*models.SMSStatusResult{statusRow}); err != nil {
+			return err
+		}
+		message.PollCount++
+		message.LastPolledAt = &now
+		message.UpdatedAt = now
+		if final {
+			message.FinalizedAt = &now
+		} else {
+			message.NextPollAt = nextAsiaTechPoll(message.SubmittedAt, message.PollCount, now)
+		}
+		return s.db.WithContext(txCtx).Save(message).Error
+	})
+}
+func nextAsiaTechPoll(submitted time.Time, count int, now time.Time) time.Time {
+	offsets := []time.Duration{time.Minute, 5 * time.Minute, 22 * time.Minute, time.Hour, 3 * time.Hour, 7 * time.Hour}
+	if count < len(offsets) {
+		next := submitted.Add(offsets[count])
+		if next.After(now) {
+			return next
+		}
+	}
+	return now.Add(time.Hour)
+}
+func asiaTechOperatorGroup(gateway string) string {
+	switch strings.ToUpper(strings.TrimSpace(gateway)) {
+	case "MCI", "2SMCI", "3SMCI", "SMCI":
+		return "mci"
+	case "MTN", "SMTN":
+		return "irancell"
+	}
+	return "other"
+}
+func asiaTechChargebackEligible(group string, code int) bool {
+	if code == 7 || code == 10 {
+		return true
+	}
+	if group == "mci" || group == "irancell" {
+		switch code {
+		case 2, 5, 11, 16, 32, 33, 34, 36:
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SMSCampaignScheduler) startStatusJobWorker(parent context.Context) {

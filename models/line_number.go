@@ -12,11 +12,12 @@ type SMSProvider string
 const (
 	SMSProviderPayamSMS SMSProvider = "payamsms"
 	SMSProviderCandoo   SMSProvider = "candoo"
+	SMSProviderAsiaTech SMSProvider = "asiatech"
 )
 
 func IsValidSMSProvider(provider SMSProvider) bool {
 	switch provider {
-	case SMSProviderPayamSMS, SMSProviderCandoo:
+	case SMSProviderPayamSMS, SMSProviderCandoo, SMSProviderAsiaTech:
 		return true
 	default:
 		return false

@@ -10,8 +10,8 @@ import (
 
 // smartTargetingAllowedColorsForCampaign resolves the sender provider before
 // deriving audience eligibility. Missing or retired line configuration keeps
-// the historic PayamSMS-safe behavior; a configured Candoo line uses the
-// black-only Smart Targeting policy.
+// the historic PayamSMS-safe behavior; configured Candoo and AsiaTech lines
+// use the black-only Smart Targeting policy.
 func smartTargetingAllowedColorsForCampaign(
 	ctx context.Context,
 	lineNumberRepo repository.LineNumberRepository,
@@ -29,8 +29,8 @@ func smartTargetingAllowedColorsForCampaign(
 			if err != nil {
 				return nil, err
 			}
-			if line != nil && line.Provider == models.SMSProviderCandoo {
-				provider = models.SMSProviderCandoo
+			if line != nil && (line.Provider == models.SMSProviderCandoo || line.Provider == models.SMSProviderAsiaTech) {
+				provider = line.Provider
 			}
 		}
 	}

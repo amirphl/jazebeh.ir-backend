@@ -6,7 +6,7 @@ package dto
 type AdminCreateLineNumberRequest struct {
 	Name        *string `json:"name,omitempty" validate:"omitempty,max=255"`
 	LineNumber  string  `json:"line_number" validate:"required,min=3,max=50"`
-	Provider    string  `json:"provider,omitempty" validate:"omitempty,oneof=payamsms candoo"`
+	Provider    string  `json:"provider,omitempty" validate:"omitempty,oneof=payamsms candoo asiatech"`
 	PriceFactor float64 `json:"price_factor" validate:"required,gt=0"`
 	Priority    *int    `json:"priority,omitempty" validate:"omitempty"`
 	IsActive    *bool   `json:"is_active,omitempty" validate:"omitempty"`
@@ -30,7 +30,7 @@ type AdminLineNumberDTO struct {
 // All IDs must exist; price_factor must be > 0; other fields optional
 type AdminUpdateLineNumberItem struct {
 	ID       uint    `json:"id" validate:"required"`
-	Provider *string `json:"provider,omitempty" validate:"omitempty,oneof=payamsms candoo"`
+	Provider *string `json:"provider,omitempty" validate:"omitempty,oneof=payamsms candoo asiatech"`
 	Priority *int    `json:"priority,omitempty" validate:"omitempty"`
 	IsActive *bool   `json:"is_active,omitempty" validate:"omitempty"`
 }

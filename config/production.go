@@ -33,6 +33,7 @@ type ProductionConfig struct {
 	System             SystemConfig             `json:"system"`
 	PayamSMS           PayamSMSConfig           `json:"payam_sms"`
 	CandooSMS          CandooSMSConfig          `json:"candoo_sms"`
+	AsiaTechSMS        AsiaTechSMSConfig        `json:"asiatech_sms"`
 	Bale               BaleConfig               `json:"bale"`
 	Rubika             RubikaConfig             `json:"rubika"`
 	Splus              SplusConfig              `json:"splus"`
@@ -403,6 +404,41 @@ type CandooSMSConfig struct {
 	// model. The vendor's status-code definitions must be supplied by the
 	// deployment, for example: "-1:pending,100:successful,200:unsuccessful".
 	StatusCodeMap map[string]string `json:"status_code_map"`
+}
+
+// AsiaTechSMSConfig configures bulk P2P campaign delivery. It is deliberately
+// separate from SMSConfig because each sender line chooses its own provider.
+type AsiaTechSMSConfig struct {
+	Enabled               bool          `json:"enabled"`
+	BaseURL               string        `json:"base_url"`
+	TokenURL              string        `json:"token_url"`
+	Username              string        `json:"username"`
+	Password              string        `json:"password"`
+	Scope                 string        `json:"scope"`
+	Timeout               time.Duration `json:"timeout"`
+	MaxBatchSize          int           `json:"max_batch_size"`
+	SendRequestsPerSecond int           `json:"send_requests_per_second"`
+	DLRRequestsPerSecond  int           `json:"dlr_requests_per_second"`
+	FallbackMPS           int           `json:"fallback_mps"`
+	MonitorEnabled        bool          `json:"monitor_enabled"`
+	MonitorInterval       time.Duration `json:"monitor_interval"`
+	LowCreditThreshold    *float64      `json:"low_credit_threshold"`
+	AlertMaxInterval      time.Duration `json:"alert_max_interval"`
+}
+
+func loadAsiaTechSMSConfig() AsiaTechSMSConfig {
+	return AsiaTechSMSConfig{
+		Enabled:  getEnvBool("ASIATECH_SMS_ENABLED", false),
+		BaseURL:  getEnvString("ASIATECH_SMS_BASE_URL", "https://smsapi.asiatech.ir"),
+		TokenURL: getEnvString("ASIATECH_SMS_TOKEN_URL", "https://smsapi.asiatech.ir/connect/token"),
+		Username: getEnvString("ASIATECH_SMS_USERNAME", ""), Password: getEnvString("ASIATECH_SMS_PASSWORD", ""),
+		Scope: getEnvString("ASIATECH_SMS_SCOPE", "BulkApiAccess"), Timeout: getEnvDuration("ASIATECH_SMS_TIMEOUT", 30*time.Second),
+		MaxBatchSize:          getEnvInt("ASIATECH_SMS_MAX_BATCH_SIZE", 100),
+		SendRequestsPerSecond: getEnvInt("ASIATECH_SMS_SEND_RPS", 100),
+		DLRRequestsPerSecond:  getEnvInt("ASIATECH_SMS_DLR_RPS", 10), FallbackMPS: getEnvInt("ASIATECH_SMS_FALLBACK_MPS", 1),
+		MonitorEnabled: getEnvBool("ASIATECH_SMS_MONITOR_ENABLED", false), MonitorInterval: getEnvDuration("ASIATECH_SMS_MONITOR_INTERVAL", 5*time.Minute),
+		LowCreditThreshold: getOptionalEnvFloat64("ASIATECH_SMS_LOW_CREDIT_THRESHOLD"), AlertMaxInterval: getEnvDuration("ASIATECH_SMS_ALERT_MAX_INTERVAL", time.Hour),
+	}
 }
 
 func loadCandooSMSConfig() CandooSMSConfig {
@@ -847,7 +883,8 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			GrantType:       getEnvString("PAYAM_SMS_GRANT_TYPE", "password"),
 			RootAccessToken: getEnvString("PAYAM_SMS_ROOT_ACCESS_TOKEN", ""),
 		},
-		CandooSMS: loadCandooSMSConfig(),
+		CandooSMS:   loadCandooSMSConfig(),
+		AsiaTechSMS: loadAsiaTechSMSConfig(),
 		Bale: BaleConfig{
 			APIAccessKey: getEnvString("BALE_API_ACCESS_KEY", ""),
 			Provider:     getEnvString("BALE_PROVIDER", "najva"),
@@ -1270,6 +1307,32 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 			if !hasTerminalStatus {
 				errors = append(errors, "CANDOO_SMS_STATUS_MAP must include at least one successful or unsuccessful terminal mapping")
 			}
+		}
+	}
+	if cfg.AsiaTechSMS.Enabled {
+		if strings.TrimSpace(cfg.AsiaTechSMS.Username) == "" || strings.TrimSpace(cfg.AsiaTechSMS.Password) == "" {
+			errors = append(errors, "ASIATECH_SMS_USERNAME and ASIATECH_SMS_PASSWORD are required when ASIATECH_SMS_ENABLED is true")
+		}
+		if strings.TrimSpace(cfg.AsiaTechSMS.Scope) != "BulkApiAccess" {
+			errors = append(errors, "ASIATECH_SMS_SCOPE must be BulkApiAccess")
+		}
+		if cfg.AsiaTechSMS.Timeout <= 0 || cfg.AsiaTechSMS.MonitorInterval <= 0 || cfg.AsiaTechSMS.AlertMaxInterval <= 0 {
+			errors = append(errors, "ASIATECH_SMS timeout and monitor intervals must be positive")
+		}
+		if cfg.AsiaTechSMS.MaxBatchSize < 1 || cfg.AsiaTechSMS.MaxBatchSize > 1000 {
+			errors = append(errors, "ASIATECH_SMS_MAX_BATCH_SIZE must be between 1 and 1000")
+		}
+		if cfg.AsiaTechSMS.SendRequestsPerSecond < 1 || cfg.AsiaTechSMS.SendRequestsPerSecond > 100 {
+			errors = append(errors, "ASIATECH_SMS_SEND_RPS must be between 1 and 100")
+		}
+		if cfg.AsiaTechSMS.DLRRequestsPerSecond < 1 || cfg.AsiaTechSMS.DLRRequestsPerSecond > 10 {
+			errors = append(errors, "ASIATECH_SMS_DLR_RPS must be between 1 and 10")
+		}
+		if cfg.AsiaTechSMS.FallbackMPS < 1 {
+			errors = append(errors, "ASIATECH_SMS_FALLBACK_MPS must be positive")
+		}
+		if cfg.AsiaTechSMS.LowCreditThreshold != nil && *cfg.AsiaTechSMS.LowCreditThreshold < 0 {
+			errors = append(errors, "ASIATECH_SMS_LOW_CREDIT_THRESHOLD must not be negative")
 		}
 	}
 

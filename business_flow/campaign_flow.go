@@ -90,6 +90,7 @@ type CampaignFlowImpl struct {
 	botConfig               config.BotConfig
 	payamSMSConfig          config.PayamSMSConfig
 	candooSMSConfig         config.CandooSMSConfig
+	asiaTechSMSConfig       config.AsiaTechSMSConfig
 	baleConfig              config.BaleConfig
 	rubikaConfig            config.RubikaConfig
 	splusConfig             config.SplusConfig
@@ -145,6 +146,7 @@ func NewCampaignFlow(
 	botConfig config.BotConfig,
 	payamSMSConfig config.PayamSMSConfig,
 	candooSMSConfig config.CandooSMSConfig,
+	asiaTechSMSConfig config.AsiaTechSMSConfig,
 	baleConfig config.BaleConfig,
 	rubikaConfig config.RubikaConfig,
 	splusConfig config.SplusConfig,
@@ -183,6 +185,7 @@ func NewCampaignFlow(
 		botConfig:               botConfig,
 		payamSMSConfig:          payamSMSConfig,
 		candooSMSConfig:         candooSMSConfig,
+		asiaTechSMSConfig:       asiaTechSMSConfig,
 		baleConfig:              baleConfig,
 		rubikaConfig:            rubikaConfig,
 		splusConfig:             splusConfig,

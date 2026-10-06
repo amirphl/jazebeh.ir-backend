@@ -371,6 +371,23 @@ func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
 			})
 			return nil, nil
 		}
+		if provider == models.SMSProviderAsiaTech {
+			client, err := s.newTestAsiaTechSMSProvider()
+			if err != nil {
+				return nil, err
+			}
+			if readiness, ok := client.(scheduler.SMSProviderReadinessChecker); ok {
+				if err := readiness.Validate(); err != nil {
+					return nil, fmt.Errorf("validate AsiaTech campaign test configuration: %w", err)
+				}
+			}
+			s.runAsyncCampaignTestSend(baseCtx, platform, recipient, func(sendCtx context.Context) error {
+				s.logTestSendProxyUsage(platform, recipient)
+				_, err := client.SendBatch(sendCtx, lineNumber, []scheduler.SMSProviderMessage{{Recipient: recipient, Body: body, TrackingID: buildProviderTestID("test-asiatech", campaign.CustomerID)}})
+				return err
+			})
+			return nil, nil
+		}
 
 		client, err := s.newTestPayamSMSClient()
 		if err != nil {
@@ -601,6 +618,13 @@ func (s *CampaignFlowImpl) newTestCandooSMSProvider() (scheduler.SMSProvider, er
 		return scheduler.NewCandooSMSProvider(s.candooSMSConfig), nil
 	}
 	return scheduler.NewCandooSMSProviderWithHTTPSProxy(s.candooSMSConfig, s.irHTTPSProxy)
+}
+
+func (s *CampaignFlowImpl) newTestAsiaTechSMSProvider() (scheduler.SMSProvider, error) {
+	if strings.TrimSpace(s.irHTTPSProxy) == "" {
+		return scheduler.NewAsiaTechSMSProvider(s.asiaTechSMSConfig), nil
+	}
+	return scheduler.NewAsiaTechSMSProviderWithHTTPSProxy(s.asiaTechSMSConfig, s.irHTTPSProxy)
 }
 
 func (s *CampaignFlowImpl) newTestBaleClient() (scheduler.BaleClient, error) {
