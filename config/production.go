@@ -495,13 +495,14 @@ type MessageConfig struct {
 }
 
 type SmartTagEvaluationConfig struct {
-	Enabled         bool                              `json:"enabled"`
-	Scheduler       SmartTagEvaluationSchedulerConfig `json:"scheduler"`
-	PersonaAnalysis SmartTagPromptConfig              `json:"persona_analysis"`
-	TagScoring      SmartTagPromptConfig              `json:"tag_scoring"`
-	OpenAI          SmartTagOpenAIConfig              `json:"openai"`
-	Batching        SmartTagBatchingConfig            `json:"batching"`
-	Validation      SmartTagValidationConfig          `json:"validation"`
+	Enabled               bool                              `json:"enabled"`
+	DailyLimitPerCustomer int                               `json:"daily_limit_per_customer"`
+	Scheduler             SmartTagEvaluationSchedulerConfig `json:"scheduler"`
+	PersonaAnalysis       SmartTagPromptConfig              `json:"persona_analysis"`
+	TagScoring            SmartTagPromptConfig              `json:"tag_scoring"`
+	OpenAI                SmartTagOpenAIConfig              `json:"openai"`
+	Batching              SmartTagBatchingConfig            `json:"batching"`
+	Validation            SmartTagValidationConfig          `json:"validation"`
 }
 
 type SmartTagEvaluationSchedulerConfig struct {
@@ -822,7 +823,8 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			InvoiceIssueRequestTemplate:           getEnvString("MESSAGE_INVOICE_ISSUE_REQUEST_TEMPLATE", "درخواست صدور فاکتور ثبت شد. مشتری: %s، شرکت: %s"),
 		},
 		SmartTagEvaluation: SmartTagEvaluationConfig{
-			Enabled: smartTagEvaluationEnabled,
+			Enabled:               smartTagEvaluationEnabled,
+			DailyLimitPerCustomer: getEnvInt("SMART_TAG_EVALUATION_DAILY_LIMIT_PER_CUSTOMER", 2),
 			Scheduler: SmartTagEvaluationSchedulerConfig{
 				Enabled:         getEnvBool("SMART_TAG_EVALUATION_SCHEDULER_ENABLED", false),
 				PollInterval:    getEnvDuration("SMART_TAG_EVALUATION_SCHEDULER_POLL_INTERVAL", 30*time.Second),
@@ -1218,6 +1220,9 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 	errors = append(errors, validateExternalShortLinkConfig(cfg.ExternalShortLink)...)
 
 	if cfg.SmartTagEvaluation.Enabled {
+		if cfg.SmartTagEvaluation.DailyLimitPerCustomer <= 0 {
+			errors = append(errors, "SMART_TAG_EVALUATION_DAILY_LIMIT_PER_CUSTOMER must be positive")
+		}
 		if cfg.SmartTagEvaluation.OpenAI.Model == "" {
 			errors = append(errors, "SMART_TAG_EVALUATION_OPENAI_MODEL is required when smart tag evaluation is enabled")
 		}
