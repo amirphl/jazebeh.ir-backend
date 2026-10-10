@@ -342,6 +342,17 @@ func TestValidateProductionConfigRejectsInvalidEnabledCandooSettings(t *testing.
 	}
 }
 
+func TestValidateProductionConfigRejectsNonpositiveSmartTagDailyLimit(t *testing.T) {
+	cfg := &ProductionConfig{SmartTagEvaluation: SmartTagEvaluationConfig{
+		Enabled:               true,
+		DailyLimitPerCustomer: 0,
+	}}
+	err := ValidateProductionConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "SMART_TAG_EVALUATION_DAILY_LIMIT_PER_CUSTOMER") {
+		t.Fatalf("validation error = %v, want daily-limit validation failure", err)
+	}
+}
+
 func TestValidateProductionConfigRejectsInvalidCandooStatusCodeMap(t *testing.T) {
 	cfg := &ProductionConfig{CandooSMS: CandooSMSConfig{
 		Enabled:              true,
