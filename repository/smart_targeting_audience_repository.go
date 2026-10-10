@@ -15,6 +15,12 @@ import (
 // platforms without a delivery-color restriction.
 type SmartTargetingAudienceQuery struct {
 	BundleID uint
+	// ExcludeActiveTestReservationCampaignID keeps a campaign's own active
+	// Test reservation in its capacity population. A finalized Test campaign
+	// can refresh capacity before execution; its already-reserved sample is not
+	// prior use by another campaign and must not make its own capacity collapse.
+	// Zero retains the normal behavior of excluding every active reservation.
+	ExcludeActiveTestReservationCampaignID uint
 	// ApplyBundleAudienceExclusions enables the manually populated, bundle-
 	// scoped exclusion list for Smart Targeting Test capacity, preview, and
 	// final selection.
@@ -79,6 +85,7 @@ WITH tagged_population AS (
           FROM campaign_targeting_test_sample_reservations AS reserved
           WHERE reserved.bundle_id = ? AND reserved.audience_id = tagged.id
             AND reserved.state = 'active'
+			AND (?::bigint = 0 OR reserved.campaign_id <> ?)
       )
       AND (?::boolean OR NOT EXISTS (
           SELECT 1
@@ -112,6 +119,7 @@ WITH tagged_population AS (
           FROM campaign_targeting_test_sample_reservations AS reserved
           WHERE reserved.bundle_id = ? AND reserved.audience_id = tagged.id
             AND reserved.state = 'active'
+			AND (?::bigint = 0 OR reserved.campaign_id <> ?)
       )
       AND (?::boolean OR NOT EXISTS (
           SELECT 1
@@ -160,6 +168,8 @@ func smartTargetingPopulationArgs(query SmartTargetingAudienceQuery) []any {
 		pq.Array(colors),
 		query.BundleID,
 		query.BundleID,
+		query.ExcludeActiveTestReservationCampaignID,
+		query.ExcludeActiveTestReservationCampaignID,
 		!query.ApplyBundleAudienceExclusions,
 		query.BundleID,
 	}
@@ -249,6 +259,11 @@ func (r *smartTargetingAudienceRepository) SelectIDsForTag(ctx context.Context, 
 
 // SelectForTag is the Smart Targeting Test sampling path. Score classes
 // restrict eligibility; no random, score, ID, or other ordering is imposed.
+// TODO(smart-targeting-random-sampling): Without ORDER BY, PostgreSQL returns
+// a planner/storage-dependent LIMIT result. It is therefore not statistically
+// random and is not reproducible. ORDER BY random() is deliberately avoided
+// because it is prohibitively expensive at the current population size; replace
+// this with a performant indexed or seeded sampling strategy.
 func (r *smartTargetingAudienceRepository) SelectForTag(ctx context.Context, query SmartTargetingAudienceQuery, bounds *SmartTargetingScoreBounds, tagID int64, excludeAudienceIDs []int64, limit int64) ([]*models.AudienceProfile, error) {
 	sql, args, err := smartTargetingPerTagSelectionQuery(query, bounds, tagID, excludeAudienceIDs, limit, false)
 	if err != nil {
@@ -288,11 +303,12 @@ FROM (
 	sql += `
       AND NOT EXISTS (
           SELECT 1
-          FROM campaign_targeting_test_sample_reservations AS reserved
-          WHERE reserved.bundle_id = ? AND reserved.audience_id = ap.id
-            AND reserved.state = 'active'
+      FROM campaign_targeting_test_sample_reservations AS reserved
+      WHERE reserved.bundle_id = ? AND reserved.audience_id = ap.id
+        AND reserved.state = 'active'
+		AND (?::bigint = 0 OR reserved.campaign_id <> ?)
       )`
-	args = append(args, query.BundleID)
+	args = append(args, query.BundleID, query.ExcludeActiveTestReservationCampaignID, query.ExcludeActiveTestReservationCampaignID)
 	if query.ApplyBundleAudienceExclusions {
 		sql += `
       AND NOT EXISTS (
@@ -354,8 +370,9 @@ WHERE ap.tags @> ARRAY[?]::integer[]
       FROM campaign_targeting_test_sample_reservations AS reserved
       WHERE reserved.bundle_id = ? AND reserved.audience_id = ap.id
         AND reserved.state = 'active'
+		AND (?::bigint = 0 OR reserved.campaign_id <> ?)
   )`
-	args = append(args, query.BundleID)
+	args = append(args, query.BundleID, query.ExcludeActiveTestReservationCampaignID, query.ExcludeActiveTestReservationCampaignID)
 	if query.ApplyBundleAudienceExclusions {
 		sql += `
   AND NOT EXISTS (
