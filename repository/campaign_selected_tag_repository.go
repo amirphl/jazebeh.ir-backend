@@ -34,6 +34,10 @@ func invalidateCampaignSmartTargetingTestPreview(db *gorm.DB, campaignID uint) e
 		"smart_targeting_test_satisfied_tag_ids":     gorm.Expr("ARRAY[]::integer[]"),
 		"smart_targeting_test_sampling_input_hash":   nil,
 		"smart_targeting_test_sampling_previewed_at": nil,
+		// This selection is the concrete output of the invalidated preview. Clear
+		// the pointer with the preview fields so the campaign cannot retain a
+		// stale active selection reference.
+		"active_smart_targeting_test_selection_id": nil,
 		"num_audience": uint64(0),
 		"updated_at":   utils.UTCNow(),
 	}).Error
