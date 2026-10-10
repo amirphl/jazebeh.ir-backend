@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"gorm.io/gorm"
@@ -41,6 +42,14 @@ func (r *BundleTagEvaluationRunRepositoryImpl) ListByBundleID(ctx context.Contex
 		return nil, err
 	}
 	return rows, nil
+}
+
+func (r *BundleTagEvaluationRunRepositoryImpl) CountByCustomerIDCreatedBetween(ctx context.Context, customerID uint, start, end time.Time) (int64, error) {
+	var count int64
+	err := r.getDB(ctx).Model(&models.BundleTagEvaluationRun{}).
+		Where("customer_id = ? AND created_at >= ? AND created_at < ?", customerID, start, end).
+		Count(&count).Error
+	return count, err
 }
 
 type BundleTagEvaluationEventRepositoryImpl struct {
