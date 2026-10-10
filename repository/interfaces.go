@@ -309,6 +309,7 @@ type BundleTagEvaluationRunRepository interface {
 	Save(ctx context.Context, entity *models.BundleTagEvaluationRun) error
 	ByID(ctx context.Context, id int64) (*models.BundleTagEvaluationRun, error)
 	ListByBundleID(ctx context.Context, bundleID uint, limit int) ([]*models.BundleTagEvaluationRun, error)
+	CountByCustomerIDCreatedBetween(ctx context.Context, customerID uint, start, end time.Time) (int64, error)
 }
 
 type BundleTagEvaluationEventRepository interface {
