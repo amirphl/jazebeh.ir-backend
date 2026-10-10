@@ -37,6 +37,17 @@ func LockBundleForUpdate(ctx context.Context, bundleID uint) error {
 	return tx.WithContext(ctx).Exec("SELECT id FROM bundles WHERE id = ? FOR UPDATE", bundleID).Error
 }
 
+// LockWalletForUpdate serializes balance-snapshot mutations for a wallet. A
+// campaign row lock alone is not sufficient because different campaigns for
+// the same customer can otherwise derive new snapshots from the same balance.
+func LockWalletForUpdate(ctx context.Context, walletID uint) error {
+	tx, err := transactionForLock(ctx)
+	if err != nil {
+		return err
+	}
+	return tx.WithContext(ctx).Exec("SELECT id FROM wallets WHERE id = ? FOR UPDATE", walletID).Error
+}
+
 func LockBundleForShare(ctx context.Context, bundleID uint) error {
 	tx, err := transactionForLock(ctx)
 	if err != nil {
