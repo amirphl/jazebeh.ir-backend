@@ -61,3 +61,18 @@ func TestMaterializeTestSampleReservationQueryOnlyUpdatesActiveRows(t *testing.T
 		}
 	}
 }
+
+func TestActiveTestReservationBundleQueryOnlyFindsActiveCampaignReservation(t *testing.T) {
+	db := newAudienceProfileDryRunDB(t).Session(&gorm.Session{SkipDefaultTransaction: true})
+	var rows []models.CampaignTargetingTestSampleReservation
+	statement := activeTestReservationBundleQuery(db, 17).Find(&rows).Statement
+	if statement.Error != nil {
+		t.Fatalf("build active reservation Bundle lookup query: %v", statement.Error)
+	}
+	sql := strings.ToLower(statement.SQL.String())
+	for _, fragment := range []string{"\"bundle_id\"", "campaign_id", "state = 'active'", "order by bundle_id", "limit"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("active reservation Bundle lookup query is missing %q:\n%s", fragment, statement.SQL.String())
+		}
+	}
+}
