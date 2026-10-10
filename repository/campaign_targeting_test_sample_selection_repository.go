@@ -254,8 +254,10 @@ func requireExpectedReservationRows(expectedMembers, affectedRows int64) error {
 }
 
 // ReleaseForCampaign is part of a terminal campaign status transition. It
-// takes the campaign lock itself so any caller is serialized with scheduler
-// claims; callers must make the status decision in the same transaction.
+// locks the campaign and then its Bundle so releasing a Test reservation is
+// serialized with capacity scans (which hold a Bundle SHARE lock), approval,
+// and audience materialization. Callers must make the status decision in the
+// same transaction.
 func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReleaseForCampaign(ctx context.Context, campaignID uint) error {
 	if campaignID == 0 {
 		return nil
@@ -263,8 +265,26 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReleaseForCampaign(
 	if err := LockCampaignForUpdate(ctx, campaignID); err != nil {
 		return err
 	}
+	db := r.getDB(ctx)
+	var bundleID uint
+	if err := activeTestReservationBundleQuery(db, campaignID).Scan(&bundleID).Error; err != nil {
+		return err
+	}
+	if bundleID != 0 {
+		if err := LockBundleForUpdate(ctx, bundleID); err != nil {
+			return err
+		}
+	}
 	now := time.Now().UTC()
-	return r.getDB(ctx).Model(&models.CampaignTargetingTestSampleReservation{}).
+	return db.Model(&models.CampaignTargetingTestSampleReservation{}).
 		Where("campaign_id = ? AND state = 'active'", campaignID).
 		Updates(map[string]any{"state": "released", "released_at": now}).Error
+}
+
+func activeTestReservationBundleQuery(db *gorm.DB, campaignID uint) *gorm.DB {
+	return db.Model(&models.CampaignTargetingTestSampleReservation{}).
+		Select("bundle_id").
+		Where("campaign_id = ? AND state = 'active'", campaignID).
+		Order("bundle_id ASC").
+		Limit(1)
 }
