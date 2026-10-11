@@ -90,6 +90,7 @@ func TestSmartTargetingScoreClassBoundaries(t *testing.T) {
 
 func TestSmartTargetingCapacityAudienceQueryUsesSnapshotEligibility(t *testing.T) {
 	calculation := &models.CampaignTargetingCapacityCalculation{
+		CampaignID:                    17,
 		BundleID:                      3,
 		Platform:                      models.CampaignPlatformSMS,
 		ApplyBundleAudienceExclusions: true,
@@ -97,8 +98,30 @@ func TestSmartTargetingCapacityAudienceQueryUsesSnapshotEligibility(t *testing.T
 		SelectedScoreClasses:          pq.StringArray{"A", "C"},
 	}
 	query := smartTargetingCapacityAudienceQuery(calculation)
-	if query.BundleID != 3 || !query.ApplyBundleAudienceExclusions || !reflect.DeepEqual(query.TagIDs, []int64{2, 9}) || !reflect.DeepEqual(query.ScoreClasses, []string{"A", "C"}) || !reflect.DeepEqual(query.AllowedColors, []string{"white", "pink"}) {
+	if query.BundleID != 3 || query.ExcludeActiveTestReservationCampaignID != 17 || !query.ApplyBundleAudienceExclusions || !reflect.DeepEqual(query.TagIDs, []int64{2, 9}) || !reflect.DeepEqual(query.ScoreClasses, []string{"A", "C"}) || !reflect.DeepEqual(query.AllowedColors, []string{"white", "pink"}) {
 		t.Fatalf("capacity audience query = %#v", query)
+	}
+}
+
+func TestCurrentSmartTargetingCapacityRejectsUnavailableSelectedTags(t *testing.T) {
+	now := time.Now().UTC()
+	bundleID := uint(3)
+	method := models.CampaignAudienceTargetingSmart
+	campaign := &models.Campaign{
+		ID: 17, BundleID: &bundleID,
+		Spec: models.CampaignSpec{AudienceTargetingMethod: &method, AudienceGrades: []string{"A", "B", "C"}},
+	}
+	calculation := &models.CampaignTargetingCapacityCalculation{
+		CampaignID: 17, BundleID: bundleID, Status: models.CampaignTargetingCapacityCalculated,
+		ExpiresAt: ptrTime(now.Add(time.Hour)),
+	}
+	selectionRepo := &samplingSelectedTagRepositoryStub{
+		selected:    []*models.CampaignSelectedTag{{CampaignID: 17, BundleID: bundleID, TagID: 9}},
+		validateErr: repository.ErrInvalidCampaignSelectedTags,
+	}
+	current, err := isCurrentSmartTargetingCapacity(t.Context(), nil, selectionRepo, calculation, campaign)
+	if err != nil || current {
+		t.Fatalf("current capacity = (%t, %v), want unavailable selection to be stale", current, err)
 	}
 }
 
