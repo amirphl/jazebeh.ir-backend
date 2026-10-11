@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -319,24 +320,48 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	// 	}
 	// }
 
-	sanitizedShortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
-	if err != nil {
-		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
+	ensureCampaignSpecDefaults(&campaign.Spec)
+	if req.ShortLinkDomain != nil && strings.TrimSpace(*req.ShortLinkDomain) != "" {
+		sanitizedShortLinkDomain, err := sanitizeShortLinkDomain(req.ShortLinkDomain)
+		if err != nil {
+			return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
+		}
+		req.ShortLinkDomain = sanitizedShortLinkDomain
+	} else {
+		// These request fields use replace semantics: absent, null, and empty
+		// all explicitly remove the stored value.
+		req.ShortLinkDomain = nil
 	}
-	req.ShortLinkDomain = sanitizedShortLinkDomain
 
-	sanitizedCategory, sanitizedJob, err := sanitizeCategoryAndJob(customer.AccountType.TypeName, req.Category, req.Job, true)
-	if err != nil {
-		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
+	// Category and job are a pair for agencies, but an omitted field in a
+	// partial update means "keep the stored value", not "erase it".
+	if req.Category != nil || req.Job != nil {
+		category, job := campaign.Spec.Category, campaign.Spec.Job
+		if req.Category != nil {
+			category = req.Category
+		}
+		if req.Job != nil {
+			job = req.Job
+		}
+		sanitizedCategory, sanitizedJob, err := sanitizeCategoryAndJob(customer.AccountType.TypeName, category, job, true)
+		if err != nil {
+			return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
+		}
+		if req.Category != nil {
+			req.Category = sanitizedCategory
+		}
+		if req.Job != nil {
+			req.Job = sanitizedJob
+		}
 	}
-	req.Category = sanitizedCategory
-	req.Job = sanitizedJob
 
-	sanitizedPlatform, err := sanitizeCampaignPlatform(req.Platform)
-	if err != nil {
-		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
+	if req.Platform != nil {
+		sanitizedPlatform, err := sanitizeCampaignPlatform(req.Platform)
+		if err != nil {
+			return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
+		}
+		req.Platform = &sanitizedPlatform
 	}
-	req.Platform = &sanitizedPlatform
 
 	finalize := req.Finalize != nil && *req.Finalize
 	if err := s.prepareAudienceTargetingUpdate(ctx, req, &campaign); err != nil {
@@ -374,27 +399,42 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 			return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", ErrSmartTargetingSampleSizeInvalid)
 		}
 	}
-	level3sForValidation := req.Level3s
-	if finalTargetingMethod != models.CampaignAudienceTargetingStandard {
+	// Validate references against the effective post-update campaign. Validating
+	// the sparse request itself makes an omitted platform look like SMS and
+	// makes an omitted line/settings record look absent during finalization.
+	candidate := campaign
+	candidateSpec := campaign.Spec
+	if err := applyCampaignSpecUpdate(&candidateSpec, req); err != nil {
+		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
+	}
+	candidate.Spec = candidateSpec
+	if req.BundleID != nil {
+		candidate.BundleID = req.BundleID
+	}
+	if req.Phase != nil {
+		candidate.Phase = campaignPhaseOrDefault(req.Phase)
+	}
+
+	level3sForValidation := candidate.Spec.Level3s
+	if candidate.Spec.UsesSmartTargeting() || candidate.Spec.UsesExcelTargeting() {
 		level3sForValidation = nil
 	}
-	excelFileForValidation := req.TargetAudienceExcelFileUUID
-	if finalTargetingMethod != models.CampaignAudienceTargetingExcel {
+	excelFileForValidation := candidate.Spec.TargetAudienceExcelFileUUID
+	if !candidate.Spec.UsesExcelTargeting() {
 		excelFileForValidation = nil
 	}
 
-	ensureCampaignSpecDefaults(&campaign.Spec)
 	if err := s.ensureUpdateCampaignRefs(
 		ctx,
 		customer.ID,
-		req.BundleID,
-		req.Phase,
-		req.LineNumber,
+		candidate.BundleID,
+		campaignPhasePtr(candidate.Phase),
+		candidate.Spec.LineNumber,
 		level3sForValidation,
-		*req.Platform,
-		req.MediaUUID,
+		candidate.Spec.Platform,
+		candidate.Spec.MediaUUID,
 		excelFileForValidation,
-		req.PlatformSettingsID,
+		candidate.Spec.PlatformSettingsID,
 		finalize,
 	); err != nil {
 		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
@@ -482,7 +522,7 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 
 	segmentPriceFactor := defaultSegmentPriceFactor
 	if !usingTargetAudienceExcelFile && !campaign.Spec.UsesSmartTargeting() {
-		segmentPriceFactor, err = s.fetchSegmentPriceFactor(ctx, campaign.Spec.Level3s, sanitizedPlatform)
+		segmentPriceFactor, err = s.fetchSegmentPriceFactor(ctx, campaign.Spec.Level3s, campaign.Spec.Platform)
 		if err != nil {
 			return nil, NewBusinessError("SEGMENT_PRICE_FACTOR_FETCH_FAILED", "Failed to fetch segment price factor", err)
 		}
@@ -515,7 +555,7 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 		campaign.Spec.Content,
 		campaign.Spec.AdLink,
 		campaign.Spec.ShortLinkDomain,
-		sanitizedPlatform,
+		campaign.Spec.Platform,
 	)
 
 	// Phase 2: atomic financial operations only — keep this transaction as
@@ -571,6 +611,9 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 
 		wallet, err := getWallet(txCtx, s.walletRepo, campaign.CustomerID)
 		if err != nil {
+			return err
+		}
+		if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
 			return err
 		}
 		customer.Wallet = &wallet
@@ -875,6 +918,9 @@ func (s *CampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.CancelCa
 
 		wallet, err := getWallet(txCtx, s.walletRepo, campaign.CustomerID)
 		if err != nil {
+			return err
+		}
+		if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
 			return err
 		}
 		latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
@@ -1231,20 +1277,6 @@ type campaignReportRow struct {
 	Clicked            string
 }
 
-type campaignStatistics struct {
-	TrackingResults []campaignStatisticsTrackingResult `json:"trackingResults"`
-}
-
-type campaignStatisticsTrackingResult struct {
-	AudienceProfileUID    *string `json:"audienceProfileUID"`
-	TrackingID            string  `json:"trackingID"`
-	TotalParts            *int64  `json:"totalParts"`
-	TotalDeliveredParts   *int64  `json:"totalDeliveredParts"`
-	TotalUndeliveredParts *int64  `json:"totalUndeliveredParts"`
-	TotalUnknownParts     *int64  `json:"totalUnknownParts"`
-	Status                *string `json:"status"`
-}
-
 var campaignReportHeaders = []string{
 	"Audience Profile UID",
 	"Status",
@@ -1282,27 +1314,27 @@ func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUI
 		return nil, NewBusinessError("CAMPAIGN_LOOKUP_FAILED", "failed to lookup campaign", err)
 	}
 
-	rows := make([]campaignReportRow, 0)
-	if len(campaign.Statistics) > 0 {
-		var stats campaignStatistics
-		if err := json.Unmarshal(campaign.Statistics, &stats); err != nil {
-			auditFailure(fmt.Sprintf("Campaign report export failed for campaign %s", campaign.UUID.String()), err)
-			return nil, NewBusinessError("CAMPAIGN_STATISTICS_PARSE_FAILED", "failed to parse campaign statistics", err)
+	// The audience JSONL file is the durable report input: it preserves the
+	// audience-profile UID to generated-short-code relationship, unlike the
+	// campaign statistics projection used for ordinary campaign reads.
+	allUIDs, uidToCode, err := readCampaignAudienceUIDs(campaign.ID)
+	if err != nil {
+		auditFailure(fmt.Sprintf("Campaign report export failed for campaign %s", campaign.UUID.String()), err)
+		if os.IsNotExist(err) {
+			return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available (may have expired or not yet pushed)", nil)
 		}
-
-		trackingResults := stats.TrackingResults
-		rows = make([]campaignReportRow, 0, len(trackingResults))
-		for _, tr := range trackingResults {
-			rows = append(rows, campaignReportRow{
-				AudienceProfileUID: stringValue(tr.AudienceProfileUID),
-				Status:             deriveCampaignExportStatus(tr),
-				Clicked:            "", // TODO: Populate clicked status from short link click tracking.
-			})
-		}
-	} else {
-		// Keep empty rows when campaign has no statistics yet.
-		rows = make([]campaignReportRow, 0)
+		return nil, NewBusinessError("CAMPAIGN_CLICK_MAPPING_READ_FAILED", "failed to read campaign click mapping", err)
 	}
+	if len(allUIDs) == 0 {
+		return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available (may have expired or not yet pushed)", nil)
+	}
+
+	clickedCodes, err := s.shortLinkClickRepo.DistinctShortLinkUIDsByCampaignID(ctx, campaign.ID)
+	if err != nil {
+		auditFailure(fmt.Sprintf("Campaign report export failed for campaign %s", campaign.UUID.String()), err)
+		return nil, NewBusinessError("CAMPAIGN_CLICK_LOOKUP_FAILED", "failed to load campaign clicks", err)
+	}
+	rows := buildCampaignReportRows(allUIDs, uidToCode, clickedCodes)
 
 	reportBytes, err := buildCampaignReportExcel(rows)
 	if err != nil {
@@ -1314,6 +1346,30 @@ func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUI
 	_ = s.createAuditLog(ctx, &customer, models.AuditActionCampaignReportExported, msg, true, nil, nil)
 
 	return reportBytes, nil
+}
+
+// buildCampaignReportRows makes the report deterministic from the durable
+// audience UID file and the set of clicked short-link codes. Delivery status
+// is not represented in that file, so it is explicitly reported as unknown
+// rather than inferred from a statistics projection that omits tracking rows.
+func buildCampaignReportRows(allUIDs []string, uidToCode map[string]string, clickedCodes []string) []campaignReportRow {
+	clickedCodeSet := make(map[string]struct{}, len(clickedCodes))
+	for _, code := range clickedCodes {
+		clickedCodeSet[code] = struct{}{}
+	}
+
+	sortedUIDs := append([]string(nil), allUIDs...)
+	sort.Strings(sortedUIDs)
+	rows := make([]campaignReportRow, 0, len(sortedUIDs))
+	for _, audienceUID := range sortedUIDs {
+		_, clicked := clickedCodeSet[uidToCode[audienceUID]]
+		rows = append(rows, campaignReportRow{
+			AudienceProfileUID: audienceUID,
+			Status:             "unknown",
+			Clicked:            strconv.FormatBool(clicked),
+		})
+	}
+	return rows
 }
 
 // CalculateCampaignCapacity handles the campaign capacity calculation process
@@ -2881,19 +2937,16 @@ func (s *CampaignFlowImpl) ensureUpdateCampaignRefs(
 	if err := s.ensureCampaignBundleAndPhase(ctx, customerID, bundleID, phase, false); err != nil {
 		return err
 	}
+	if platform != models.CampaignPlatformSMS && lineNumber != nil {
+		return ErrCampaignLineNumberNotApplicable
+	}
+	if platform == models.CampaignPlatformSMS && platformSettingsID != nil && *platformSettingsID != 0 {
+		return ErrCampaignPlatformSettingNotApplicable
+	}
 
 	usingTargetAudienceExcelFile := targetAudienceExcelFileUUID != nil && strings.TrimSpace(*targetAudienceExcelFileUUID) != ""
 
 	if finalize {
-		// TODO: Nullify
-		// if platform != models.CampaignPlatformSMS && lineNumber != nil {
-		// 	return ErrCampaignLineNumberNotApplicable
-		// }
-
-		// if platform == models.CampaignPlatformSMS && platformSettingsID != nil && *platformSettingsID != 0 {
-		// 	return ErrCampaignPlatformSettingNotApplicable
-		// }
-
 		if platform == models.CampaignPlatformSMS && lineNumber == nil {
 			return ErrCampaignLineNumberRequired
 		}
@@ -3177,10 +3230,15 @@ func validateCampaignFinalizationBudget(campaign *models.Campaign) error {
 	return nil
 }
 
-// updateCampaign updates the campaign in the database
-func (s *CampaignFlowImpl) updateCampaign(ctx context.Context, req *dto.UpdateCampaignRequest, existingCampaign *models.Campaign) error {
-	// Update campaign spec with new values
-	spec := existingCampaign.Spec
+// applyCampaignSpecUpdate applies the campaign update semantics. Most fields
+// are sparse patches, while ad link, schedule, and short-link domain are
+// replace fields: absent, null, or empty removes their stored value.
+func applyCampaignSpecUpdate(spec *models.CampaignSpec, req *dto.UpdateCampaignRequest) error {
+	if spec == nil || req == nil {
+		return nil
+	}
+	ensureCampaignSpecDefaults(spec)
+	previousPlatform := spec.Platform
 	if req.AudienceTargetingMethod != nil {
 		method, err := sanitizeAudienceTargetingMethod(req.AudienceTargetingMethod)
 		if err != nil {
@@ -3221,7 +3279,7 @@ func (s *CampaignFlowImpl) updateCampaign(ctx context.Context, req *dto.UpdateCa
 	if len(req.City) > 0 {
 		spec.City = req.City
 	}
-	if req.AdLink != nil && *req.AdLink != "" {
+	if req.AdLink != nil && strings.TrimSpace(*req.AdLink) != "" {
 		spec.AdLink = req.AdLink
 	} else {
 		spec.AdLink = nil
@@ -3235,10 +3293,10 @@ func (s *CampaignFlowImpl) updateCampaign(ctx context.Context, req *dto.UpdateCa
 	if req.Job != nil && *req.Job != "" {
 		spec.Job = req.Job
 	}
-	if req.ShortLinkDomain != nil {
-		spec.ShortLinkDomain = req.ShortLinkDomain
-	} else {
+	if req.ShortLinkDomain == nil || strings.TrimSpace(*req.ShortLinkDomain) == "" {
 		spec.ShortLinkDomain = nil
+	} else {
+		spec.ShortLinkDomain = req.ShortLinkDomain
 	}
 	if req.ScheduleAt != nil {
 		spec.ScheduleAt = req.ScheduleAt
@@ -3247,19 +3305,23 @@ func (s *CampaignFlowImpl) updateCampaign(ctx context.Context, req *dto.UpdateCa
 	}
 	if req.LineNumber != nil && *req.LineNumber != "" {
 		spec.LineNumber = req.LineNumber
-	} else {
-		// TODO: Nullify?
+	} else if req.LineNumber != nil {
+		spec.LineNumber = nil
 	}
 	if req.MediaUUID != nil {
 		spec.MediaUUID = req.MediaUUID
 	}
 	if req.PlatformSettingsID != nil && *req.PlatformSettingsID != 0 {
 		spec.PlatformSettingsID = req.PlatformSettingsID
-	} else {
-		// TODO: Nullify?
+	} else if req.PlatformSettingsID != nil {
+		spec.PlatformSettingsID = nil
 	}
 	if req.Platform != nil {
-		spec.Platform = *req.Platform
+		platform, err := sanitizeCampaignPlatform(req.Platform)
+		if err != nil {
+			return err
+		}
+		spec.Platform = platform
 	}
 	if req.Budget != nil && *req.Budget != 0 {
 		spec.Budget = req.Budget
@@ -3267,7 +3329,34 @@ func (s *CampaignFlowImpl) updateCampaign(ctx context.Context, req *dto.UpdateCa
 	if req.AudienceGrades != nil {
 		spec.AudienceGrades = campaignAudienceGradesOrDefault(req.AudienceGrades)
 	}
-	ensureCampaignSpecDefaults(&spec)
+	// Excel input is deliberately not retained when Smart Targeting is active:
+	// it is not used by the mode and can make later UI/API reads appear to be
+	// Excel-targeted data that is still relevant.
+	if spec.UsesSmartTargeting() {
+		spec.TargetAudienceExcelFileUUID = nil
+	}
+	// A line number belongs exclusively to SMS. Platform settings are bound to
+	// one non-SMS platform, so a platform transition must not carry either
+	// configuration into an incompatible campaign.
+	if spec.Platform == models.CampaignPlatformSMS {
+		spec.PlatformSettingsID = nil
+	} else {
+		spec.LineNumber = nil
+		if previousPlatform != spec.Platform && req.PlatformSettingsID == nil {
+			spec.PlatformSettingsID = nil
+		}
+	}
+	ensureCampaignSpecDefaults(spec)
+	return nil
+}
+
+// updateCampaign updates the campaign in the database.
+func (s *CampaignFlowImpl) updateCampaign(ctx context.Context, req *dto.UpdateCampaignRequest, existingCampaign *models.Campaign) error {
+	// Update campaign spec with new values.
+	spec := existingCampaign.Spec
+	if err := applyCampaignSpecUpdate(&spec, req); err != nil {
+		return err
+	}
 
 	// Update the campaign spec
 	existingCampaign.Spec = spec
@@ -3345,6 +3434,9 @@ func (s *CampaignFlowImpl) expireCustomerCampaigns(ctx context.Context, customer
 
 			wallet, err := getWallet(txCtx, s.walletRepo, campaign.CustomerID)
 			if err != nil {
+				return err
+			}
+			if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
 				return err
 			}
 			latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
@@ -3620,6 +3712,9 @@ func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(ctx context.Conte
 			}
 			wallet, err := getWallet(txCtx, s.walletRepo, campaign.CustomerID)
 			if err != nil {
+				return err
+			}
+			if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
 				return err
 			}
 			latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
@@ -4113,22 +4208,16 @@ func (s *CampaignFlowImpl) calculateParts(content *string, adLink *string, short
 		return 1
 	}
 
-	// Count characters with proper weighting (English=1, others=2)
+	// Count characters after link substitution.
 	charCount := s.countCharacters(*content, adLink, shortLinkDomain, platform)
 
-	// Calculate SMS parts based on character count
+	// A single message fits in 70 characters. Concatenated messages use 66
+	// characters per part. Do not cap the result: long valid campaign content
+	// must reserve and charge for every part it will send.
 	if charCount <= 70 {
 		return 1
-	} else if charCount <= 132 {
-		return 2
-	} else if charCount <= 198 {
-		return 3
-	} else if charCount <= 264 {
-		return 4
-	} else if charCount <= 330 {
-		return 5
 	}
-	return 6 // More than 330 characters
+	return (charCount + 65) / 66
 }
 
 // countCharacters counts characters after applying campaign link expansion rules.
@@ -4164,9 +4253,6 @@ func (s *CampaignFlowImpl) countCharacters(text string, adLink *string, shortLin
 		if char >= 32 && char <= 126 {
 			count += 1 // English character
 		} else {
-			// Non-English character (Farsi, Arabic, etc.)
-			// count += 2
-
 			count += 1
 		}
 	}
@@ -4441,34 +4527,6 @@ func buildCampaignReportExcel(rows []campaignReportRow) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-func deriveCampaignExportStatus(result campaignStatisticsTrackingResult) string {
-	totalParts := int64Value(result.TotalParts)
-	totalDeliveredParts := int64Value(result.TotalDeliveredParts)
-	totalUndeliveredParts := int64Value(result.TotalUndeliveredParts)
-
-	if result.TotalParts != nil && result.TotalDeliveredParts != nil && totalDeliveredParts == totalParts {
-		return "success"
-	}
-	if totalUndeliveredParts > 0 {
-		return "failure"
-	}
-	return "inactive"
-}
-
-func int64Value(v *int64) int64 {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return strings.TrimSpace(*v)
 }
 
 // ExportCampaignClickReport builds a CSV with two columns - uid and clicked (true/false) -
