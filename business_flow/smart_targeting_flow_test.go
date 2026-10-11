@@ -3,6 +3,7 @@ package businessflow
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -61,6 +62,20 @@ func TestEvaluationAvailableRequiresCurrentScoreRows(t *testing.T) {
 				t.Fatalf("evaluationAvailable() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSmartTargetingPageOffsetRejectsOverflow(t *testing.T) {
+	maxSafePage := math.MaxInt/100 + 1
+	offset, err := smartTargetingPageOffset(maxSafePage, 100)
+	if err != nil {
+		t.Fatalf("max safe page rejected: %v", err)
+	}
+	if offset < 0 {
+		t.Fatalf("max safe offset wrapped: %d", offset)
+	}
+	if _, err := smartTargetingPageOffset(maxSafePage+1, 100); !errors.Is(err, ErrInvalidPage) {
+		t.Fatalf("overflowing page error = %v, want ErrInvalidPage", err)
 	}
 }
 
