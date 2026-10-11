@@ -599,6 +599,9 @@ func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.Ad
 		if err != nil {
 			return err
 		}
+		if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
+			return err
+		}
 		latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
 		if err != nil {
 			return err
@@ -907,6 +910,9 @@ func (s *AdminCampaignFlowImpl) RejectCampaign(ctx context.Context, req *dto.Adm
 		if err != nil {
 			return err
 		}
+		if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
+			return err
+		}
 		latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
 		if err != nil {
 			return err
@@ -1141,6 +1147,9 @@ func (s *AdminCampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.Adm
 
 		wallet, err := getWallet(txCtx, s.walletRepo, campaign.CustomerID)
 		if err != nil {
+			return err
+		}
+		if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
 			return err
 		}
 		latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
