@@ -234,6 +234,7 @@ func clearCampaignSmartTargetingTestSamplingPreviewFields(campaign *models.Campa
 	campaign.NumAudience = utils.ToPtr(uint64(0))
 }
 
+
 func (s *CampaignFlowImpl) clearCampaignSmartTargetingTestSamplingPreview(ctx context.Context, campaignID uint) error {
 	return smartTargetingDB(ctx, s.db).Model(&models.Campaign{}).Where("id = ?", campaignID).Updates(map[string]any{
 		"smart_targeting_test_satisfied_tag_ids":     pq.Int64Array{},
@@ -263,7 +264,9 @@ func (s *CampaignFlowImpl) ownedSmartTargetingTestCampaign(ctx context.Context, 
 }
 
 func reusableActiveSmartTargetingTestSampling(campaign *models.Campaign, calculation *models.CampaignTargetingTestSamplingCalculation, currentInput *smartTargetingTestSamplingInput) bool {
-	if calculation == nil || calculation.Status != models.CampaignTargetingTestSamplingCalculating || currentInput == nil || calculation.InputHash != currentInput.hash {
+	if campaign == nil || calculation == nil || currentInput == nil ||
+		calculation.Status != models.CampaignTargetingTestSamplingCalculating || calculation.InputHash != currentInput.hash ||
+		calculation.Generation <= 0 || calculation.Generation != campaign.SmartTargetingTestSamplingGeneration {
 		return false
 	}
 	_, _, err := samplingInputFromCalculation(campaign, calculation)
@@ -330,6 +333,13 @@ func (s *CampaignFlowImpl) StartSmartTargetingTestSampling(ctx context.Context, 
 			return err
 		}
 		if active != nil {
+			// Retrying an unchanged request must not discard useful worker progress.
+			// API clients can retry a timed-out submission while the worker is
+			// already scanning this exact immutable input snapshot.
+			if reusableActiveSmartTargetingTestSampling(&lockedCampaign, active, input) {
+				calculation = active
+				return nil
+			}
 			if err := s.samplingCalculationRepo.Supersede(txCtx, active.ID, "SMART_TARGETING_TEST_SAMPLING_SUPERSEDED", "A newer campaign configuration replaced this sampling calculation", now); err != nil {
 				if !errors.Is(err, repository.ErrCampaignTargetingTestSamplingStateConflict) {
 					return err
