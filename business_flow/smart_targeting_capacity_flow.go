@@ -587,6 +587,15 @@ func isCurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selection
 		}
 		return false, err
 	}
+	// A selected-tag row can outlive its source tag being deactivated or removed
+	// from the Bundle's current available-tag source. A matching ID hash alone
+	// is therefore insufficient to authorize capacity reuse or approval.
+	if err := selectionRepo.Validate(ctx, campaign.ID, *campaign.BundleID); err != nil {
+		if errors.Is(err, repository.ErrInvalidCampaignSelectedTags) {
+			return false, nil
+		}
+		return false, err
+	}
 	classes, err := normalizeSmartTargetingScoreClasses(campaign.Spec.AudienceGrades)
 	if err != nil {
 		return false, err
@@ -701,11 +710,12 @@ func smartTargetingCapacityAudienceQuery(calculation *models.CampaignTargetingCa
 		return repository.SmartTargetingAudienceQuery{}
 	}
 	return repository.SmartTargetingAudienceQuery{
-		BundleID:                      calculation.BundleID,
-		ApplyBundleAudienceExclusions: calculation.ApplyBundleAudienceExclusions,
-		TagIDs:                        []int64(calculation.SelectedTagIDs),
-		ScoreClasses:                  []string(calculation.SelectedScoreClasses),
-		AllowedColors:                 models.SmartTargetingAllowedColors(calculation.Platform),
+		BundleID:                               calculation.BundleID,
+		ExcludeActiveTestReservationCampaignID: calculation.CampaignID,
+		ApplyBundleAudienceExclusions:          calculation.ApplyBundleAudienceExclusions,
+		TagIDs:                                 []int64(calculation.SelectedTagIDs),
+		ScoreClasses:                           []string(calculation.SelectedScoreClasses),
+		AllowedColors:                          models.SmartTargetingAllowedColors(calculation.Platform),
 	}
 }
 
