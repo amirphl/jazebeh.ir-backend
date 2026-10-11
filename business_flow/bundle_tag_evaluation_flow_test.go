@@ -81,6 +81,16 @@ func TestExecutionConfigurationUsesRunSnapshot(t *testing.T) {
 	}
 }
 
+func TestUTCDayBounds(t *testing.T) {
+	input := time.Date(2026, time.September, 2, 23, 59, 59, 0, time.FixedZone("UTC+3:30", 3*60*60+30*60))
+	start, end := utcDayBounds(input)
+	wantStart := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC)
+	if !start.Equal(wantStart) || !end.Equal(wantEnd) {
+		t.Fatalf("utcDayBounds(%s) = (%s, %s), want (%s, %s)", input, start, end, wantStart, wantEnd)
+	}
+}
+
 func TestRunBatchesConcurrentlyBoundsParallelism(t *testing.T) {
 	batches := []*models.BundleTagEvaluationBatch{
 		{BatchNumber: 1},
