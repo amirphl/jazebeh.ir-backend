@@ -53,6 +53,16 @@ func (e *BundleTagEvaluationConflictError) Error() string {
 	return "bundle tag evaluation already active"
 }
 
+type BundleTagEvaluationDailyLimitError struct {
+	Limit          int       `json:"limit"`
+	SubmittedCount int64     `json:"submitted_count"`
+	ResetsAt       time.Time `json:"resets_at"`
+}
+
+func (e *BundleTagEvaluationDailyLimitError) Error() string {
+	return "customer daily bundle tag evaluation limit reached"
+}
+
 type bundleTagScoreResult struct {
 	TagID          uint     `json:"tag_id"`
 	BundleFitScore *float64 `json:"bundle_fit_score"`
@@ -282,6 +292,9 @@ func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(ctx context.Con
 	}
 
 	if err := repository.WithTransaction(ctx, f.db, func(txCtx context.Context) error {
+		if err := lockCustomerEvaluationRequest(txCtx, f.db, bundle.CustomerID); err != nil {
+			return err
+		}
 		if err := lockBundleEvaluationRequest(txCtx, f.db, bundle.ID); err != nil {
 			return err
 		}
@@ -303,6 +316,19 @@ func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(ctx context.Con
 			}
 		}
 
+		dayStart, nextDayStart := utcDayBounds(now)
+		submittedCount, err := f.runRepo.CountByCustomerIDCreatedBetween(txCtx, bundle.CustomerID, dayStart, nextDayStart)
+		if err != nil {
+			return err
+		}
+		if submittedCount >= int64(f.cfg.DailyLimitPerCustomer) {
+			return &BundleTagEvaluationDailyLimitError{
+				Limit:          f.cfg.DailyLimitPerCustomer,
+				SubmittedCount: submittedCount,
+				ResetsAt:       nextDayStart,
+			}
+		}
+
 		if err := f.runRepo.Save(txCtx, run); err != nil {
 			return err
 		}
@@ -319,6 +345,9 @@ func (f *BundleTagEvaluationFlowImpl) RequestBundleTagEvaluation(ctx context.Con
 	}); err != nil {
 		if conflictErr, ok := err.(*BundleTagEvaluationConflictError); ok {
 			return nil, conflictErr
+		}
+		if dailyLimitErr, ok := err.(*BundleTagEvaluationDailyLimitError); ok {
+			return nil, dailyLimitErr
 		}
 		return nil, NewBusinessError("REQUEST_BUNDLE_TAG_EVALUATION_FAILED", "Failed to request bundle tag evaluation", err)
 	}
@@ -1548,6 +1577,28 @@ func cleanupJSONText(text string) string {
 func normalizePersona(text string) string {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"))
 	return norm.NFC.String(trimmed)
+}
+
+func utcDayBounds(now time.Time) (time.Time, time.Time) {
+	utcNow := now.UTC()
+	dayStart := time.Date(utcNow.Year(), utcNow.Month(), utcNow.Day(), 0, 0, 0, 0, time.UTC)
+	return dayStart, dayStart.AddDate(0, 0, 1)
+}
+
+func lockCustomerEvaluationRequest(ctx context.Context, db *gorm.DB, customerID uint) error {
+	tx := db.WithContext(ctx)
+	if contextTx, ok := ctx.Value(repository.TxContextKey).(*gorm.DB); ok && contextTx != nil {
+		tx = contextTx
+	}
+
+	var lockedCustomerID uint
+	if err := tx.Raw("SELECT id FROM customers WHERE id = ? FOR UPDATE", customerID).Scan(&lockedCustomerID).Error; err != nil {
+		return err
+	}
+	if lockedCustomerID == 0 {
+		return fmt.Errorf("customer %d disappeared while queuing evaluation", customerID)
+	}
+	return nil
 }
 
 func lockBundleEvaluationRequest(ctx context.Context, db *gorm.DB, bundleID uint) error {
