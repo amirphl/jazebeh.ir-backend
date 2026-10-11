@@ -138,12 +138,26 @@ func normalizeSmartTargetingQuery(search, sortBy, direction string, evaluationAv
 	return search, sortBy, direction, nil
 }
 
+// smartTargetingPageOffset calculates a repository offset without allowing a
+// large, otherwise-valid page number to wrap into a negative value. Keeping
+// this check in the flow protects non-HTTP callers as well as handlers.
+func smartTargetingPageOffset(page, pageSize int) (int, error) {
+	if page < 1 || pageSize < 1 || pageSize > 100 || page-1 > math.MaxInt/pageSize {
+		return 0, ErrInvalidPage
+	}
+	return (page - 1) * pageSize, nil
+}
+
 // ListTags returns one page of tags for an owned campaign plus the complete
 // persisted selection and summary. SelectedTagIDs intentionally spans all
 // pages so clients can paginate without discarding off-page selections.
 func (s *SmartTargetingFlowImpl) ListTags(ctx context.Context, req *dto.ListSmartTargetingTagsRequest) (*dto.ListSmartTargetingTagsResponse, error) {
 	if req == nil || req.Page < 1 || req.PageSize < 1 || req.PageSize > 100 {
 		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", ErrInvalidPage)
+	}
+	offset, err := smartTargetingPageOffset(req.Page, req.PageSize)
+	if err != nil {
+		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", err)
 	}
 	campaign, err := s.ownedCampaign(ctx, req.CustomerID, req.CampaignUUID)
 	if err != nil {
@@ -163,7 +177,6 @@ func (s *SmartTargetingFlowImpl) ListTags(ctx context.Context, req *dto.ListSmar
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_QUERY_INVALID", err.Error(), err)
 	}
-	offset := (req.Page - 1) * req.PageSize
 	rows, total, err := s.selectionRepo.ListAvailable(ctx, *campaign.BundleID, campaign.ID, search, sortBy, direction, req.PageSize, offset)
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_TAG_LIST_FAILED", "Failed to list smart targeting tags", err)
@@ -207,6 +220,10 @@ func (s *SmartTargetingFlowImpl) ListBundleTags(ctx context.Context, req *dto.Li
 	if req == nil || req.Page < 1 || req.PageSize < 1 || req.PageSize > 100 {
 		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", ErrInvalidPage)
 	}
+	offset, err := smartTargetingPageOffset(req.Page, req.PageSize)
+	if err != nil {
+		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", err)
+	}
 	if req.CustomerID == 0 {
 		return nil, NewBusinessError("MISSING_CUSTOMER_ID", "Customer ID is required", ErrCustomerNotFound)
 	}
@@ -228,7 +245,7 @@ func (s *SmartTargetingFlowImpl) ListBundleTags(ctx context.Context, req *dto.Li
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_QUERY_INVALID", err.Error(), err)
 	}
-	rows, total, err := s.selectionRepo.ListAvailable(ctx, bundle.ID, 0, search, sortBy, direction, req.PageSize, (req.Page-1)*req.PageSize)
+	rows, total, err := s.selectionRepo.ListAvailable(ctx, bundle.ID, 0, search, sortBy, direction, req.PageSize, offset)
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_TAG_LIST_FAILED", "Failed to list smart targeting tags", err)
 	}
@@ -396,26 +413,66 @@ func (s *SmartTargetingFlowImpl) AutoSelect(ctx context.Context, req *dto.AutoSe
 	if err != nil {
 		return nil, err
 	}
-	evaluated, err := s.evaluationAvailable(ctx, *campaign.BundleID)
+
+	// Candidate order depends on current evaluation, tag-activation, and CTR
+	// data. Read it only after taking the same campaign lock used by Replace,
+	// then persist it before releasing that lock. Otherwise a candidate list
+	// observed before the lock can become stale before it is saved.
+	err = repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+		db := smartTargetingDB(txCtx, s.db)
+		if err := db.Exec("SELECT id FROM campaigns WHERE id = ? FOR UPDATE", campaign.ID).Error; err != nil {
+			return err
+		}
+
+		var lockedCampaign models.Campaign
+		if err := db.First(&lockedCampaign, campaign.ID).Error; err != nil {
+			return err
+		}
+		if lockedCampaign.BundleID == nil || *lockedCampaign.BundleID == 0 {
+			return NewBusinessError("BUNDLE_NOT_FOUND", "Campaign bundle not found", ErrBundleNotFound)
+		}
+		if !lockedCampaign.IsEditable() {
+			return NewBusinessError("CAMPAIGN_UPDATE_NOT_ALLOWED", "Campaign cannot be updated in current status", ErrCampaignUpdateNotAllowed)
+		}
+		if !lockedCampaign.Spec.UsesSmartTargeting() {
+			return NewBusinessError("SMART_TARGETING_NOT_ENABLED", "Campaign does not use Smart Targeting", ErrCampaignAudienceTargetingMethodInvalid)
+		}
+
+		evaluated, err := s.evaluationAvailable(txCtx, *lockedCampaign.BundleID)
+		if err != nil {
+			return NewBusinessError("SMART_TARGETING_EVALUATION_LOOKUP_FAILED", "Failed to lookup bundle evaluation", err)
+		}
+		search, sortBy, direction, err := normalizeSmartTargetingQuery(
+			req.Search,
+			req.SortBy,
+			req.SortDirection,
+			evaluated,
+			lockedCampaign.Phase == models.CampaignPhaseExecution,
+		)
+		if err != nil {
+			return NewBusinessError("SMART_TARGETING_QUERY_INVALID", err.Error(), err)
+		}
+		ids, err := s.selectionRepo.ListAvailableTagIDs(txCtx, *lockedCampaign.BundleID, search, sortBy, direction, req.Count)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return NewBusinessError("SMART_TARGETING_SELECTION_INVALID", ErrSmartTargetingTagsRequired.Error(), ErrSmartTargetingTagsRequired)
+		}
+		return s.selectionRepo.Replace(txCtx, lockedCampaign.ID, *lockedCampaign.BundleID, req.CustomerID, ids)
+	})
 	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_EVALUATION_LOOKUP_FAILED", "Failed to lookup bundle evaluation", err)
-	}
-	search, sortBy, direction, err := normalizeSmartTargetingQuery(
-		req.Search,
-		req.SortBy,
-		req.SortDirection,
-		evaluated,
-		campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseExecution,
-	)
-	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_QUERY_INVALID", err.Error(), err)
-	}
-	ids, err := s.selectionRepo.ListAvailableTagIDs(ctx, *campaign.BundleID, search, sortBy, direction, req.Count)
-	if err != nil {
+		var businessErr *BusinessError
+		if errors.As(err, &businessErr) {
+			return nil, businessErr
+		}
+		if errors.Is(err, repository.ErrInvalidCampaignSelectedTags) {
+			return nil, NewBusinessError("SMART_TARGETING_SELECTION_INVALID", ErrSmartTargetingTagInvalid.Error(), ErrSmartTargetingTagInvalid)
+		}
+		if errors.Is(err, repository.ErrCampaignSelectedTagsNotEditable) {
+			return nil, NewBusinessError("CAMPAIGN_UPDATE_NOT_ALLOWED", "Campaign cannot be updated in current status", ErrCampaignUpdateNotAllowed)
+		}
 		return nil, NewBusinessError("SMART_TARGETING_AUTO_SELECT_FAILED", "Failed to automatically select tags", err)
 	}
-	if len(ids) == 0 {
-		return nil, NewBusinessError("SMART_TARGETING_SELECTION_INVALID", ErrSmartTargetingTagsRequired.Error(), ErrSmartTargetingTagsRequired)
-	}
-	return s.replace(ctx, campaign, req.CustomerID, ids)
+	return s.GetSelection(ctx, req.CustomerID, campaign.UUID.String())
 }
