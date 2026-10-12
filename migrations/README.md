@@ -108,8 +108,8 @@ The required-migrations helper is deliberately not a general migration engine.
 Its default `--verify-only` mode performs catalog checks without modifying the
 database. Explicit `--repair` mode requires the Bundle schema from `0111`,
 refuses to auto-apply destructive `0119`, applies an idempotent subset needed
-through `0132`, validates critical schema and data invariants, and then advances
-`.migration_tracker_beta` to at least `0132`. It preserves a valid tracker
+through `0136`, validates critical schema and data invariants, and then advances
+`.migration_tracker_beta` to at least `0136`. It preserves a valid tracker
 already pointing to a later available migration, so the helper cannot move
 general migration state backward.
 
