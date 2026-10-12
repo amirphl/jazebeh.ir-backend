@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -284,10 +285,6 @@ func (h *CampaignHandler) ListSmartTargetingTags(c fiber.Ctx) error {
 	if !ok {
 		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
 	}
-	page, err := parseBoundedPositiveQuery(c.Query("page"), 1, 0)
-	if err != nil {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page", "INVALID_PAGE", nil)
-	}
 	pageSizeValue := c.Query("page_size")
 	if pageSizeValue == "" {
 		pageSizeValue = c.Query("limit")
@@ -295,6 +292,10 @@ func (h *CampaignHandler) ListSmartTargetingTags(c fiber.Ctx) error {
 	pageSize, err := parseBoundedPositiveQuery(pageSizeValue, 20, 100)
 	if err != nil {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page size", "INVALID_PAGE_SIZE", nil)
+	}
+	page, err := parseBoundedPositiveQuery(c.Query("page"), 1, maxPageForSmartTargetingOffset(pageSize))
+	if err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page", "INVALID_PAGE", nil)
 	}
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/tags", 30*time.Second)
 	defer cancel()
@@ -337,10 +338,6 @@ func (h *CampaignHandler) ListBundleSmartTargetingTags(c fiber.Ctx) error {
 	if err != nil || bundleID == 0 {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid bundle ID", "INVALID_BUNDLE_ID", nil)
 	}
-	page, err := parseBoundedPositiveQuery(c.Query("page"), 1, 0)
-	if err != nil {
-		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page", "INVALID_PAGE", nil)
-	}
 	pageSizeValue := c.Query("page_size")
 	if pageSizeValue == "" {
 		pageSizeValue = c.Query("limit")
@@ -348,6 +345,10 @@ func (h *CampaignHandler) ListBundleSmartTargetingTags(c fiber.Ctx) error {
 	pageSize, err := parseBoundedPositiveQuery(pageSizeValue, 20, 100)
 	if err != nil {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page size", "INVALID_PAGE_SIZE", nil)
+	}
+	page, err := parseBoundedPositiveQuery(c.Query("page"), 1, maxPageForSmartTargetingOffset(pageSize))
+	if err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page", "INVALID_PAGE", nil)
 	}
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/smart-targeting/tags", 30*time.Second)
 	defer cancel()
@@ -370,6 +371,17 @@ func parseBoundedPositiveQuery(value string, defaultValue, max int) (int, error)
 		return 0, errors.New("invalid positive integer")
 	}
 	return parsed, nil
+}
+
+// maxPageForSmartTargetingOffset returns the greatest page whose zero-based
+// offset is representable as an int for the supplied (already validated) page
+// size. Page size one is special: MaxInt + 1 would itself overflow.
+func maxPageForSmartTargetingOffset(pageSize int) int {
+	maxPage := math.MaxInt / pageSize
+	if maxPage == math.MaxInt {
+		return math.MaxInt
+	}
+	return maxPage + 1
 }
 
 // GetSmartTargetingSelection returns the complete persisted selection, independent of table pagination.
