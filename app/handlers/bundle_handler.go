@@ -286,6 +286,7 @@ func (h *BundleHandler) List(c fiber.Ctx) error {
 // @Failure 403 {object} dto.APIResponse "Forbidden"
 // @Failure 404 {object} dto.APIResponse "Not found"
 // @Failure 409 {object} dto.APIResponse "Evaluation already active or feature disabled"
+// @Failure 429 {object} dto.APIResponse "Daily evaluation limit reached"
 // @Failure 500 {object} dto.APIResponse "Internal server error"
 // @Router /api/v1/bundles/{id}/tag-evaluations [post]
 func (h *BundleHandler) RequestTagEvaluation(c fiber.Ctx) error {
@@ -307,6 +308,14 @@ func (h *BundleHandler) RequestTagEvaluation(c fiber.Ctx) error {
 		BundleID:   id,
 	}, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
 	if err != nil {
+		var dailyLimitErr *businessflow.BundleTagEvaluationDailyLimitError
+		if errors.As(err, &dailyLimitErr) {
+			retryAfter := time.Until(dailyLimitErr.ResetsAt)
+			if retryAfter > 0 {
+				c.Set("Retry-After", strconv.FormatInt(int64((retryAfter+time.Second-1)/time.Second), 10))
+			}
+			return h.ErrorResponse(c, fiber.StatusTooManyRequests, "Daily bundle tag evaluation limit reached", "CUSTOMER_DAILY_EVALUATION_LIMIT_REACHED", dailyLimitErr)
+		}
 		var conflictErr *businessflow.BundleTagEvaluationConflictError
 		if errors.As(err, &conflictErr) {
 			return c.Status(fiber.StatusConflict).JSON(dto.APIResponse{
