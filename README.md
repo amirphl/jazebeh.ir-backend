@@ -259,6 +259,8 @@ For local API development, set `CAMPAIGN_EXECUTION_ENABLED=false` unless you int
 
 Smart-tag evaluation is independent of campaign execution. When both `SMART_TAG_EVALUATION_ENABLED=true` and `SMART_TAG_EVALUATION_SCHEDULER_ENABLED=true`, a bounded-concurrency worker claims queued bundle evaluations and processes persona analysis and tag-score batches through the configured OpenAI-compatible Responses API.
 
+`SMART_TAG_EVALUATION_DAILY_LIMIT_PER_CUSTOMER` limits each customer to newly queued evaluations per UTC calendar day (default: `2`). Failed runs still count, so retries cannot create unbounded provider cost.
+
 ## Observability
 
 - Application HTTP metrics are registered through `app/middleware/metrics.go`.
