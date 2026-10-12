@@ -180,6 +180,10 @@ if [[ "$MODE" == repair ]]; then
 	apply_file "$PROJECT_DIR/migrations/0132_create_tag_test_performance_reports.sql"
 	apply_file "$PROJECT_DIR/migrations/0133_decouple_smart_targeting_test_sampling.sql"
 	apply_file "$PROJECT_DIR/migrations/0134_create_bundle_audience_exclusions.sql"
+	# Keep the repair sequence contiguous: the tracker is advanced through 0136
+	# below, so 0135 must be applied rather than silently skipped later.
+	apply_file "$PROJECT_DIR/migrations/0135_external_short_link_sync.sql"
+	apply_file "$PROJECT_DIR/migrations/0136_version_smart_targeting_capacity_eligibility.sql"
 else
 	log "Verification mode: no migrations will be applied"
 fi
@@ -323,6 +327,44 @@ fi
 	die "Migration 0132 is incomplete: tag_test_performance_scheduler_state is missing"
 [[ "$(psql_scalar "SELECT to_regclass('public.bundle_audience_exclusions') IS NOT NULL;")" == t ]] ||
 	die "Migration 0134 is incomplete: bundle_audience_exclusions is missing"
+[[ "$(psql_scalar "SELECT to_regclass('public.external_short_link_sync_state') IS NOT NULL;")" == t ]] ||
+	die "Migration 0135 is incomplete: external_short_link_sync_state is missing"
+[[ "$(psql_scalar "
+	SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema='public'
+		  AND table_name='short_links'
+		  AND column_name='external_published_at'
+	);")" == t ]] ||
+	die "Migration 0135 is incomplete: short_links external publication state is missing"
+[[ "$(psql_scalar "
+	SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema='public'
+		  AND table_name='short_link_clicks'
+		  AND column_name='external_click_id'
+	);")" == t ]] ||
+	die "Migration 0135 is incomplete: short-link external click state is missing"
+[[ "$(psql_scalar "
+	SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema='public'
+		  AND table_name='campaign_targeting_capacity_calculations'
+		  AND column_name='apply_bundle_audience_exclusions'
+		  AND data_type='boolean'
+		  AND is_nullable='NO'
+		  AND column_default='false'
+	);")" == t ]] ||
+	die "Migration 0136 is incomplete: capacity exclusion input is missing or invalid"
+[[ "$(psql_scalar "
+	SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema='public'
+		  AND table_name='campaign_targeting_capacity_calculations'
+		  AND column_name='calculation_version'
+		  AND column_default='3'
+	);")" == t ]] ||
+	die "Migration 0136 is incomplete: capacity calculation version default is not 3"
 [[ "$(psql_scalar "
 	SELECT COALESCE((
 		SELECT indisunique AND indisvalid AND indisready
@@ -410,7 +452,7 @@ fi
 	die "Migration 0132 is incomplete: generated aggregate Test CTR is missing"
 
 if [[ "$MODE" == repair ]]; then
-	advance_migration_tracker '0134_create_bundle_audience_exclusions.sql'
+	advance_migration_tracker '0136_version_smart_targeting_capacity_eligibility.sql'
 	log "Required schema repaired and verified"
 else
 	log "Required schema verified"
