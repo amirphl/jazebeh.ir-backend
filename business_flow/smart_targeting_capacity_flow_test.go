@@ -259,6 +259,10 @@ func TestSmartTargetingBundleAllocationFingerprintTracksActiveTestReservationsWi
 	if withoutReservation == withReservation {
 		t.Fatal("allocation fingerprint did not change when an active Test reservation changed the candidate population")
 	}
+	_, afterRelease, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, nil)
+	if err != nil || afterRelease != withoutReservation {
+		t.Fatalf("released Test reservation must restore the unreserved capacity fingerprint: got %q, want %q, err=%v", afterRelease, withoutReservation, err)
+	}
 
 	_, reordered, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, []repository.BundleActiveTestReservation{
 		{CampaignID: 29, SelectionID: 45, AudienceCount: 200},

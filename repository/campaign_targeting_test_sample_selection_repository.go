@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
@@ -255,10 +254,10 @@ func requireExpectedReservationRows(expectedMembers, affectedRows int64) error {
 }
 
 // ReleaseForCampaign is part of a terminal campaign status transition. It
-// locks the campaign and then its Bundle so releasing a Test reservation is
-// serialized with capacity scans (which hold a Bundle SHARE lock), approval,
-// and audience materialization. Callers must make the status decision in the
-// same transaction.
+// locks the campaign and every Bundle that owns an active reservation so the
+// release is serialized with capacity scans (which hold a Bundle SHARE lock),
+// approval, and audience materialization. Callers must make the status
+// decision in the same transaction.
 func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReleaseForCampaign(ctx context.Context, campaignID uint) error {
 	if campaignID == 0 {
 		return nil
@@ -267,25 +266,31 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReleaseForCampaign(
 		return err
 	}
 	db := r.getDB(ctx)
-	var bundleID uint
-	if err := activeTestReservationBundleQuery(db, campaignID).Scan(&bundleID).Error; err != nil {
+	var bundleIDs []uint
+	if err := activeTestReservationBundleIDsQuery(db, campaignID).Scan(&bundleIDs).Error; err != nil {
 		return err
 	}
-	if bundleID != 0 {
+	for _, bundleID := range bundleIDs {
+		if bundleID == 0 {
+			continue
+		}
 		if err := LockBundleForUpdate(ctx, bundleID); err != nil {
 			return err
 		}
 	}
-	now := time.Now().UTC()
-	return db.Model(&models.CampaignTargetingTestSampleReservation{}).
-		Where("campaign_id = ? AND state = 'active'", campaignID).
+	now := utils.UTCNow()
+	return releaseActiveTestReservationsQuery(db, campaignID).
 		Updates(map[string]any{"state": "released", "released_at": now}).Error
 }
 
-func activeTestReservationBundleQuery(db *gorm.DB, campaignID uint) *gorm.DB {
+func activeTestReservationBundleIDsQuery(db *gorm.DB, campaignID uint) *gorm.DB {
 	return db.Model(&models.CampaignTargetingTestSampleReservation{}).
-		Select("bundle_id").
+		Select("DISTINCT bundle_id").
 		Where("campaign_id = ? AND state = 'active'", campaignID).
-		Order("bundle_id ASC").
-		Limit(1)
+		Order("bundle_id ASC")
+}
+
+func releaseActiveTestReservationsQuery(db *gorm.DB, campaignID uint) *gorm.DB {
+	return db.Model(&models.CampaignTargetingTestSampleReservation{}).
+		Where("campaign_id = ? AND state = 'active'", campaignID)
 }

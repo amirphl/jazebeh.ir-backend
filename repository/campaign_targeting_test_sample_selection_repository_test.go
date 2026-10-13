@@ -75,17 +75,39 @@ func TestMaterializeTestSampleReservationQueryOnlyUpdatesActiveRows(t *testing.T
 	}
 }
 
-func TestActiveTestReservationBundleQueryOnlyFindsActiveCampaignReservation(t *testing.T) {
+func TestActiveTestReservationBundleIDsQueryOnlyFindsActiveCampaignReservationsInLockOrder(t *testing.T) {
 	db := newAudienceProfileDryRunDB(t).Session(&gorm.Session{SkipDefaultTransaction: true})
 	var rows []models.CampaignTargetingTestSampleReservation
-	statement := activeTestReservationBundleQuery(db, 17).Find(&rows).Statement
+	statement := activeTestReservationBundleIDsQuery(db, 17).Find(&rows).Statement
 	if statement.Error != nil {
 		t.Fatalf("build active reservation Bundle lookup query: %v", statement.Error)
 	}
 	sql := strings.ToLower(statement.SQL.String())
-	for _, fragment := range []string{"\"bundle_id\"", "campaign_id", "state = 'active'", "order by bundle_id", "limit"} {
+	for _, fragment := range []string{"distinct", "bundle_id", "campaign_id", "state = 'active'", "order by bundle_id"} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("active reservation Bundle lookup query is missing %q:\n%s", fragment, statement.SQL.String())
 		}
+	}
+	if strings.Contains(sql, "limit") {
+		t.Fatalf("active reservation Bundle lookup must lock every affected Bundle, not only the first:\n%s", statement.SQL.String())
+	}
+}
+
+func TestReleaseTestSampleReservationQueryOnlyReleasesActiveRows(t *testing.T) {
+	db := newAudienceProfileDryRunDB(t).Session(&gorm.Session{SkipDefaultTransaction: true})
+	now := time.Date(2026, time.August, 16, 10, 0, 0, 0, time.UTC)
+	statement := releaseActiveTestReservationsQuery(db, 17).
+		Updates(map[string]any{"state": "released", "released_at": now}).Statement
+	if statement.Error != nil {
+		t.Fatalf("build release query: %v", statement.Error)
+	}
+	sql := strings.ToLower(statement.SQL.String())
+	for _, fragment := range []string{"update", "campaign_id", "state = 'active'", "released_at"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("release query is missing %q:\n%s", fragment, statement.SQL.String())
+		}
+	}
+	if strings.Contains(sql, "materialized_at") {
+		t.Fatalf("release query must not modify materialized reservations:\n%s", statement.SQL.String())
 	}
 }
