@@ -24,6 +24,19 @@ func TestActiveTestSampleReservationClaimLocksAllActiveRows(t *testing.T) {
 	}
 }
 
+func TestReserveTestSampleSelectionChecksCompositeKeyBundleExclusions(t *testing.T) {
+	// bundle_audience_exclusions is keyed by (bundle_id, audience_id), so it
+	// intentionally has no surrogate id column. Keep the availability query
+	// aligned with that schema; this path is shared by Test sampling and admin
+	// approval.
+	if !strings.Contains(testSampleSelectionAvailabilityQuery, "excluded.audience_id IS NOT NULL") {
+		t.Fatalf("reservation availability query must test the exclusion composite key:\n%s", testSampleSelectionAvailabilityQuery)
+	}
+	if strings.Contains(testSampleSelectionAvailabilityQuery, "excluded.id IS NOT NULL") {
+		t.Fatalf("reservation availability query references nonexistent bundle exclusion id column:\n%s", testSampleSelectionAvailabilityQuery)
+	}
+}
+
 func TestMaterializeTestSampleReservationsRequiresEveryExpectedActiveRow(t *testing.T) {
 	for _, tt := range []struct {
 		name     string

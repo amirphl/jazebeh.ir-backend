@@ -17,6 +17,21 @@ var (
 	ErrSmartTargetingTestSelectionConflict    = errors.New("smart targeting test sample selection conflicts with current bundle availability")
 )
 
+const testSampleSelectionAvailabilityQuery = `
+SELECT COUNT(*)
+FROM campaign_targeting_test_sample_selection_members AS member
+LEFT JOIN audience_profiles AS audience ON audience.id = member.audience_id
+LEFT JOIN bundle_audience_selection_members AS materialized
+  ON materialized.bundle_id = ? AND materialized.audience_id = member.audience_id
+LEFT JOIN campaign_targeting_test_sample_reservations AS reserved
+  ON reserved.bundle_id = ? AND reserved.audience_id = member.audience_id
+ AND reserved.state = 'active' AND reserved.campaign_id <> ?
+LEFT JOIN bundle_audience_exclusions AS excluded
+  ON excluded.bundle_id = ? AND excluded.audience_id = member.audience_id
+WHERE member.selection_id = ?
+  AND (audience.id IS NULL OR audience.phone_number IS NULL OR BTRIM(audience.phone_number) = ''
+       OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR excluded.audience_id IS NOT NULL)`
+
 // CampaignTargetingTestSampleSelectionRepository owns immutable Test sampling
 // output and its separate, releasable reservation lifecycle.
 type CampaignTargetingTestSampleSelectionRepository interface {
@@ -147,21 +162,7 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReserveForCampaign(
 	// Check the immutable snapshot against the current hard-safety population.
 	// Do not substitute candidates here: a collision requires a fresh sample.
 	var unavailable int64
-	query := `
-SELECT COUNT(*)
-FROM campaign_targeting_test_sample_selection_members AS member
-LEFT JOIN audience_profiles AS audience ON audience.id = member.audience_id
-LEFT JOIN bundle_audience_selection_members AS materialized
-  ON materialized.bundle_id = ? AND materialized.audience_id = member.audience_id
-LEFT JOIN campaign_targeting_test_sample_reservations AS reserved
-  ON reserved.bundle_id = ? AND reserved.audience_id = member.audience_id
- AND reserved.state = 'active' AND reserved.campaign_id <> ?
-LEFT JOIN bundle_audience_exclusions AS excluded
-  ON excluded.bundle_id = ? AND excluded.audience_id = member.audience_id
-WHERE member.selection_id = ?
-  AND (audience.id IS NULL OR audience.phone_number IS NULL OR BTRIM(audience.phone_number) = ''
-       OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR excluded.id IS NOT NULL)`
-	if err := db.Raw(query, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.ID).Scan(&unavailable).Error; err != nil {
+	if err := db.Raw(testSampleSelectionAvailabilityQuery, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.ID).Scan(&unavailable).Error; err != nil {
 		return err
 	}
 	if unavailable != 0 {
