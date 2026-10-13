@@ -662,11 +662,7 @@ func isCurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selection
 		smartTargetingInputHash(smartTargetingTagHash(campaign.ID, ids), classes, platform, allowedColors, phase) != calculation.InputHash {
 		return false, nil
 	}
-	_, fingerprint, err := approvedCampaignDeduction(ctx, db, calculation, campaign.ID)
-	if err != nil {
-		return false, err
-	}
-	return fingerprint == calculation.AllocationFingerprint, nil
+	return true, nil
 }
 
 // smartTargetingBundleAllocationState computes the shared allocation
@@ -830,12 +826,9 @@ func (f *SmartTargetingCapacityFlowImpl) ExecuteCampaignTargetingCapacityCalcula
 		if current.ExpiresAt == nil || !current.ExpiresAt.After(time.Now().UTC()) {
 			return errors.New("exact Smart Targeting capacity calculation expired before counting")
 		}
-		// Approval and Bundle audience selection use an UPDATE lock on this row.
-		// Holding a SHARE lock keeps prior-use and reservation state stable for the
-		// count, fingerprint, and completion transaction.
-		if err := repository.LockBundleForShare(txCtx, current.BundleID); err != nil {
-			return err
-		}
+		// Capacity is an advisory snapshot. Do not hold the Bundle claim lock
+		// while scanning the audience population; finalization claims concrete
+		// members under its short Bundle UPDATE lock.
 		capacity, err := repository.NewSmartTargetingAudienceRepository(txDB).CalculateCapacity(txCtx, smartTargetingCapacityAudienceQuery(&current))
 		if err != nil {
 			return err

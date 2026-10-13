@@ -89,7 +89,10 @@ WITH tagged_population AS (
     WHERE NOT EXISTS (
           SELECT 1
           FROM bundle_audience_selection_members AS used
+          JOIN bundle_audience_selections AS used_selection ON used_selection.id = used.selection_id
+          JOIN campaigns AS used_campaign ON used_campaign.id = used_selection.campaign_id
       WHERE used.bundle_id = ? AND used.audience_id = tagged.id
+        AND LOWER(BTRIM(COALESCE(used_campaign.spec->>'audience_targeting_method', ''))) <> 'excel'
       )
       AND NOT EXISTS (
           SELECT 1
@@ -140,7 +143,10 @@ WITH tagged_population AS (
     WHERE NOT EXISTS (
           SELECT 1
           FROM bundle_audience_selection_members AS used
+          JOIN bundle_audience_selections AS used_selection ON used_selection.id = used.selection_id
+          JOIN campaigns AS used_campaign ON used_campaign.id = used_selection.campaign_id
       WHERE used.bundle_id = ? AND used.audience_id = tagged.id
+        AND LOWER(BTRIM(COALESCE(used_campaign.spec->>'audience_targeting_method', ''))) <> 'excel'
       )
       AND NOT EXISTS (
           SELECT 1
@@ -352,7 +358,10 @@ FROM (
 	  AND NOT EXISTS (
           SELECT 1
           FROM bundle_audience_selection_members AS used
+          JOIN bundle_audience_selections AS used_selection ON used_selection.id = used.selection_id
+          JOIN campaigns AS used_campaign ON used_campaign.id = used_selection.campaign_id
           WHERE used.bundle_id = ? AND used.audience_id = ap.id
+            AND LOWER(BTRIM(COALESCE(used_campaign.spec->>'audience_targeting_method', ''))) <> 'excel'
       )`
 	args = append(args, query.BundleID)
 	sql += `
@@ -435,7 +444,10 @@ WHERE ap.tags @> ARRAY[?]::integer[]
 	  AND NOT EXISTS (
       SELECT 1
       FROM bundle_audience_selection_members AS used
+      JOIN bundle_audience_selections AS used_selection ON used_selection.id = used.selection_id
+      JOIN campaigns AS used_campaign ON used_campaign.id = used_selection.campaign_id
       WHERE used.bundle_id = ? AND used.audience_id = ap.id
+        AND LOWER(BTRIM(COALESCE(used_campaign.spec->>'audience_targeting_method', ''))) <> 'excel'
   )`
 	args = append(args, query.BundleID)
 	sql += `

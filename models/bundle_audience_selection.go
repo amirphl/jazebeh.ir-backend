@@ -7,9 +7,9 @@ import (
 )
 
 // BundleAudienceSelection is one immutable, bundle-scoped campaign allocation.
-// Cross-campaign uniqueness and the exact retry set are stored once in
-// BundleAudienceSelectionMember. SelectedAudienceIDs is a repository-populated
-// transient projection, not another persisted copy of the allocation.
+// The exact retry set is stored once in BundleAudienceSelectionMember.
+// SelectedAudienceIDs is a repository-populated transient projection, not
+// another persisted copy of the allocation.
 type BundleAudienceSelection struct {
 	ID                  uint          `gorm:"primaryKey" json:"id"`
 	CustomerID          uint          `gorm:"not null;index:idx_bundle_aud_sel_customer_bundle" json:"customer_id"`
@@ -23,14 +23,15 @@ type BundleAudienceSelection struct {
 
 func (BundleAudienceSelection) TableName() string { return "bundle_audience_selections" }
 
-// BundleAudienceSelectionMember is the normalized append-only uniqueness
-// ledger. The (bundle_id, audience_id) key makes duplicate audience assignment
-// impossible even if multiple scheduler replicas race.
+// BundleAudienceSelectionMember is the normalized append-only allocation
+// ledger. Excel allocations are independent from Smart Targeting allocations.
+// Smart Targeting cross-campaign claims are protected by the database claim
+// guard instead.
 type BundleAudienceSelectionMember struct {
 	ID             int64     `gorm:"primaryKey;autoIncrement;type:bigserial" json:"id"`
 	SelectionID    uint      `gorm:"not null;uniqueIndex:uk_bundle_aud_sel_member_selection_audience,priority:1;uniqueIndex:uk_bundle_aud_sel_member_selection_order,priority:1" json:"selection_id"`
-	BundleID       uint      `gorm:"not null;uniqueIndex:uk_bundle_aud_sel_member_bundle_audience,priority:1" json:"bundle_id"`
-	AudienceID     int64     `gorm:"not null;uniqueIndex:uk_bundle_aud_sel_member_selection_audience,priority:2;uniqueIndex:uk_bundle_aud_sel_member_bundle_audience,priority:2" json:"audience_id"`
+	BundleID       uint      `gorm:"not null;index:idx_bundle_aud_sel_member_bundle_audience,priority:1" json:"bundle_id"`
+	AudienceID     int64     `gorm:"not null;uniqueIndex:uk_bundle_aud_sel_member_selection_audience,priority:2;index:idx_bundle_aud_sel_member_bundle_audience,priority:2" json:"audience_id"`
 	SelectionOrder int64     `gorm:"not null;check:bundle_aud_sel_member_selection_order_nonnegative,selection_order >= 0;uniqueIndex:uk_bundle_aud_sel_member_selection_order,priority:2" json:"selection_order"`
 	CreatedAt      time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"created_at"`
 }

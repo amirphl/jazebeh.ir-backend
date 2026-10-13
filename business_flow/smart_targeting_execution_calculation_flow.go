@@ -276,11 +276,9 @@ func (s *CampaignFlowImpl) executionCalculationAllocationCurrent(ctx context.Con
 	if calculation == nil || calculation.Status != models.CampaignTargetingExecutionCalculationReady || len(calculation.AllocationFingerprint) != 64 {
 		return false, nil
 	}
-	fingerprint, err := smartTargetingBundleAllocationFingerprint(ctx, s.db, calculation.BundleID, calculation.CampaignID)
-	if err != nil {
-		return false, err
-	}
-	return fingerprint == calculation.AllocationFingerprint, nil
+	// Capacity is deliberately advisory. Finalization performs a bounded
+	// allocation-conflict check under the Bundle claim lock.
+	return true, nil
 }
 
 func smartTargetingExecutionCalculationDTO(c *models.CampaignTargetingExecutionCalculation, current, recalc, reused bool) *dto.SmartTargetingExecutionCalculationResponse {
@@ -382,7 +380,9 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context
 		}
 		members = append(members, models.CampaignTargetingExecutionCalculationMember{AudienceID: row.ID, AssignedTagID: tag, SelectionOrder: int64(i), AudienceScore: row.NormalizedScore})
 	}
-	err = repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+	publicationCtx, cancelPublication := context.WithTimeout(ctx, smartTargetingPublicationTimeout)
+	defer cancelPublication()
+	err = repository.WithTransaction(publicationCtx, s.db, func(txCtx context.Context) error {
 		txDB := smartTargetingDB(txCtx, s.db)
 		var locked models.Campaign
 		if err := txDB.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, calculation.CampaignID).Error; err != nil {
@@ -394,21 +394,8 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context
 			}
 			return err
 		}
-		if err := repository.LockBundleForShare(txCtx, calculation.BundleID); err != nil {
-			return err
-		}
-		fingerprint, err := smartTargetingBundleAllocationFingerprint(txCtx, s.db, calculation.BundleID, calculation.CampaignID)
-		if err != nil {
-			return err
-		}
-		if fingerprint != allocationFingerprint {
-			return errSmartTargetingExecutionCalculationStale
-		}
-		return repo.Complete(txCtx, calculationID, leaseStartedAt, fingerprint, members, utils.UTCNow())
+		return repo.Complete(txCtx, calculationID, leaseStartedAt, allocationFingerprint, members, utils.UTCNow())
 	})
-	if errors.Is(err, errSmartTargetingExecutionCalculationStale) {
-		return repo.Finish(ctx, calculationID, leaseStartedAt, models.CampaignTargetingExecutionCalculationStale, "ALLOCATION_CHANGED", "Bundle availability changed during selection", utils.UTCNow())
-	}
 	return err
 }
 

@@ -29,30 +29,33 @@ func TestReserveTestSampleSelectionChecksCompositeKeyBundleExclusions(t *testing
 	// intentionally has no surrogate id column. Keep the availability query
 	// aligned with that schema; this path is shared by Test sampling and admin
 	// approval.
-	if !strings.Contains(testSampleSelectionAvailabilityQuery, "excluded.audience_id IS NOT NULL") {
+	if !strings.Contains(testSampleSelectionAvailabilityQuery, "excluded.bundle_id = ? AND excluded.audience_id = member.audience_id") {
 		t.Fatalf("reservation availability query must test the exclusion composite key:\n%s", testSampleSelectionAvailabilityQuery)
 	}
-	if strings.Contains(testSampleSelectionAvailabilityQuery, "excluded.id IS NOT NULL") {
+	if strings.Contains(testSampleSelectionAvailabilityQuery, "excluded.id") {
 		t.Fatalf("reservation availability query references nonexistent bundle exclusion id column:\n%s", testSampleSelectionAvailabilityQuery)
 	}
 }
 
-func TestReserveTestSampleSelectionRechecksCurrentTargetingEligibility(t *testing.T) {
+func TestReserveTestSampleSelectionChecksOnlyAllocationConflicts(t *testing.T) {
 	query := strings.ToLower(testSampleSelectionAvailabilityQuery)
 	for _, fragment := range []string{
-		"join campaigns as campaign",
-		"left join line_numbers as line",
-		"audience.tags @> array[member.assigned_tag_id]::integer[]",
-		"line.provider = 'candoo'",
-		"array['white', 'pink']::text[]",
-		"audience.normalized_score is distinct from member.audience_score",
+		"bundle_audience_selection_members",
+		"bundle_audience_selections",
+		"audience_targeting_method",
+		"campaign_targeting_test_sample_reservations",
+		"campaign_targeting_execution_reservations",
+		"campaign_targeting_execution_calculations",
+		"bundle_audience_exclusions",
 	} {
 		if !strings.Contains(query, fragment) {
-			t.Fatalf("reservation availability query is missing current targeting validation %q:\n%s", fragment, testSampleSelectionAvailabilityQuery)
+			t.Fatalf("reservation availability query is missing allocation check %q:\n%s", fragment, testSampleSelectionAvailabilityQuery)
 		}
 	}
-	if strings.Contains(query, "campaign_targeting_capacity_calculations") || strings.Contains(query, "calculation.allowed_colors") {
-		t.Fatalf("reservation availability query must not join a Test selection to an unrelated capacity calculation:\n%s", testSampleSelectionAvailabilityQuery)
+	for _, forbidden := range []string{"audience_profiles", "line_numbers", "normalized_score", "audience.tags"} {
+		if strings.Contains(query, forbidden) {
+			t.Fatalf("reservation availability query must not revalidate immutable profile/tag state %q:\n%s", forbidden, testSampleSelectionAvailabilityQuery)
+		}
 	}
 }
 

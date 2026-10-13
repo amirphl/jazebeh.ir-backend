@@ -27,6 +27,10 @@ type smartTargetingTestSample struct {
 
 const smartTargetingTestSamplingCalculationVersion = 2
 
+// Expensive candidate discovery may use the worker's hour-long deadline, but
+// publication holds campaign and Bundle locks shared with interactive requests.
+const smartTargetingPublicationTimeout = 20 * time.Second
+
 type smartTargetingTestSamplingInput struct {
 	order         []uint
 	displayNames  map[uint]*string
@@ -663,11 +667,7 @@ func (s *CampaignFlowImpl) isCurrentSmartTargetingTestSampling(ctx context.Conte
 		}
 		return false, err
 	}
-	allocationFingerprint, err := smartTargetingBundleAllocationFingerprint(ctx, s.db, calculation.BundleID, campaign.ID)
-	if err != nil {
-		return false, err
-	}
-	return calculation.AllocationFingerprint == allocationFingerprint, nil
+	return true, nil
 }
 
 func (s *CampaignFlowImpl) requireCurrentSmartTargetingTestSampling(ctx context.Context, campaign *models.Campaign) error {
@@ -761,7 +761,9 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingTestSamplingCalculation(ctx cont
 		return err
 	}
 
-	return repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+	publicationCtx, cancelPublication := context.WithTimeout(ctx, smartTargetingPublicationTimeout)
+	defer cancelPublication()
+	return repository.WithTransaction(publicationCtx, s.db, func(txCtx context.Context) error {
 		txDB := smartTargetingDB(txCtx, s.db)
 		var lockedCampaign models.Campaign
 		if err := txDB.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedCampaign, calculation.CampaignID).Error; err != nil {
@@ -770,25 +772,12 @@ func (s *CampaignFlowImpl) ExecuteSmartTargetingTestSamplingCalculation(ctx cont
 		if _, _, err := currentSmartTargetingTestSamplingCalculationInput(txCtx, s.selectedTagRepo, s.lineNumberRepo, &lockedCampaign, calculation); err != nil {
 			return err
 		}
-		// Approval and audience materialization take an UPDATE lock on the
-		// Bundle. Holding a SHARE lock makes sampling's own allocation fingerprint
-		// and campaign preview publication one atomic view of Bundle allocations.
-		if err := repository.LockBundleForShare(txCtx, *lockedCampaign.BundleID); err != nil {
-			return err
-		}
 		if err := s.selectedTagRepo.Validate(txCtx, lockedCampaign.ID, *lockedCampaign.BundleID); err != nil {
 			return err
 		}
-		currentAllocationFingerprint, err := smartTargetingBundleAllocationFingerprint(txCtx, s.db, calculation.BundleID, lockedCampaign.ID)
-		if err != nil {
-			return err
-		}
-		if currentAllocationFingerprint != allocationFingerprint {
-			return ErrSmartTargetingTestPreviewRequired
-		}
-		// Pricing must use the same final, locked campaign state that receives
-		// the published preview. Unrelated saves no longer invalidate sampling,
-		// so computing this before the lock could publish a stale cost.
+		// Allocation may change while the worker samples. The immutable sample is
+		// intentionally best-effort; finalization performs the authoritative
+		// allocation-conflict check while holding the Bundle claim lock.
 		pricePerMessage, err := s.computePricePerMessage(txCtx, lockedCampaign)
 		if err != nil {
 			return err

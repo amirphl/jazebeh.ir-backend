@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
@@ -50,23 +49,34 @@ type CampaignTargetingExecutionReservationRepository interface {
 
 type CampaignTargetingExecutionReservationRepositoryImpl struct{ db *gorm.DB }
 
-// executionReservationAvailabilityQuery validates the exact frozen members
-// under the Bundle lock. The paired unnest deliberately retains each member's
-// assigned tag: a profile that still has some selected tag but lost its own
-// attribution must not be reserved for execution.
+// executionReservationAvailabilityQuery validates only allocation conflicts.
+// Audience profiles and tags are immutable while workers run, so an execution
+// calculation is the eligibility snapshot and needs no profile-row locks.
 const executionReservationAvailabilityQuery = `
 SELECT COUNT(*)
-FROM unnest(?::bigint[], ?::bigint[]) AS requested(audience_id, assigned_tag_id)
-LEFT JOIN audience_profiles AS audience ON audience.id = requested.audience_id
-WHERE audience.id IS NULL
-   OR audience.phone_number IS NULL OR BTRIM(audience.phone_number) = ''
-   OR NOT (audience.tags && ?::integer[])
-   OR NOT (audience.tags @> ARRAY[requested.assigned_tag_id]::integer[])
-   OR (NOT ?::boolean AND (audience.color IS NULL OR audience.color <> ALL(?::text[])))
-   OR EXISTS (SELECT 1 FROM bundle_audience_selection_members AS used WHERE used.bundle_id = ? AND used.audience_id = requested.audience_id)
-   OR EXISTS (SELECT 1 FROM bundle_audience_exclusions AS excluded WHERE excluded.bundle_id = ? AND excluded.audience_id = requested.audience_id)
-   OR EXISTS (SELECT 1 FROM campaign_targeting_test_sample_reservations AS test_reserved WHERE test_reserved.bundle_id = ? AND test_reserved.audience_id = requested.audience_id AND test_reserved.state = 'active')
-   OR EXISTS (SELECT 1 FROM campaign_targeting_execution_reservations AS execution_reserved WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = requested.audience_id AND execution_reserved.state = 'active')`
+FROM unnest(?::bigint[]) AS requested(audience_id)
+WHERE EXISTS (SELECT 1 FROM bundle_audience_selection_members AS used
+              JOIN bundle_audience_selections AS used_selection ON used_selection.id = used.selection_id
+              JOIN campaigns AS used_campaign ON used_campaign.id = used_selection.campaign_id
+              WHERE used.bundle_id = ? AND used.audience_id = requested.audience_id
+                AND LOWER(BTRIM(COALESCE(used_campaign.spec->>'audience_targeting_method', ''))) <> 'excel')
+   OR EXISTS (SELECT 1 FROM bundle_audience_exclusions AS excluded
+              WHERE excluded.bundle_id = ? AND excluded.audience_id = requested.audience_id)
+   OR EXISTS (SELECT 1 FROM campaign_targeting_test_sample_reservations AS test_reserved
+              WHERE test_reserved.bundle_id = ? AND test_reserved.audience_id = requested.audience_id
+                AND test_reserved.state = 'active' AND test_reserved.campaign_id <> ?)
+   OR EXISTS (SELECT 1 FROM campaign_targeting_execution_reservations AS execution_reserved
+              WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = requested.audience_id
+                AND execution_reserved.state = 'active' AND execution_reserved.campaign_id <> ?)
+   OR EXISTS (
+       SELECT 1
+       FROM campaign_targeting_execution_calculation_members AS committed_member
+       JOIN campaign_targeting_execution_calculations AS committed
+         ON committed.id = committed_member.calculation_id
+       WHERE committed_member.audience_id = requested.audience_id
+         AND committed.bundle_id = ? AND committed.status = 'committed'
+         AND committed.campaign_id <> ?
+   )`
 
 func NewCampaignTargetingExecutionReservationRepository(db *gorm.DB) CampaignTargetingExecutionReservationRepository {
 	return &CampaignTargetingExecutionReservationRepositoryImpl{db: db}
@@ -149,23 +159,16 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ReserveForCampaign
 		return err
 	}
 
-	snapshot, err := decodeExecutionReservationSnapshot(h)
-	if err != nil {
+	if _, err := decodeExecutionReservationSnapshot(h); err != nil {
 		return err
 	}
 	ids := make([]int64, 0, len(rows))
-	assignedTagIDs := make([]int64, 0, len(rows))
 	for _, row := range rows {
 		ids = append(ids, row.AudienceID)
-		assignedTagIDs = append(assignedTagIDs, int64(row.AssignedTagID))
-	}
-	if err := lockAndValidateExecutionReservationScores(ctx, db, rows); err != nil {
-		return err
 	}
 	var conflicts int64
 	if err := db.Raw(executionReservationAvailabilityQuery,
-		pq.Int64Array(ids), pq.Int64Array(assignedTagIDs), pq.Int64Array(snapshot.TagIDs), len(snapshot.AllowedColors) == 0, pq.StringArray(snapshot.AllowedColors),
-		*c.BundleID, *c.BundleID, *c.BundleID, *c.BundleID).Scan(&conflicts).Error; err != nil {
+		pq.Int64Array(ids), *c.BundleID, *c.BundleID, *c.BundleID, c.ID, *c.BundleID, c.ID, *c.BundleID, c.ID).Scan(&conflicts).Error; err != nil {
 		return err
 	}
 	if conflicts != 0 {
@@ -182,58 +185,6 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ReserveForCampaign
 		return executionReservationInsertError(err, false)
 	}
 	return nil
-}
-
-// Lock the concrete profile rows before checking their remaining eligibility.
-// Candidate ranking already applies percentile score classes outside the
-// Bundle critical section; preserving the selected score snapshot here stops a
-// profile score mutation from changing that eligibility between discovery and
-// the atomic reservation write without re-running the full population scan.
-// TODO(smart-targeting-score-bounds): Exact member-score equality is not
-// sufficient for restricted A/B/C selections: changes to other eligible
-// profiles can shift p33/p66 and reclassify an unchanged member. Persist and
-// validate the original bounds, or re-evaluate every proposed member against
-// current bounds while holding the Bundle lock.
-func lockAndValidateExecutionReservationScores(ctx context.Context, db *gorm.DB, reservations []models.CampaignTargetingExecutionReservation) error {
-	ids := make([]int64, 0, len(reservations))
-	planned := make(map[int64]*float64, len(reservations))
-	for _, reservation := range reservations {
-		ids = append(ids, reservation.AudienceID)
-		planned[reservation.AudienceID] = reservation.AudienceScore
-	}
-	type scoreRow struct {
-		ID    int64    `gorm:"column:id"`
-		Score *float64 `gorm:"column:normalized_score"`
-	}
-	var current []scoreRow
-	// Lock profiles in one global order. Bundle finalization already serializes
-	// writers within a Bundle, but two different Bundles can overlap on profile
-	// IDs; a deterministic order prevents their profile-row locks from forming
-	// a cycle.
-	if err := db.WithContext(ctx).Raw(`SELECT id, normalized_score FROM audience_profiles WHERE id = ANY(?::bigint[]) ORDER BY id FOR UPDATE`, pq.Int64Array(ids)).Scan(&current).Error; err != nil {
-		return err
-	}
-	if len(current) != len(reservations) {
-		return ErrSmartTargetingExecutionReservationConflict
-	}
-	for _, row := range current {
-		expected, exists := planned[row.ID]
-		if !exists || !sameExecutionReservationScore(expected, row.Score) {
-			return ErrSmartTargetingExecutionReservationConflict
-		}
-		delete(planned, row.ID)
-	}
-	if len(planned) != 0 {
-		return ErrSmartTargetingExecutionReservationConflict
-	}
-	return nil
-}
-
-func sameExecutionReservationScore(left, right *float64) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return math.Float64bits(*left) == math.Float64bits(*right)
 }
 
 func executionReservationInsertError(err error, header bool) error {

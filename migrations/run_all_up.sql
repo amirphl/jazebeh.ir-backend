@@ -514,5 +514,14 @@
 \echo 'Running 0168_add_campaign_audience_report_customer_limit_index.sql...'
 \i migrations/0168_add_campaign_audience_report_customer_limit_index.sql
 
+\echo 'Running 0169_external_short_link_click_dead_letters.sql...'
+\i migrations/0169_external_short_link_click_dead_letters.sql
+
+\echo 'Running 0170_guard_committed_execution_audience_claims.sql...'
+\i migrations/0170_guard_committed_execution_audience_claims.sql
+
+\echo 'Running 0171_allow_excel_bundle_audience_duplicates.sql...'
+\i migrations/0171_allow_excel_bundle_audience_duplicates.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 

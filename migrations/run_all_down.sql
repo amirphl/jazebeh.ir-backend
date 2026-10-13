@@ -3,6 +3,15 @@
 
 \set ON_ERROR_STOP on
 
+\echo 'Running 0171_allow_excel_bundle_audience_duplicates_down.sql...'
+\i migrations/0171_allow_excel_bundle_audience_duplicates_down.sql
+
+\echo 'Running 0170_guard_committed_execution_audience_claims_down.sql...'
+\i migrations/0170_guard_committed_execution_audience_claims_down.sql
+
+\echo 'Running 0169_external_short_link_click_dead_letters_down.sql...'
+\i migrations/0169_external_short_link_click_dead_letters_down.sql
+
 \echo 'Running 0168_add_campaign_audience_report_customer_limit_index_down.sql...'
 \i migrations/0168_add_campaign_audience_report_customer_limit_index_down.sql
 

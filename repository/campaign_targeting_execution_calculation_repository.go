@@ -3,14 +3,52 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 var ErrCampaignTargetingExecutionCalculationStateConflict = errors.New("execution audience calculation state changed")
+
+// executionCalculationCommitConflictQuery checks immutable proposal members
+// against claims that already exist in the same Bundle. Callers hold the
+// Bundle UPDATE lock, so this is short and is the authoritative conflict check
+// after an intentionally advisory background calculation.
+const executionCalculationCommitConflictQuery = `
+SELECT COUNT(*)
+FROM campaign_targeting_execution_calculation_members AS member
+JOIN campaign_targeting_execution_calculations AS candidate
+  ON candidate.id = member.calculation_id
+WHERE candidate.id = ? AND candidate.campaign_id = ?
+  AND candidate.status = 'ready'
+  AND (
+    EXISTS (SELECT 1 FROM bundle_audience_selection_members AS materialized
+            JOIN bundle_audience_selections AS materialized_selection ON materialized_selection.id = materialized.selection_id
+            JOIN campaigns AS materialized_campaign ON materialized_campaign.id = materialized_selection.campaign_id
+            WHERE materialized.bundle_id = candidate.bundle_id AND materialized.audience_id = member.audience_id
+              AND LOWER(BTRIM(COALESCE(materialized_campaign.spec->>'audience_targeting_method', ''))) <> 'excel')
+    OR EXISTS (SELECT 1 FROM bundle_audience_exclusions AS excluded
+               WHERE excluded.bundle_id = candidate.bundle_id AND excluded.audience_id = member.audience_id)
+    OR EXISTS (SELECT 1 FROM campaign_targeting_test_sample_reservations AS test_reserved
+               WHERE test_reserved.bundle_id = candidate.bundle_id AND test_reserved.audience_id = member.audience_id
+                 AND test_reserved.state = 'active' AND test_reserved.campaign_id <> candidate.campaign_id)
+    OR EXISTS (SELECT 1 FROM campaign_targeting_execution_reservations AS execution_reserved
+               WHERE execution_reserved.bundle_id = candidate.bundle_id AND execution_reserved.audience_id = member.audience_id
+                 AND execution_reserved.state = 'active' AND execution_reserved.campaign_id <> candidate.campaign_id)
+    OR EXISTS (
+      SELECT 1
+      FROM campaign_targeting_execution_calculation_members AS committed_member
+      JOIN campaign_targeting_execution_calculations AS committed
+        ON committed.id = committed_member.calculation_id
+      WHERE committed_member.audience_id = member.audience_id
+        AND committed.bundle_id = candidate.bundle_id AND committed.status = 'committed'
+        AND committed.id <> candidate.id
+    )
+  )`
 
 type CampaignTargetingExecutionCalculationRepository interface {
 	Save(context.Context, *models.CampaignTargetingExecutionCalculation) error
@@ -159,8 +197,19 @@ func (r *CampaignTargetingExecutionCalculationRepositoryImpl) MarkCommitted(ctx 
 	if _, err := transactionForLock(ctx); err != nil {
 		return err
 	}
+	var conflicts int64
+	if err := r.getDB(ctx).Raw(executionCalculationCommitConflictQuery, id, campaignID).Scan(&conflicts).Error; err != nil {
+		return err
+	}
+	if conflicts != 0 {
+		return ErrSmartTargetingExecutionReservationConflict
+	}
 	result := r.getDB(ctx).Model(&models.CampaignTargetingExecutionCalculation{}).Where("id = ? AND campaign_id = ? AND status = ?", id, campaignID, models.CampaignTargetingExecutionCalculationReady).Updates(map[string]any{"status": models.CampaignTargetingExecutionCalculationCommitted, "committed_at": at})
 	if result.Error != nil {
+		var pgErr *pq.Error
+		if errors.As(result.Error, &pgErr) && string(pgErr.Code) == "23505" {
+			return fmt.Errorf("commit execution audience calculation: %w", ErrSmartTargetingExecutionReservationConflict)
+		}
 		return result.Error
 	}
 	if result.RowsAffected != 1 {

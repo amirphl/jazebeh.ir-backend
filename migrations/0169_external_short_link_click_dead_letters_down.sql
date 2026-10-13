@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS external_short_link_click_dead_letters;

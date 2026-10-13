@@ -70,26 +70,29 @@ func TestExecutionReservationHeaderRejectsUnsupportedMetadataVersions(t *testing
 	}
 }
 
-func TestExecutionReservationAvailabilityRequiresTheAssignedTag(t *testing.T) {
+func TestExecutionReservationAvailabilityChecksOnlyAllocationConflicts(t *testing.T) {
 	query := strings.ToLower(executionReservationAvailabilityQuery)
 	for _, required := range []string{
-		"unnest(?::bigint[], ?::bigint[]) as requested(audience_id, assigned_tag_id)",
-		"audience.tags @> array[requested.assigned_tag_id]::integer[]",
+		"unnest(?::bigint[]) as requested(audience_id)",
+		"bundle_audience_selection_members",
+		"bundle_audience_selections",
+		"audience_targeting_method",
+		"campaign_targeting_test_sample_reservations",
+		"campaign_targeting_execution_reservations",
+		"campaign_targeting_execution_calculations",
 	} {
 		if !strings.Contains(query, required) {
-			t.Fatalf("execution reservation validation is missing %q:\n%s", required, executionReservationAvailabilityQuery)
+			t.Fatalf("execution reservation conflict check is missing %q:\n%s", required, executionReservationAvailabilityQuery)
 		}
 	}
 }
 
-func TestExecutionReservationScoreLocksUseAStableAudienceOrder(t *testing.T) {
-	// Keep overlapping reservations from different Bundles from taking profile
-	// row locks in different orders.
+func TestExecutionReservationDoesNotLockAudienceProfiles(t *testing.T) {
 	source, err := os.ReadFile("campaign_targeting_execution_reservation_repository.go")
 	if err != nil {
 		t.Fatalf("read reservation repository source: %v", err)
 	}
-	if !strings.Contains(string(source), "WHERE id = ANY(?::bigint[]) ORDER BY id FOR UPDATE") {
-		t.Fatal("execution reservation profile locks must be ordered by audience ID")
+	if strings.Contains(string(source), "audience_profiles") || strings.Contains(string(source), "lockAndValidateExecutionReservationScores") {
+		t.Fatal("execution reservation must not lock or revalidate immutable audience profiles")
 	}
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -20,52 +19,34 @@ var (
 const testSampleSelectionAvailabilityQuery = `
 SELECT COUNT(*)
 FROM campaign_targeting_test_sample_selection_members AS member
-JOIN campaign_targeting_test_sample_selections AS snapshot
-  ON snapshot.id = member.selection_id
-JOIN campaigns AS campaign
-  ON campaign.id = snapshot.campaign_id
-LEFT JOIN line_numbers AS line
-  ON line.line_number = BTRIM(campaign.spec->>'line_number')
-LEFT JOIN audience_profiles AS audience ON audience.id = member.audience_id
-LEFT JOIN bundle_audience_selection_members AS materialized
-  ON materialized.bundle_id = ? AND materialized.audience_id = member.audience_id
-LEFT JOIN campaign_targeting_test_sample_reservations AS reserved
-  ON reserved.bundle_id = ? AND reserved.audience_id = member.audience_id
- AND reserved.state = 'active' AND reserved.campaign_id <> ?
-LEFT JOIN campaign_targeting_execution_reservations AS execution_reserved
-  ON execution_reserved.bundle_id = ? AND execution_reserved.audience_id = member.audience_id
- AND execution_reserved.state = 'active'
-LEFT JOIN campaign_targeting_execution_calculation_members AS committed_execution_member
-  ON committed_execution_member.audience_id = member.audience_id
-LEFT JOIN campaign_targeting_execution_calculations AS committed_execution
-  ON committed_execution.id = committed_execution_member.calculation_id
- AND committed_execution.bundle_id = ? AND committed_execution.status = 'committed'
-LEFT JOIN bundle_audience_exclusions AS excluded
-  ON excluded.bundle_id = ? AND excluded.audience_id = member.audience_id
 WHERE member.selection_id = ?
-	  AND (audience.id IS NULL OR audience.phone_number IS NULL OR BTRIM(audience.phone_number) = ''
-	   OR NOT (audience.tags @> ARRAY[member.assigned_tag_id]::integer[])
-	   -- Keep this guard aligned with models.SmartTargetingAllowedColors. A
-	   -- selection.calculation_id points to the Test-sampling table, not the
-	   -- capacity-calculation table; joining it to the latter can accidentally
-	   -- apply another campaign's provider/color policy when numeric IDs collide.
-	   OR (
-	       LOWER(BTRIM(COALESCE(campaign.spec->>'platform', ''))) = 'sms'
-	       AND (
-	           (line.provider = 'candoo' AND (audience.color IS NULL OR audience.color <> 'black'))
-	           OR
-	           (COALESCE(line.provider, 'payamsms') <> 'candoo'
-	             AND (audience.color IS NULL OR audience.color <> ALL(ARRAY['white', 'pink']::text[])))
-	       )
-	   )
-	   OR audience.normalized_score IS DISTINCT FROM member.audience_score
-	   OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR execution_reserved.id IS NOT NULL OR committed_execution.id IS NOT NULL OR excluded.audience_id IS NOT NULL)`
+	  AND (
+	   EXISTS (SELECT 1 FROM bundle_audience_selection_members AS materialized
+	           JOIN bundle_audience_selections AS materialized_selection ON materialized_selection.id = materialized.selection_id
+	           JOIN campaigns AS materialized_campaign ON materialized_campaign.id = materialized_selection.campaign_id
+	           WHERE materialized.bundle_id = ? AND materialized.audience_id = member.audience_id
+	             AND LOWER(BTRIM(COALESCE(materialized_campaign.spec->>'audience_targeting_method', ''))) <> 'excel')
+	   OR EXISTS (SELECT 1 FROM campaign_targeting_test_sample_reservations AS reserved
+	              WHERE reserved.bundle_id = ? AND reserved.audience_id = member.audience_id
+	                AND reserved.state = 'active' AND reserved.campaign_id <> ?)
+	   OR EXISTS (SELECT 1 FROM campaign_targeting_execution_reservations AS execution_reserved
+	              WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = member.audience_id
+	                AND execution_reserved.state = 'active')
+	   OR EXISTS (
+       SELECT 1
+       FROM campaign_targeting_execution_calculation_members AS committed_execution_member
+       JOIN campaign_targeting_execution_calculations AS committed_execution
+         ON committed_execution.id = committed_execution_member.calculation_id
+       WHERE committed_execution_member.audience_id = member.audience_id
+         AND committed_execution.bundle_id = ? AND committed_execution.status = 'committed'
+   )
+	   OR EXISTS (SELECT 1 FROM bundle_audience_exclusions AS excluded
+	              WHERE excluded.bundle_id = ? AND excluded.audience_id = member.audience_id)
+	  )`
 
-// TODO(smart-targeting-score-bounds): Test reservation validation below checks
-// each saved score but not its current percentile class. Changes to other
-// eligible profiles can shift p33/p66 and invalidate a restricted A/B/C
-// selection; persist/revalidate bounds or re-evaluate members under the Bundle
-// lock before reserving.
+// Audience profiles and tags are operationally immutable while campaign
+// workers run. Reservation validates only allocation conflicts; the immutable
+// sample is the eligibility snapshot.
 //
 // CampaignTargetingTestSampleSelectionRepository owns immutable Test sampling
 // output and its separate, releasable reservation lifecycle.
@@ -193,25 +174,10 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReserveForCampaign(
 		}
 		return nil
 	}
-	memberIDs := make([]int64, 0, len(selection.Members))
-	for _, member := range selection.Members {
-		memberIDs = append(memberIDs, member.AudienceID)
-	}
-	var lockedIDs []int64
-	// Different Bundles may still contend for the same profiles. Acquire the
-	// rows in a stable order so concurrent test/execution finalizations cannot
-	// deadlock while validating otherwise independent Bundles.
-	if err := db.Raw(`SELECT id FROM audience_profiles WHERE id = ANY(?::bigint[]) ORDER BY id FOR UPDATE`, pq.Int64Array(memberIDs)).Scan(&lockedIDs).Error; err != nil {
-		return err
-	}
-	if len(lockedIDs) != len(memberIDs) {
-		return ErrSmartTargetingTestSelectionConflict
-	}
-
-	// Check the immutable snapshot against the current hard-safety population.
-	// Do not substitute candidates here: a collision requires a fresh sample.
+	// The caller holds the Bundle UPDATE lock. Check only allocation conflicts;
+	// profile/tag eligibility is fixed for the worker lifetime by operations.
 	var unavailable int64
-	if err := db.Raw(testSampleSelectionAvailabilityQuery, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.BundleID, selection.BundleID, selection.ID).Scan(&unavailable).Error; err != nil {
+	if err := db.Raw(testSampleSelectionAvailabilityQuery, selection.ID, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.BundleID, selection.BundleID).Scan(&unavailable).Error; err != nil {
 		return err
 	}
 	if unavailable != 0 {

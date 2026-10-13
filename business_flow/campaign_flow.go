@@ -861,16 +861,9 @@ func (s *CampaignFlowImpl) reserveSmartTargetingExecutionAudience(ctx context.Co
 	if campaign == nil || plan == nil || plan.header == nil || campaign.BundleID == nil || *campaign.BundleID == 0 {
 		return repository.ErrSmartTargetingExecutionReservationUnavailable
 	}
-	// A committed calculation is the execution reservation.  Its members were
-	// persisted by the background worker, so approval must not copy or lock an
-	// unbounded audience set in the HTTP transaction.
-	currentFingerprint, err := smartTargetingBundleAllocationFingerprint(ctx, s.db, *campaign.BundleID, campaign.ID)
-	if err != nil {
-		return err
-	}
-	if currentFingerprint != plan.header.AllocationFingerprint {
-		return repository.ErrSmartTargetingExecutionReservationConcurrency
-	}
+	// A committed calculation is the execution reservation. Its concrete
+	// members are checked for allocation conflicts by MarkCommitted while this
+	// transaction holds the short Bundle UPDATE lock.
 	return nil
 }
 

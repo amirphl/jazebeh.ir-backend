@@ -13,7 +13,7 @@ func TestSmartTargetingPopulationUsesOptionalParameterizedColorFilter(t *testing
 			t.Fatalf("capacity population unexpectedly contains %q:\n%s", forbidden, smartTargetingPopulationCTE)
 		}
 	}
-	for _, required := range []string{"bundle_audience_selection_members", "used.bundle_id", "used.audience_id", "campaign_targeting_test_sample_reservations", "campaign_targeting_execution_reservations", "campaign_targeting_execution_calculations", "campaign_targeting_execution_calculation_members", "execution_calculation.status = 'committed'", "reserved.state = 'active'", "bundle_audience_exclusions", "bundle_exclusion.bundle_id", "bundle_exclusion.audience_id", "percentile_disc", "ap.color = any(?::text[])"} {
+	for _, required := range []string{"bundle_audience_selection_members", "used.bundle_id", "used.audience_id", "bundle_audience_selections as used_selection", "campaigns as used_campaign", "audience_targeting_method", "campaign_targeting_test_sample_reservations", "campaign_targeting_execution_reservations", "campaign_targeting_execution_calculations", "campaign_targeting_execution_calculation_members", "execution_calculation.status = 'committed'", "reserved.state = 'active'", "bundle_audience_exclusions", "bundle_exclusion.bundle_id", "bundle_exclusion.audience_id", "percentile_disc", "ap.color = any(?::text[])"} {
 		if !strings.Contains(query, required) {
 			t.Fatalf("capacity population is missing %q:\n%s", required, smartTargetingPopulationCTE)
 		}
@@ -97,7 +97,7 @@ func TestSmartTargetingScoreBoundsQueryCalculatesEligibleUnionOnce(t *testing.T)
 	lowerSQL := strings.ToLower(sql)
 	for _, required := range []string{
 		"percentile_disc(array[0.33, 0.66]", "ap.tags && ?::integer[]", "ap.color = any(?::text[])",
-		"bundle_audience_selection_members", "used.bundle_id = ?", "ap.normalized_score is not null",
+		"bundle_audience_selection_members", "used.bundle_id = ?", "bundle_audience_selections as used_selection", "campaigns as used_campaign", "audience_targeting_method", "ap.normalized_score is not null",
 		"campaign_targeting_test_sample_reservations", "campaign_targeting_execution_reservations", "reserved.state = 'active'",
 		"bundle_audience_exclusions", "bundle_exclusion.bundle_id = ?", "bundle_exclusion.audience_id = ap.id",
 	} {
@@ -134,7 +134,7 @@ func TestSmartTargetingPerTagSelectionUsesNoOrdering(t *testing.T) {
 	}
 	lowerSQL := strings.ToLower(sql)
 	for _, required := range []string{
-		"select ap.id", "from audience_profiles as ap", "ap.tags @> array[?]::integer[]", "bundle_audience_selection_members",
+		"select ap.id", "from audience_profiles as ap", "ap.tags @> array[?]::integer[]", "bundle_audience_selection_members", "bundle_audience_selections as used_selection", "campaigns as used_campaign", "audience_targeting_method",
 		"campaign_targeting_test_sample_reservations", "campaign_targeting_execution_reservations", "reserved.state = 'active'",
 		"bundle_audience_exclusions", "bundle_exclusion.bundle_id = ?", "bundle_exclusion.audience_id = ap.id",
 		"unnest(?::bigint[])", "ap.normalized_score <= ?::double precision or ap.normalized_score > ?::double precision", "limit ?",
