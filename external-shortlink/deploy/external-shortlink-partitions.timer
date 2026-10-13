@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily external short-link click partition maintenance
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

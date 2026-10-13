@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, time::Duration};
+use std::{env, time::Duration};
 
 use chrono::Utc;
 use external_shortlink::{
@@ -14,7 +14,6 @@ fn settings(database_url: String) -> Settings {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
         database_url,
         api_token: "x".repeat(32),
-        spool_path: PathBuf::from("/tmp/not-used.sqlite3"),
         pool_min_size: 0,
         pool_max_size: 2,
         db_command_timeout: Duration::from_secs(5),
@@ -26,11 +25,6 @@ fn settings(database_url: String) -> Settings {
         admin_batch_max_links: 100,
         click_fetch_max_limit: 100,
         max_admin_body_bytes: 1024 * 1024,
-        spool_max_bytes: 1024 * 1024,
-        spool_max_events: 100,
-        spool_replay_batch_size: 10,
-        spool_replay_interval: Duration::from_secs(1),
-        spool_operation_timeout: Duration::from_secs(1),
         acknowledged_retention_days: 7,
         purge_interval: Duration::from_secs(60),
     }
@@ -154,13 +148,14 @@ async fn postgres_mapping_click_cursor_and_idempotency() {
     database.insert_click(&event).await.unwrap();
     database.insert_click(&event).await.unwrap();
     let second = click_from_link(&stored_link, None, None, None);
-    database.insert_spooled_clicks(&[second]).await.unwrap();
+    database.insert_click(&second).await.unwrap();
 
-    let own_click_id: i64 = sqlx::query_scalar("SELECT click_id FROM clicks WHERE event_id = $1")
-        .bind(event.event_id)
-        .fetch_one(&setup_pool)
-        .await
-        .unwrap();
+    let own_click_id: i64 =
+        sqlx::query_scalar("SELECT click_id FROM clicks_v2 WHERE event_id = $1")
+            .bind(event.event_id)
+            .fetch_one(&setup_pool)
+            .await
+            .unwrap();
     let (page, _) = database.fetch_clicks(own_click_id - 1, 10).await.unwrap();
     assert_eq!(page.first().unwrap().event.event_id, event.event_id);
     let final_id = page.last().unwrap().click_id;
@@ -172,19 +167,22 @@ async fn postgres_mapping_click_cursor_and_idempotency() {
     // production index is verified by the deployment schema; this confirms
     // that timestamp ordering preserves cursor-based deletion semantics.
     sqlx::query(
-        "UPDATE clicks SET clicked_at = CURRENT_TIMESTAMP - INTERVAL '8 days' WHERE event_id = $1",
+        "UPDATE clicks_v2 SET clicked_at = CURRENT_TIMESTAMP - INTERVAL '8 days' WHERE event_id = $1",
     )
     .bind(event.event_id)
     .execute(&setup_pool)
     .await
     .unwrap();
-    assert!(database.purge_acknowledged(7).await.unwrap() >= 1);
-    let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM clicks WHERE event_id = $1")
+    // Partition retention is performed by the privileged host maintenance
+    // timer; the application purge loop drains only legacy rows during the
+    // online migration.
+    assert_eq!(database.purge_acknowledged(7).await.unwrap(), 0);
+    let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM clicks_v2 WHERE event_id = $1")
         .bind(event.event_id)
         .fetch_one(&setup_pool)
         .await
         .unwrap();
-    assert_eq!(retained, 0);
+    assert_eq!(retained, 1);
 }
 
 // Exercise real mapping lookup and persisted clicks alongside a local destination.
@@ -225,14 +223,13 @@ async fn automated_visits_track_without_reaching_destination() {
     let code = format!("preview-{}", Uuid::new_v4().simple());
     let mut mapping = link(code.clone());
     mapping.long_url = format!("http://{destination}/landing");
+    mapping.is_test = true; // Test links must still redirect human visitors.
     Database::new(&settings(database_url.clone()))
         .unwrap()
         .upload_links(&[mapping.clone()])
         .await
         .unwrap();
-    let directory = tempfile::tempdir().unwrap();
     let mut config = settings(database_url);
-    config.spool_path = directory.path().join("clicks.sqlite3");
     config.click_insert_timeout = Duration::from_secs(5);
     config.link_lookup_timeout = Duration::from_secs(5);
     let state = AppState::initialize(config).await.unwrap();
@@ -257,8 +254,9 @@ async fn automated_visits_track_without_reaching_destination() {
             .unwrap();
         assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
         // Follow redirects exactly when the response advertises one.
-        if let Some(location) = response.headers().get(header::LOCATION) {
+        if index % 2 == 1 {
             assert_eq!(response.status(), StatusCode::FOUND);
+            let location = response.headers().get(header::LOCATION).unwrap();
             assert_eq!(location.to_str().unwrap(), mapping.long_url);
             let mut stream = tokio::net::TcpStream::connect(destination).await.unwrap();
             stream
@@ -275,6 +273,7 @@ async fn automated_visits_track_without_reaching_destination() {
             assert!(String::from_utf8_lossy(&body).contains("destination"));
         } else {
             assert_eq!(response.status(), StatusCode::OK);
+            assert!(!response.headers().contains_key(header::LOCATION));
             assert!(
                 to_bytes(response.into_body(), 1024)
                     .await
@@ -284,7 +283,7 @@ async fn automated_visits_track_without_reaching_destination() {
         }
         assert_eq!(hits.load(Ordering::Relaxed), index.div_ceil(2) as u64);
     }
-    let clicks: i64 = sqlx::query_scalar("SELECT count(*) FROM clicks WHERE short_code = $1")
+    let clicks: i64 = sqlx::query_scalar("SELECT count(*) FROM clicks_v2 WHERE short_code = $1")
         .bind(&code)
         .fetch_one(&pool)
         .await

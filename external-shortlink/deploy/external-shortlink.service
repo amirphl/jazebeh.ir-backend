@@ -34,8 +34,8 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
 ReadWritePaths=/var/lib/external-shortlink
 UMask=0027
-MemoryHigh=768M
-MemoryMax=1G
+MemoryHigh=1G
+MemoryMax=1536M
 TasksMax=256
 CPUWeight=200
 

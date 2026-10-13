@@ -540,6 +540,11 @@ type ShortLinkRepository interface {
 // ExternalShortLinkSyncRepository atomically imports external clicks and advances their cursor.
 type ExternalShortLinkSyncRepository interface {
 	Cursor(ctx context.Context, source string) (int64, error)
+	// ImportPage imports the page, quarantines with its payload any row the
+	// ordered cursor cannot carry, and records the highest click ID the page
+	// accounted for. throughClickID is the caller's proposed cursor and is only
+	// a floor: a page can never move the cursor past a row it did not account
+	// for, so a malformed page cannot stall or skip the import.
 	ImportPage(ctx context.Context, source string, clicks []models.ExternalShortLinkClick, throughClickID int64) error
 }
 

@@ -11,20 +11,24 @@ services:
     command:
       - postgres
       - -c
-      - max_connections=32
+      - max_connections=64
       - -c
-      - shared_buffers=512MB
+      - shared_buffers=3GB
       - -c
       - work_mem=8MB
       - -c
-      - maintenance_work_mem=128MB
+      - maintenance_work_mem=512MB
       - -c
-      - effective_cache_size=2GB
+      - effective_cache_size=9GB
       - -c
       - wal_compression=on
-    shm_size: 512mb
-    mem_limit: 1536m
-    cpus: 2.5
+      - random_page_cost=1.1
+      - effective_io_concurrency=256
+      - checkpoint_timeout=15min
+      - max_wal_size=8GB
+    shm_size: 3gb
+    mem_limit: 10g
+    cpus: 6.5
     security_opt:
       - no-new-privileges:true
     volumes:
@@ -33,6 +37,7 @@ services:
       # Do not mount them below /docker-entrypoint-initdb.d: its automatic
       # first-boot execution conflicts with the deployment's idempotent setup.
       - ../schema.sql:/opt/external-shortlink-schema.sql:ro
+      - ../maintain-click-partitions.sql:/opt/external-shortlink-maintain-partitions.sql:ro
       - ./postgres-init/20-runtime-role.sh:/opt/external-shortlink-runtime-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready --host 127.0.0.1 --port 5432 -U external_shortlink_admin -d external_shortlink"]

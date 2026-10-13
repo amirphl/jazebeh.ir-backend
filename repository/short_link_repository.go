@@ -257,10 +257,17 @@ func (r *ShortLinkRepositoryImpl) MarkExternallyPublished(ctx context.Context, u
 	if len(uids) == 0 {
 		return nil
 	}
+	// UpdateColumn, not Update. Update on a model with an UpdatedAt field also
+	// writes short_links.updated_at, which the mapping scheduler re-sends as
+	// source_updated_at and the click importer records as short_link_updated_at,
+	// so acknowledging a publication would be indistinguishable from a mapping
+	// change and would rewrite immutable-looking metadata downstream. Restricting
+	// the statement with Select("external_published_at") does not help: GORM adds
+	// the automatic update-timestamp column even when the update is restricted.
 	return r.getDB(ctx).
 		Model(&models.ShortLink{}).
 		Where("uid IN ?", uids).
-		Update("external_published_at", publishedAt.UTC()).Error
+		UpdateColumn("external_published_at", publishedAt.UTC()).Error
 }
 
 func (r *ShortLinkRepositoryImpl) applyFilter(db *gorm.DB, f models.ShortLinkFilter) *gorm.DB {

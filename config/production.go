@@ -877,9 +877,10 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			ClientKeyFile:     getEnvString("EXTERNAL_SHORTLINK_CLIENT_KEY_FILE", ""),
 			CAFile:            getEnvString("EXTERNAL_SHORTLINK_CA_FILE", ""),
 			AllowInsecureHTTP: getEnvBool("EXTERNAL_SHORTLINK_ALLOW_INSECURE_HTTP", false),
-			// This is per redirect-service batch, not the whole allocation. It
-			// needs room for a saturated database pool while remaining bounded.
-			RequestTimeout:      getEnvDuration("EXTERNAL_SHORTLINK_REQUEST_TIMEOUT", 2*time.Minute),
+			// This is per redirect-service request. Keep scheduler recovery
+			// bounded when the external host is unreachable; request retries add
+			// only short jittered delays.
+			RequestTimeout:      getEnvDuration("EXTERNAL_SHORTLINK_REQUEST_TIMEOUT", 30*time.Second),
 			MappingSyncInterval: getEnvDuration("EXTERNAL_SHORTLINK_MAPPING_SYNC_INTERVAL", time.Minute),
 			ClickSyncInterval:   getEnvDuration("EXTERNAL_SHORTLINK_CLICK_SYNC_INTERVAL", 5*time.Minute),
 			MappingBatchSize:    getEnvInt("EXTERNAL_SHORTLINK_MAPPING_BATCH_SIZE", 500),

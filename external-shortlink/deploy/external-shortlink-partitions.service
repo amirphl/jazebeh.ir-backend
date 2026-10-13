@@ -1,0 +1,7 @@
+[Unit]
+Description=Maintain external short-link PostgreSQL click partitions
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/external-shortlink/app/scripts/maintain-click-partitions.sh

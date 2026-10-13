@@ -1,13 +1,21 @@
-use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{env, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, Result, bail};
+
+/// A click is only redirected after it is durably committed, and every click
+/// write serializes behind the advisory lock that keeps the import cursor in
+/// ID order. A budget below a plausible lock wait plus WAL flush turns ordinary
+/// concurrency into `503`s, so the built-in default matches the deployed
+/// environment (see `deploy/external-shortlink.env.example` and
+/// `scripts/deploy-debian-12.sh`).
+pub const CLICK_INSERT_TIMEOUT_SECONDS: f64 = 2.0;
+pub const MINIMUM_CLICK_INSERT_TIMEOUT_SECONDS: f64 = CLICK_INSERT_TIMEOUT_SECONDS;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub bind_addr: SocketAddr,
     pub database_url: String,
     pub api_token: String,
-    pub spool_path: PathBuf,
     pub pool_min_size: u32,
     pub pool_max_size: u32,
     pub db_command_timeout: Duration,
@@ -19,11 +27,6 @@ pub struct Settings {
     pub admin_batch_max_links: usize,
     pub click_fetch_max_limit: i64,
     pub max_admin_body_bytes: usize,
-    pub spool_max_bytes: u64,
-    pub spool_max_events: u64,
-    pub spool_replay_batch_size: usize,
-    pub spool_replay_interval: Duration,
-    pub spool_operation_timeout: Duration,
     pub acknowledged_retention_days: i64,
     pub purge_interval: Duration,
 }
@@ -46,7 +49,8 @@ impl Settings {
         }
 
         let pool_min_size = u32::try_from(unsigned("EXTERNAL_SHORTLINK_POOL_MIN_SIZE", 1, 0, 16)?)?;
-        let pool_max_size = u32::try_from(unsigned("EXTERNAL_SHORTLINK_POOL_MAX_SIZE", 8, 1, 16)?)?;
+        let pool_max_size =
+            u32::try_from(unsigned("EXTERNAL_SHORTLINK_POOL_MAX_SIZE", 32, 1, 32)?)?;
         if pool_min_size > pool_max_size {
             bail!("EXTERNAL_SHORTLINK_POOL_MIN_SIZE cannot exceed EXTERNAL_SHORTLINK_POOL_MAX_SIZE")
         }
@@ -68,10 +72,6 @@ impl Settings {
             bind_addr,
             database_url,
             api_token,
-            spool_path: PathBuf::from(value(
-                "EXTERNAL_SHORTLINK_SPOOL_PATH",
-                "/var/lib/external-shortlink/click-spool.sqlite3",
-            )),
             pool_min_size,
             pool_max_size,
             db_command_timeout: seconds(
@@ -82,8 +82,8 @@ impl Settings {
             db_lock_timeout: seconds("EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS", 10.0, 0.01)?,
             click_insert_timeout: seconds(
                 "EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS",
-                0.100,
-                0.001,
+                CLICK_INSERT_TIMEOUT_SECONDS,
+                MINIMUM_CLICK_INSERT_TIMEOUT_SECONDS,
             )?,
             link_lookup_timeout: seconds(
                 "EXTERNAL_SHORTLINK_LINK_LOOKUP_TIMEOUT_SECONDS",
@@ -110,34 +110,6 @@ impl Settings {
                 1,
                 16 * 1024 * 1024,
             )?)?,
-            spool_max_bytes: unsigned(
-                "EXTERNAL_SHORTLINK_SPOOL_MAX_BYTES",
-                48 * 1024 * 1024 * 1024,
-                1,
-                60 * 1024 * 1024 * 1024,
-            )?,
-            spool_max_events: unsigned(
-                "EXTERNAL_SHORTLINK_SPOOL_MAX_EVENTS",
-                20_000_000,
-                1,
-                25_000_000,
-            )?,
-            spool_replay_batch_size: usize::try_from(unsigned(
-                "EXTERNAL_SHORTLINK_SPOOL_REPLAY_BATCH_SIZE",
-                250,
-                1,
-                3_000,
-            )?)?,
-            spool_replay_interval: seconds(
-                "EXTERNAL_SHORTLINK_SPOOL_REPLAY_INTERVAL_SECONDS",
-                1.0,
-                0.05,
-            )?,
-            spool_operation_timeout: seconds(
-                "EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS",
-                30.0,
-                0.01,
-            )?,
             acknowledged_retention_days: i64::try_from(unsigned(
                 "EXTERNAL_SHORTLINK_ACK_RETENTION_DAYS",
                 7,
@@ -214,5 +186,32 @@ mod tests {
     fn url_safe_secret_rejects_environment_file_syntax() {
         assert!(is_url_safe_secret(&"x".repeat(32)));
         assert!(!is_url_safe_secret(&("x".repeat(31) + "!")));
+    }
+
+    #[test]
+    fn click_insert_timeout_default_matches_deployed_configuration() {
+        let deployed = format!(
+            "EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS={CLICK_INSERT_TIMEOUT_SECONDS}"
+        );
+        assert!(
+            include_str!("../deploy/external-shortlink.env.example").contains(&deployed),
+            "the example environment file must not drift from the built-in click timeout default"
+        );
+        assert!(
+            include_str!("../scripts/deploy-debian-12.sh").contains(&format!("'{deployed}'")),
+            "the deployment script must not drift from the built-in click timeout default"
+        );
+    }
+
+    #[test]
+    fn click_insert_timeout_rejects_an_unsafe_override() {
+        assert!(
+            seconds(
+                "EXTERNAL_SHORTLINK_TEST_UNSET_CLICK_INSERT_TIMEOUT_SECONDS",
+                0.100,
+                MINIMUM_CLICK_INSERT_TIMEOUT_SECONDS,
+            )
+            .is_err()
+        );
     }
 }

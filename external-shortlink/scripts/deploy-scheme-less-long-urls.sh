@@ -14,7 +14,7 @@ usage() {
 Usage:
   sudo ./scripts/deploy-scheme-less-long-urls.sh \
     --api-token-file /root/external-shortlink-api-token \
-    [--production-ip PRODUCTION_EGRESS_IP] [--acme-email EMAIL] [--source-dir DIRECTORY]
+    [--acme-email EMAIL] [--source-dir DIRECTORY]
 
 Builds and deploys the checked-in external-shortlink service, then verifies
 local liveness and database readiness. The source checkout must be a clean,

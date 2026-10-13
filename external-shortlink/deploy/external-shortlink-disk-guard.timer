@@ -1,0 +1,10 @@
+[Unit]
+Description=Frequent external short-link disk-headroom checks
+
+[Timer]
+OnBootSec=1m
+OnUnitActiveSec=1m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

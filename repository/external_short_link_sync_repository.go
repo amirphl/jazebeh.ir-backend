@@ -2,8 +2,11 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,19 +51,10 @@ func (r *ExternalShortLinkSyncRepositoryImpl) ImportPage(
 	if throughClickID < 0 {
 		return fmt.Errorf("external click cursor cannot be negative")
 	}
-	previousClickID := int64(0)
-	for _, click := range clicks {
-		if click.ClickID <= previousClickID {
-			return fmt.Errorf("external click IDs are not strictly increasing: previous=%d current=%d", previousClickID, click.ClickID)
-		}
-		previousClickID = click.ClickID
-	}
 	if len(clicks) == 0 {
 		if throughClickID != 0 {
 			return fmt.Errorf("cannot advance external click cursor with an empty page")
 		}
-	} else if throughClickID != previousClickID {
-		return fmt.Errorf("external click cursor %d does not match last click ID %d", throughClickID, previousClickID)
 	}
 	return WithTransaction(ctx, r.db, func(txCtx context.Context) error {
 		tx := r.db.WithContext(txCtx)
@@ -68,12 +62,32 @@ func (r *ExternalShortLinkSyncRepositoryImpl) ImportPage(
 			tx = current.WithContext(txCtx)
 		}
 
-		codes := make([]string, 0, len(clicks))
-		seen := make(map[string]struct{}, len(clicks))
+		// Every row is accounted for by the end of this loop: either imported or
+		// quarantined with its payload. A row the ordered cursor cannot carry (a
+		// repeated, lowered, or unusable ID) is quarantined instead of failing
+		// the page, because failing the page stops the cursor and therefore all
+		// later clicks - the stall this quarantine exists to prevent.
+		var (
+			highest     int64
+			valid       = make([]models.ExternalShortLinkClick, 0, len(clicks))
+			deadLetters = make([]*models.ExternalShortLinkClickDeadLetter, 0)
+		)
 		for _, click := range clicks {
-			if click.ClickID <= 0 || click.LinkID <= 0 || click.ShortCode == "" || click.LongURL == "" || click.ClickedAt.IsZero() {
-				return fmt.Errorf("external click %d is missing required fields", click.ClickID)
+			if reason := anomalousExternalClickReason(click, highest); reason != "" {
+				deadLetters = append(deadLetters, externalClickDeadLetter(source, click, reason))
+				continue
 			}
+			highest = click.ClickID
+			if reason := invalidExternalClickReason(click); reason != "" {
+				deadLetters = append(deadLetters, externalClickDeadLetter(source, click, reason))
+				continue
+			}
+			valid = append(valid, click)
+		}
+
+		codes := make([]string, 0, len(valid))
+		seen := make(map[string]struct{}, len(clicks))
+		for _, click := range valid {
 			if _, exists := seen[click.ShortCode]; !exists {
 				seen[click.ShortCode] = struct{}{}
 				codes = append(codes, click.ShortCode)
@@ -93,69 +107,40 @@ func (r *ExternalShortLinkSyncRepositoryImpl) ImportPage(
 			}
 		}
 
-		rows := make([]*models.ShortLinkClick, 0, len(clicks))
-		for _, external := range clicks {
+		rows := make([]*models.ShortLinkClick, 0, len(valid))
+		for _, external := range valid {
 			link, exists := linksByCode[external.ShortCode]
 			if !exists {
-				return fmt.Errorf("production short link for external code %q does not exist", external.ShortCode)
+				deadLetters = append(deadLetters, externalClickDeadLetter(source, external, "production short-link code does not exist"))
+				continue
 			}
 			expectedLongURL, err := externalStoredLongURL(link.LongLink)
 			if err != nil || expectedLongURL != external.LongURL {
-				return fmt.Errorf("external code %q destination does not match the immutable production mapping", external.ShortCode)
+				deadLetters = append(deadLetters, externalClickDeadLetter(source, external, "destination does not match immutable production mapping"))
+				continue
 			}
 			if external.SourceLinkID != nil && (*external.SourceLinkID <= 0 || uint64(*external.SourceLinkID) != uint64(link.ID)) {
-				return fmt.Errorf("external code %q source link ID does not match production", external.ShortCode)
+				deadLetters = append(deadLetters, externalClickDeadLetter(source, external, "source link ID does not match production"))
+				continue
 			}
 			uid := external.ShortCode
-			// Preserve the exact value supplied to Yamata in its click history. The
-			// external redirect service may have added HTTPS solely for its own
-			// browser-facing mapping storage.
 			longURL := link.LongLink
-			shortURL := external.ShortURL
-			if shortURL == nil {
-				shortURL = &link.ShortLink
-			}
-			campaignID := external.CampaignID
-			if campaignID == nil {
-				campaignID = link.CampaignID
-			}
-			clientID := external.ClientID
-			if clientID == nil {
-				clientID = link.ClientID
-			}
-			scenarioID := external.ScenarioID
-			if scenarioID == nil {
-				scenarioID = link.ScenarioID
-			}
-			scenarioName := external.ScenarioName
-			if scenarioName == nil {
-				scenarioName = link.ScenarioName
-			}
-			phoneNumber := external.PhoneNumber
-			if phoneNumber == nil {
-				phoneNumber = link.PhoneNumber
-			}
-			linkCreatedAt := external.LinkCreatedAt
-			if linkCreatedAt == nil {
-				linkCreatedAt = &link.CreatedAt
-			}
-			linkUpdatedAt := external.LinkUpdatedAt
-			if linkUpdatedAt == nil {
-				linkUpdatedAt = &link.UpdatedAt
-			}
+			shortURL := link.ShortLink
+			linkCreatedAt := link.CreatedAt
+			linkUpdatedAt := link.UpdatedAt
 			rows = append(rows, &models.ShortLinkClick{
 				ShortLinkID:        link.ID,
 				UID:                &uid,
-				CampaignID:         campaignID,
-				ClientID:           clientID,
-				ScenarioID:         scenarioID,
-				ScenarioName:       scenarioName,
-				PhoneNumber:        phoneNumber,
+				CampaignID:         link.CampaignID,
+				ClientID:           link.ClientID,
+				ScenarioID:         link.ScenarioID,
+				ScenarioName:       link.ScenarioName,
+				PhoneNumber:        link.PhoneNumber,
 				LongLink:           &longURL,
-				ShortLink:          shortURL,
+				ShortLink:          &shortURL,
 				IsTest:             link.IsTest,
-				ShortLinkCreatedAt: linkCreatedAt,
-				ShortLinkUpdatedAt: linkUpdatedAt,
+				ShortLinkCreatedAt: &linkCreatedAt,
+				ShortLinkUpdatedAt: &linkUpdatedAt,
 				UserAgent:          external.UserAgent,
 				IP:                 external.ClientIP,
 				Referer:            external.Referer,
@@ -173,10 +158,33 @@ func (r *ExternalShortLinkSyncRepositoryImpl) ImportPage(
 				return fmt.Errorf("insert external clicks: %w", err)
 			}
 		}
+		if len(deadLetters) > 0 {
+			// A bare DO NOTHING satisfies the partial unique index on positive
+			// IDs while still retaining rows whose unusable ID has nothing to
+			// conflict with, so a malformed page cannot fail this insert.
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(deadLetters, 500).Error; err != nil {
+				return fmt.Errorf("quarantine invalid external clicks: %w", err)
+			}
+			// This is deliberately payload-free: it is alertable without leaking
+			// phone numbers, destinations, IPs, or user-agent data into logs.
+			log.Printf("external short-link click import: quarantined invalid events source=%s count=%d reasons=%s", source, len(deadLetters), deadLetterReasonSummary(deadLetters))
+		}
 
+		// The cursor records what this transaction actually accounted for. The
+		// caller's throughClickID is only a floor: recording it directly could
+		// skip rows a malformed page never presented. GREATEST below keeps the
+		// stored cursor monotonic even if the caller proposes a lower value.
+		if throughClickID > highest {
+			log.Printf(
+				"external short-link click import: proposed cursor %d exceeds the highest accounted click id %d; recording %d",
+				throughClickID,
+				highest,
+				highest,
+			)
+		}
 		state := models.ExternalShortLinkSyncState{
 			Source:      source,
-			LastClickID: throughClickID,
+			LastClickID: highest,
 			UpdatedAt:   time.Now().UTC(),
 		}
 		if err := tx.Clauses(clause.OnConflict{
@@ -190,6 +198,50 @@ func (r *ExternalShortLinkSyncRepositoryImpl) ImportPage(
 		}
 		return nil
 	})
+}
+
+func deadLetterReasonSummary(deadLetters []*models.ExternalShortLinkClickDeadLetter) string {
+	counts := make(map[string]int, len(deadLetters))
+	for _, deadLetter := range deadLetters {
+		counts[deadLetter.Reason]++
+	}
+	parts := make([]string, 0, len(counts))
+	for reason, count := range counts {
+		parts = append(parts, fmt.Sprintf("%q:%d", reason, count))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
+}
+
+// anomalousExternalClickReason reports why a click cannot participate in the
+// ordered import cursor. It inspects IDs only, so a row with a usable ID still
+// advances the cursor after its payload is quarantined separately.
+func anomalousExternalClickReason(click models.ExternalShortLinkClick, highestAccounted int64) string {
+	if click.ClickID <= 0 {
+		return "external click ID is not a positive integer"
+	}
+	if click.ClickID <= highestAccounted {
+		return "external click ID is not strictly increasing"
+	}
+	return ""
+}
+
+// invalidExternalClickReason reports why an ordered click cannot be imported.
+func invalidExternalClickReason(click models.ExternalShortLinkClick) string {
+	if click.LinkID <= 0 || strings.TrimSpace(click.ShortCode) == "" || strings.TrimSpace(click.LongURL) == "" || click.ClickedAt.IsZero() {
+		return "missing required click fields"
+	}
+	return ""
+}
+
+func externalClickDeadLetter(source string, click models.ExternalShortLinkClick, reason string) *models.ExternalShortLinkClickDeadLetter {
+	payload, err := json.Marshal(click)
+	if err != nil {
+		payload = []byte(`{"serialization_error":true}`)
+	}
+	return &models.ExternalShortLinkClickDeadLetter{
+		Source: source, ExternalClickID: click.ClickID, Payload: string(payload), Reason: reason, CreatedAt: time.Now().UTC(),
+	}
 }
 
 // externalStoredLongURL derives the external service's persisted destination

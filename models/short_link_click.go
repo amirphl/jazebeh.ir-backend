@@ -41,6 +41,24 @@ type ExternalShortLinkSyncState struct {
 
 func (ExternalShortLinkSyncState) TableName() string { return "external_short_link_sync_state" }
 
+// ExternalShortLinkClickDeadLetter preserves an invalid external event while
+// allowing the ordered importer to advance past it. The uniqueness below is a
+// partial index on positive click IDs, so a page retry cannot create duplicates
+// while a row whose ID is missing or non-positive - the one case that has no
+// cursor value to advance past - is still retained instead of dropped.
+type ExternalShortLinkClickDeadLetter struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	Source          string    `gorm:"size:64;not null;uniqueIndex:uk_external_short_link_dead_letters_source_click,priority:1,where:external_click_id > 0" json:"source"`
+	ExternalClickID int64     `gorm:"not null;uniqueIndex:uk_external_short_link_dead_letters_source_click,priority:2" json:"external_click_id"`
+	Payload         string    `gorm:"type:jsonb;not null" json:"payload"`
+	Reason          string    `gorm:"type:text;not null" json:"reason"`
+	CreatedAt       time.Time `gorm:"not null" json:"created_at"`
+}
+
+func (ExternalShortLinkClickDeadLetter) TableName() string {
+	return "external_short_link_click_dead_letters"
+}
+
 // ExternalShortLinkClick is the wire representation fetched from the external service.
 type ExternalShortLinkClick struct {
 	ClickID       int64      `json:"click_id"`

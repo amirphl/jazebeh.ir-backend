@@ -14,6 +14,8 @@ readonly PROJECT_DIR='/home/debian/Yamata-no-Orochi'
 readonly DEFAULT_SOURCE_DIR="$PROJECT_DIR/external-shortlink"
 readonly INSTALL_DIR='/opt/external-shortlink'
 readonly SERVICE_NAME='external-shortlink'
+readonly PARTITION_TIMER_NAME='external-shortlink-partitions.timer'
+readonly DISK_GUARD_TIMER_NAME='external-shortlink-disk-guard.timer'
 readonly SERVICE_USER='external-shortlink'
 readonly SERVICE_GROUP='external-shortlink'
 readonly SERVICE_ENV='/etc/external-shortlink.env'
@@ -35,7 +37,6 @@ readonly MINIMUM_ROOT_FREE_KIB=$((20 * 1024 * 1024))
 
 ACTION='deploy'
 SOURCE_DIR="$DEFAULT_SOURCE_DIR"
-PRODUCTION_IP=''
 API_TOKEN_FILE=''
 ACME_EMAIL=''
 CONFIGURE_UFW=false
@@ -105,7 +106,7 @@ usage() {
 Usage:
   sudo ./scripts/deploy-debian-12.sh deploy \
     --api-token-file <root-only-token-file> \
-    [--production-ip <production-egress-ip>] [--acme-email <email>] \
+    [--acme-email <email>] \
     [--configure-ufw] [--source-dir <directory>]
   sudo ./scripts/deploy-debian-12.sh start
   sudo ./scripts/deploy-debian-12.sh stop
@@ -122,15 +123,13 @@ Deploy requirements:
   --api-token-file  One-line root-only file containing the shared 32+ character URL-safe API token.
 
 Deploy options:
-  --production-ip   Optional fixed, globally routable IPv4 or IPv6 address allowed to call /api/.
-                    When omitted, /api/ is reachable from any address and relies on bearer-token authentication.
   --acme-email      Required only when /etc/letsencrypt/live/jzbe.ir is absent.
   --configure-ufw   Allow the current SSH port plus HTTP/HTTPS and enable UFW.
   --source-dir      Source directory under the required project checkout.
 
 Logs:
-  logs              Show the latest 200 journal entries for the service.
-  --follow          Continue streaming service logs after the history.
+  logs              Show the latest 200 module journal entries, including maintenance guards.
+  --follow          Continue streaming module logs after the history.
   --lines <count>   Number of historical entries to show (default: 200).
   --since <time>    journalctl-compatible lower time bound, such as "2 hours ago".
 
@@ -157,11 +156,6 @@ fi
 
 while (($# > 0)); do
     case "$1" in
-        --production-ip)
-            require_argument "$1" "${2:-}"
-            PRODUCTION_IP="$2"
-            shift 2
-            ;;
         --api-token-file)
             require_argument "$1" "${2:-}"
             API_TOKEN_FILE="$2"
@@ -272,21 +266,24 @@ verify_source_tree() {
         Cargo.toml
         Cargo.lock
         schema.sql
+        maintain-click-partitions.sql
         deploy/external-shortlink.service
         deploy/external-shortlink.env.example
         deploy/postgres.compose.yml
         deploy/postgres-init/20-runtime-role.sh
         deploy/nginx.conf
         deploy/nginx-bootstrap.conf
+        deploy/external-shortlink-partitions.service
+        deploy/external-shortlink-partitions.timer
+        deploy/external-shortlink-disk-guard.service
+        deploy/external-shortlink-disk-guard.timer
+        scripts/maintain-click-partitions.sh
+        scripts/check-disk-headroom.sh
     )
     local file
     for file in "${required_files[@]}"; do
         [[ -f "$SOURCE_DIR/$file" ]] || die "source tree is missing $file"
     done
-    [[ "$(grep -Fxc '        # EXTERNAL_SHORTLINK_API_SOURCE_RULE' "$SOURCE_DIR/deploy/nginx.conf")" == '1' ]] ||
-        die 'Nginx template must contain exactly one API source-rule placeholder'
-    [[ "$(grep -Fxc '        # EXTERNAL_SHORTLINK_API_DENY_RULE' "$SOURCE_DIR/deploy/nginx.conf")" == '1' ]] ||
-        die 'Nginx template must contain exactly one API deny-rule placeholder'
     log "source tree verified: $SOURCE_DIR"
 }
 
@@ -317,26 +314,6 @@ verify_source_integrity() {
         die 'source directory has tracked, staged, or untracked changes; deploy a clean reviewed commit'
     fi
     log "source integrity verified: $(as_deployment_user git -C "$git_root" rev-parse --verify HEAD)"
-}
-
-verify_production_ip() {
-    if [[ -z "$PRODUCTION_IP" ]]; then
-        log 'no production egress IP supplied; /api/ will rely on bearer-token authentication without an Nginx source-IP allowlist'
-        return
-    fi
-    require_command python3
-    python3 - "$PRODUCTION_IP" <<'PY'
-import ipaddress
-import sys
-
-try:
-    address = ipaddress.ip_address(sys.argv[1])
-except ValueError:
-    raise SystemExit(1)
-if not address.is_global:
-    raise SystemExit(1)
-PY
-    log 'globally routable production egress IP verified; /api/ will use an Nginx source-IP allowlist'
 }
 
 verify_api_token() {
@@ -436,6 +413,13 @@ validate_deployed_environment() {
     local expected_database_url
     expected_database_url="postgresql://external_shortlink_runtime:$(read_env_value "$POSTGRES_ENV" 'EXTERNAL_SHORTLINK_RUNTIME_PASSWORD')@127.0.0.1:5433/external_shortlink"
     [[ "$(read_env_value "$SERVICE_ENV" 'EXTERNAL_SHORTLINK_DATABASE_URL')" == "$expected_database_url" ]] || die 'service database URL does not match the private PostgreSQL configuration'
+    # One retention setting governs the whole click store: the service purges
+    # legacy rows with it, and the maintenance timer uses the same value for day
+    # partitions and deduplication rows.
+    local retention_days
+    retention_days="$(read_env_value "$SERVICE_ENV" 'EXTERNAL_SHORTLINK_ACK_RETENTION_DAYS')"
+    [[ "$retention_days" =~ ^[1-9][0-9]*$ ]] ||
+        die 'EXTERNAL_SHORTLINK_ACK_RETENTION_DAYS must be a positive integer: it sets the retention of the click store'
     log 'required service and PostgreSQL environment variables verified'
 }
 
@@ -610,12 +594,8 @@ write_service_env() {
             "EXTERNAL_SHORTLINK_API_TOKEN=$API_TOKEN" \
             'EXTERNAL_SHORTLINK_DB_COMMAND_TIMEOUT_SECONDS=15' \
             'EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS=10' \
-            'EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS=0.100' \
-            'EXTERNAL_SHORTLINK_SPOOL_MAX_BYTES=51539607552' \
-            'EXTERNAL_SHORTLINK_SPOOL_MAX_EVENTS=20000000' \
-            'EXTERNAL_SHORTLINK_SPOOL_REPLAY_BATCH_SIZE=250' \
-            'EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS=30'
-        awk '!/^(EXTERNAL_SHORTLINK_DATABASE_URL|EXTERNAL_SHORTLINK_API_TOKEN|EXTERNAL_SHORTLINK_DB_COMMAND_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_SPOOL_MAX_BYTES|EXTERNAL_SHORTLINK_SPOOL_MAX_EVENTS|EXTERNAL_SHORTLINK_SPOOL_REPLAY_BATCH_SIZE|EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS)=/' "$source_env"
+            'EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS=2'
+        awk '!/^(EXTERNAL_SHORTLINK_DATABASE_URL|EXTERNAL_SHORTLINK_API_TOKEN|EXTERNAL_SHORTLINK_DB_COMMAND_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_SPOOL_PATH|EXTERNAL_SHORTLINK_SPOOL_MAX_BYTES|EXTERNAL_SHORTLINK_SPOOL_MAX_EVENTS|EXTERNAL_SHORTLINK_SPOOL_REPLAY_BATCH_SIZE|EXTERNAL_SHORTLINK_SPOOL_REPLAY_INTERVAL_SECONDS|EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS)=/' "$source_env"
     } > "$temporary"
     install -o root -g "$SERVICE_GROUP" -m 0640 "$temporary" "$SERVICE_ENV"
     rm -f -- "$temporary"
@@ -629,15 +609,18 @@ install_release_files() {
         useradd --system --gid "$SERVICE_GROUP" --home /var/lib/external-shortlink --shell /usr/sbin/nologin "$SERVICE_USER"
     fi
 
-    install -d -o root -g root -m 0755 "$INSTALL_DIR/bin" "$INSTALL_DIR/app/deploy/postgres-init"
+    install -d -o root -g root -m 0755 "$INSTALL_DIR/bin" "$INSTALL_DIR/app/deploy/postgres-init" "$INSTALL_DIR/app/scripts"
     install -m 0755 "$SOURCE_DIR/target/release/external-shortlink" "$INSTALL_DIR/bin/external-shortlink"
     install -m 0644 "$SOURCE_DIR/schema.sql" "$INSTALL_DIR/app/schema.sql"
+    install -m 0644 "$SOURCE_DIR/maintain-click-partitions.sql" "$INSTALL_DIR/app/maintain-click-partitions.sql"
     install -m 0644 "$SOURCE_DIR/deploy/external-shortlink.service" "$INSTALL_DIR/app/deploy/external-shortlink.service"
     install -m 0644 "$SOURCE_DIR/deploy/external-shortlink.env.example" "$INSTALL_DIR/app/deploy/external-shortlink.env.example"
     install -m 0644 "$SOURCE_DIR/deploy/postgres.compose.yml" "$INSTALL_DIR/app/deploy/postgres.compose.yml"
     install -m 0755 "$SOURCE_DIR/deploy/postgres-init/20-runtime-role.sh" "$INSTALL_DIR/app/deploy/postgres-init/20-runtime-role.sh"
     install -m 0644 "$SOURCE_DIR/deploy/nginx.conf" "$INSTALL_DIR/app/deploy/nginx.conf"
     install -m 0644 "$SOURCE_DIR/deploy/nginx-bootstrap.conf" "$INSTALL_DIR/app/deploy/nginx-bootstrap.conf"
+    install -m 0755 "$SOURCE_DIR/scripts/maintain-click-partitions.sh" "$INSTALL_DIR/app/scripts/maintain-click-partitions.sh"
+    install -m 0755 "$SOURCE_DIR/scripts/check-disk-headroom.sh" "$INSTALL_DIR/app/scripts/check-disk-headroom.sh"
     install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 /var/lib/external-shortlink
     install -d -o root -g root -m 0755 "$ACME_WEBROOT"
 
@@ -645,6 +628,10 @@ install_release_files() {
     write_service_env
     validate_deployed_environment
     install -o root -g root -m 0644 "$INSTALL_DIR/app/deploy/external-shortlink.service" "/etc/systemd/system/$SERVICE_NAME.service"
+    install -o root -g root -m 0644 "$SOURCE_DIR/deploy/external-shortlink-partitions.service" "/etc/systemd/system/external-shortlink-partitions.service"
+    install -o root -g root -m 0644 "$SOURCE_DIR/deploy/external-shortlink-partitions.timer" "/etc/systemd/system/$PARTITION_TIMER_NAME"
+    install -o root -g root -m 0644 "$SOURCE_DIR/deploy/external-shortlink-disk-guard.service" "/etc/systemd/system/external-shortlink-disk-guard.service"
+    install -o root -g root -m 0644 "$SOURCE_DIR/deploy/external-shortlink-disk-guard.timer" "/etc/systemd/system/$DISK_GUARD_TIMER_NAME"
     systemd-analyze verify "/etc/systemd/system/$SERVICE_NAME.service"
 }
 
@@ -723,21 +710,9 @@ ensure_certificate() {
 }
 
 configure_nginx() {
-    local temporary api_source_rule api_deny_rule
-    if [[ -n "$PRODUCTION_IP" ]]; then
-        api_source_rule="allow $PRODUCTION_IP;"
-        api_deny_rule='deny all;'
-    else
-        api_source_rule='allow all;'
-        api_deny_rule='# No source-IP allowlist: authenticated API access is permitted from any address.'
-    fi
+    local temporary
     temporary="$(mktemp /etc/nginx/sites-available/.external-shortlink.XXXXXX)"
-    sed \
-        -e "s|# EXTERNAL_SHORTLINK_API_SOURCE_RULE|$api_source_rule|" \
-        -e "s|# EXTERNAL_SHORTLINK_API_DENY_RULE|$api_deny_rule|" \
-        "$INSTALL_DIR/app/deploy/nginx.conf" > "$temporary"
-    ! grep -Fq 'EXTERNAL_SHORTLINK_API_SOURCE_RULE' "$temporary" || die 'Nginx API source-rule placeholder was not replaced'
-    ! grep -Fq 'EXTERNAL_SHORTLINK_API_DENY_RULE' "$temporary" || die 'Nginx API deny-rule placeholder was not replaced'
+    install -m 0644 "$INSTALL_DIR/app/deploy/nginx.conf" "$temporary"
     install -o root -g root -m 0644 "$temporary" "$NGINX_SITE"
     rm -f -- "$temporary"
     activate_nginx_site "$NGINX_SITE" "$NGINX_ENABLED"
@@ -787,12 +762,18 @@ start_service_and_verify() {
     deploy_postgres
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
+    systemctl enable --now "$PARTITION_TIMER_NAME"
+    systemctl enable --now "$DISK_GUARD_TIMER_NAME"
+    systemctl start external-shortlink-partitions.service
     if [[ "$restart" == true ]]; then
         log "compiled release and PostgreSQL checks succeeded; performing the single service restart"
         systemctl restart "$SERVICE_NAME"
     else
         systemctl start "$SERVICE_NAME"
     fi
+    # Do not leave a newly deployed service accepting traffic if the dedicated
+    # PostgreSQL volume is already beyond its safe operating threshold.
+    systemctl start external-shortlink-disk-guard.service
     wait_for_service_readiness
 }
 
@@ -811,7 +792,6 @@ run_deploy() {
     verify_tls_input
     verify_existing_deployment_inputs
     install_dependencies
-    verify_production_ip
     install_rust_toolchain
     prepare_secrets
     build_release
@@ -851,15 +831,34 @@ run_status() {
     verify_debian_host
     [[ -f "/etc/systemd/system/$SERVICE_NAME.service" ]] || die "service unit is missing; run '$0 deploy' first"
     systemctl status "$SERVICE_NAME" --no-pager --full || true
+    systemctl status "$PARTITION_TIMER_NAME" --no-pager --full || true
+    systemctl status "$DISK_GUARD_TIMER_NAME" --no-pager --full || true
     if [[ -f "$COMPOSE_FILE" ]] && command -v docker >/dev/null 2>&1; then
         compose ps || true
+        # Any row here means the partition window fell behind. The default
+        # partition keeps serving those clicks meanwhile, so this is a
+        # maintenance alarm rather than an outage.
+        local default_rows
+        default_rows="$(compose exec -T postgres sh -ceu '
+            PGPASSWORD="$POSTGRES_PASSWORD" psql --host 127.0.0.1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+                --tuples-only --no-align --command "SELECT count(*) FROM clicks_v2_default"
+        ' 2>/dev/null || true)"
+        default_rows="$(printf '%s' "$default_rows" | tr -d '[:space:]')"
+        [[ "$default_rows" =~ ^[0-9]+$ ]] || default_rows='unavailable'
+        log "clicks in the clicks_v2 default partition: $default_rows"
     fi
 }
 
 run_logs() {
     verify_debian_host
     [[ "$LOG_LINES" =~ ^[1-9][0-9]*$ ]] || die '--lines must be a positive integer'
-    local journal_args=(-u "$SERVICE_NAME" -n "$LOG_LINES" --no-pager)
+    local journal_args=(
+        -u "$SERVICE_NAME"
+        -u external-shortlink-partitions.service
+        -u external-shortlink-disk-guard.service
+        -n "$LOG_LINES"
+        --no-pager
+    )
     if [[ -n "$LOG_SINCE" ]]; then
         journal_args+=(--since "$LOG_SINCE")
     fi

@@ -11,10 +11,10 @@ on the dedicated Debian 12 VM. The project directory must be owned by the
 The external-shortlink source can be either the `external-shortlink/`
 subdirectory of that checkout or its own clean Git repository at that path.
 
-The public short-link domain is **`jzbe.ir`**. Supplying the production
-application's fixed, globally routable egress IP restricts `/api/` to that
-address. It is optional; without it, `/api/` relies on bearer-token
-authentication alone.
+The public short-link domain is **`jzbe.ir`**. Its `/api/` endpoints are
+protected by the shared bearer token. Protect that token as a production
+secret; the API is intentionally reachable from the production scheduler
+without depending on a fixed source IP.
 
 ## Deploy
 
@@ -34,11 +34,6 @@ sudo ./scripts/deploy-debian-12.sh deploy \
   --configure-ufw
 ```
 
-If the production host has a fixed egress address, add
-`--production-ip 'THE_PRODUCTION_EGRESS_IP'` to apply an Nginx source-IP
-allowlist to `/api/`. Otherwise omit it; the API remains protected by its
-bearer token, but accepts connections from any source address.
-
 The token file must contain the exact 32+-character URL-safe token configured
 on the production application. It must contain one value using only letters,
 numbers, `.`, `_`, `~`, or `-`; never add it to the repository or pass it on
@@ -46,8 +41,7 @@ the command line. `openssl rand -hex 32` generates an appropriate value.
 
 Before making changes, the script validates root access, Debian 12, systemd,
 the `debian` account and project ownership, x86_64/aarch64, at least 4 vCPUs,
-4 GB RAM, 20 GiB free on `/`, the locked source tree, an optional production
-egress IP, and required environment values. It then installs any missing Debian packages,
+4 GB RAM, 20 GiB free on `/`, the locked source tree, and required environment values. It then installs any missing Debian packages,
 configures Docker's official Debian repository, installs Docker Engine with
 Compose v2, installs Rust 1.85 for `debian`, and builds the release binary as
 that account.
@@ -128,7 +122,5 @@ production application with `EXTERNAL_SHORTLINK_BASE_URL=https://jzbe.ir` and
 the same API token, then test an authenticated mapping upload from the actual
 production egress address before enabling the integration.
 
-Back up PostgreSQL off-host and include the durable SQLite spool at
-`/var/lib/external-shortlink/click-spool.sqlite3` together with its `-wal` and
-`-shm` files in recovery planning. A Docker volume snapshot alone is not a
-tested backup strategy.
+Back up PostgreSQL off-host. PostgreSQL is the only durable data store; a
+Docker volume snapshot alone is not a tested backup strategy.

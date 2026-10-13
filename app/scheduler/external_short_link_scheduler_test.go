@@ -206,6 +206,7 @@ func (r *fakeExternalSyncRepository) ImportPage(_ context.Context, _ string, cli
 type fakeExternalShortLinkAPI struct {
 	pages    []*ExternalShortLinkClickPage
 	acks     []int64
+	fetches  []int64
 	ackError error
 	events   *[]string
 }
@@ -214,7 +215,8 @@ func (c *fakeExternalShortLinkAPI) UploadMappings(context.Context, []*models.Sho
 	return nil
 }
 
-func (c *fakeExternalShortLinkAPI) FetchClicks(context.Context, int64, int) (*ExternalShortLinkClickPage, error) {
+func (c *fakeExternalShortLinkAPI) FetchClicks(_ context.Context, afterID int64, _ int) (*ExternalShortLinkClickPage, error) {
+	c.fetches = append(c.fetches, afterID)
 	if len(c.pages) == 0 {
 		return nil, errors.New("no page")
 	}
@@ -275,12 +277,97 @@ func TestExternalClickSchedulerRetriesCommittedCursorAcknowledgementOnEmptyPage(
 	}
 }
 
-func TestValidateExternalClickPageRejectsOutOfOrderIDs(t *testing.T) {
+func TestValidateExternalClickPageToleratesOutOfOrderIDs(t *testing.T) {
+	// The importer quarantines a repeated or lowered ID per row. Rejecting the
+	// whole page here is what used to stop every later click from importing.
 	err := validateExternalClickPage(5, &ExternalShortLinkClickPage{
 		Clicks:      []models.ExternalShortLinkClick{{ClickID: 7}, {ClickID: 6}},
 		NextAfterID: 6,
 	})
-	if err == nil {
-		t.Fatal("validateExternalClickPage() error = nil")
+	if err != nil {
+		t.Fatalf("validateExternalClickPage() error = %v, want nil so the importer can quarantine the row", err)
+	}
+}
+
+func TestValidateExternalClickPageRejectsUnusableEmptyPage(t *testing.T) {
+	if err := validateExternalClickPage(5, nil); err == nil {
+		t.Fatal("validateExternalClickPage() error = nil for a nil page")
+	}
+	if err := validateExternalClickPage(5, &ExternalShortLinkClickPage{NextAfterID: 4}); err == nil {
+		t.Fatal("validateExternalClickPage() error = nil for an empty page that rewinds the cursor")
+	}
+	if err := validateExternalClickPage(5, &ExternalShortLinkClickPage{NextAfterID: 5, HasMore: true}); err == nil {
+		t.Fatal("validateExternalClickPage() error = nil for an empty page that claims more rows")
+	}
+}
+
+func TestExternalClickPageCursorUsesTheHighestID(t *testing.T) {
+	newest := time.Now().UTC()
+	highest, observed := externalClickPageCursor(4, []models.ExternalShortLinkClick{
+		{ClickID: 9, ClickedAt: newest.Add(-time.Hour)},
+		{ClickID: 6, ClickedAt: newest},
+		{ClickID: 0, ClickedAt: newest},
+	})
+	if highest != 9 {
+		t.Fatalf("highest = %d, want 9", highest)
+	}
+	if !observed.Equal(newest) {
+		t.Fatalf("newest = %s, want %s", observed, newest)
+	}
+}
+
+func TestExternalClickPageCursorNeverRewinds(t *testing.T) {
+	highest, observed := externalClickPageCursor(20, []models.ExternalShortLinkClick{{ClickID: 6}})
+	if highest != 20 {
+		t.Fatalf("highest = %d, want the existing cursor 20", highest)
+	}
+	if !observed.IsZero() {
+		t.Fatalf("newest = %s, want the zero time", observed)
+	}
+}
+
+func TestExternalClickSchedulerAdvancesPastOutOfOrderPage(t *testing.T) {
+	events := []string{}
+	now := time.Now().UTC()
+	repo := &fakeExternalSyncRepository{events: &events}
+	client := &fakeExternalShortLinkAPI{events: &events, pages: []*ExternalShortLinkClickPage{{
+		Clicks: []models.ExternalShortLinkClick{
+			{ClickID: 12, ShortCode: "abc1", LongURL: "https://example.com", ClickedAt: now},
+			{ClickID: 11, ShortCode: "abc1", LongURL: "https://example.com", ClickedAt: now},
+		},
+		NextAfterID: 11,
+	}}}
+	scheduler := NewExternalShortLinkClickScheduler(repo, client, log.New(io.Discard, "", 0), time.Minute, 100, 10)
+	scheduler.runOnce(context.Background())
+	if repo.through != 12 {
+		t.Fatalf("through=%d, want the highest click id 12", repo.through)
+	}
+	if len(repo.imported) != 2 {
+		t.Fatalf("imported %d rows, want both rows handed over for quarantine", len(repo.imported))
+	}
+	if len(client.acks) != 1 || client.acks[0] != 12 {
+		t.Fatalf("acks=%v, want one acknowledgement through 12", client.acks)
+	}
+}
+
+func TestExternalClickSchedulerHaltsOnPageWithoutUsableID(t *testing.T) {
+	events := []string{}
+	repo := &fakeExternalSyncRepository{cursor: 10, events: &events}
+	client := &fakeExternalShortLinkAPI{events: &events, pages: []*ExternalShortLinkClickPage{{
+		Clicks: []models.ExternalShortLinkClick{
+			{ClickID: 0, ShortCode: "abc1", LongURL: "https://example.com", ClickedAt: time.Now().UTC()},
+		},
+		NextAfterID: 0,
+	}}}
+	scheduler := NewExternalShortLinkClickScheduler(repo, client, log.New(io.Discard, "", 0), time.Minute, 100, 10)
+	scheduler.runOnce(context.Background())
+	if len(repo.imported) != 1 {
+		t.Fatalf("imported %d rows, want the unusable row handed over for quarantine", len(repo.imported))
+	}
+	if len(client.acks) != 0 {
+		t.Fatalf("acks=%v, want no acknowledgement for a page that cannot advance the cursor", client.acks)
+	}
+	if len(client.fetches) != 1 {
+		t.Fatalf("fetches=%v, want a single fetch: a page with no usable id must not be re-fetched in a loop", client.fetches)
 	}
 }

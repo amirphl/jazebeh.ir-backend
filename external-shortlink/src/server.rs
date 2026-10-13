@@ -1,9 +1,9 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicI64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -24,7 +24,7 @@ use tokio::{
     time::{self, MissedTickBehavior},
 };
 use tower_http::trace::TraceLayer;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     config::Settings,
@@ -34,59 +34,35 @@ use crate::{
         unique_validated_links,
     },
     metrics::Metrics,
-    spool::{DurableSpool, SpoolError},
 };
 
 const DATABASE_RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 const DATABASE_SIZE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
-const SPOOL_FAILURE_LOG_INTERVAL_SECONDS: i64 = 60;
+const CLICK_WRITE_ATTEMPTS: usize = 3;
+const CLICK_RETRY_DELAY: Duration = Duration::from_millis(20);
 
 #[derive(Clone)]
 pub struct AppState {
     settings: Arc<Settings>,
     database: Database,
-    spool: DurableSpool,
     cache: Cache<String, Arc<LinkRecord>>,
     metrics: Arc<Metrics>,
     database_ready: Arc<AtomicBool>,
-    last_spool_failure_log: Arc<AtomicI64>,
 }
 
 impl AppState {
     pub async fn initialize(settings: Settings) -> Result<Self> {
         let database = Database::new(&settings).context("initialize PostgreSQL pool")?;
-        let spool = DurableSpool::open(
-            settings.spool_path.clone(),
-            settings.spool_max_bytes,
-            settings.spool_max_events,
-            settings.spool_operation_timeout,
-        )
-        .await
-        .context("open durable click spool")?;
         let state = Self {
             cache: Cache::builder()
                 .max_capacity(settings.cache_max_entries)
                 .build(),
             settings: Arc::new(settings),
             database,
-            spool,
             metrics: Arc::new(Metrics::default()),
             database_ready: Arc::new(AtomicBool::new(false)),
-            last_spool_failure_log: Arc::new(AtomicI64::new(0)),
         };
         state.refresh_cache_if_available().await;
-        if let Some(stats) = state.refresh_spool_metrics().await {
-            if stats.events > 0 || stats.dead_letter_events > 0 {
-                warn!(
-                    pending_events = stats.events,
-                    queued_bytes = stats.queued_bytes,
-                    dead_letter_events = stats.dead_letter_events,
-                    "durable click spool recovered pending state at startup"
-                );
-            } else {
-                info!("durable click spool initialized empty");
-            }
-        }
         Ok(state)
     }
 
@@ -113,29 +89,6 @@ impl AppState {
             }
         }
     }
-
-    async fn refresh_spool_metrics(&self) -> Option<crate::spool::SpoolStats> {
-        match self.spool.stats().await {
-            Ok(stats) => {
-                self.metrics.spool_stats(
-                    stats.events,
-                    stats.queued_bytes,
-                    stats.disk_bytes,
-                    stats.oldest_age_seconds,
-                    stats.dead_letter_events,
-                );
-                Some(stats)
-            }
-            Err(SpoolError::Busy) => {
-                tracing::debug!("durable click spool metrics deferred because the spool is busy");
-                None
-            }
-            Err(error) => {
-                error!(error = %error, "could not read durable click spool metrics");
-                None
-            }
-        }
-    }
 }
 
 pub fn router(state: AppState) -> Router {
@@ -146,7 +99,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/links/batch", post(upload_links))
         .route("/api/v1/clicks", get(fetch_clicks))
         .route("/api/v1/clicks/ack", post(acknowledge_clicks))
-        .route("/{code}", get(redirect))
+        // HEAD is registered explicitly: axum routes HEAD to `get` by default,
+        // which would record a click for every unfurler, prefetcher and probe.
+        .route("/{code}", get(redirect).head(head_redirect))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
 }
@@ -166,13 +121,12 @@ pub async fn serve(state: AppState) -> Result<()> {
         address = %state.settings.bind_addr,
         database_pool_max = state.settings.pool_max_size,
         cache_capacity = state.settings.cache_max_entries,
-        spool_max_events = state.settings.spool_max_events,
-        spool_max_bytes = state.settings.spool_max_bytes,
         "external short-link service is listening"
     );
 
     let shutdown = async move {
         wait_for_shutdown_signal().await;
+        info!("shutdown signal received; stopping external short-link service");
         let _ = shutdown_tx.send(true);
     };
     axum::serve(listener, router(state))
@@ -193,7 +147,7 @@ fn start_background_workers(
 ) -> Vec<JoinHandle<()>> {
     vec![
         tokio::spawn(database_reconnect_loop(state.clone(), shutdown.clone())),
-        tokio::spawn(spool_replay_loop(state.clone(), shutdown.clone())),
+        tokio::spawn(database_metrics_loop(state.clone(), shutdown.clone())),
         tokio::spawn(purge_loop(state, shutdown)),
     ]
 }
@@ -213,7 +167,7 @@ async fn database_reconnect_loop(state: AppState, mut shutdown: watch::Receiver<
                     Ok(()) => {}
                     Err(error) => {
                         if state.database_ready.swap(false, Ordering::AcqRel) {
-                            warn!(error = %error, "PostgreSQL became unavailable; cached redirects remain available");
+                            warn!(error = %error, "PostgreSQL became unavailable; redirects are withheld until it recovers");
                         }
                     }
                 }
@@ -222,79 +176,51 @@ async fn database_reconnect_loop(state: AppState, mut shutdown: watch::Receiver<
     }
 }
 
-async fn spool_replay_loop(state: AppState, mut shutdown: watch::Receiver<bool>) {
-    let mut interval = time::interval(state.settings.spool_replay_interval);
+async fn database_metrics_loop(state: AppState, mut shutdown: watch::Receiver<bool>) {
+    let mut interval = time::interval(DATABASE_SIZE_REFRESH_INTERVAL);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    let mut database_size_interval = time::interval(DATABASE_SIZE_REFRESH_INTERVAL);
-    database_size_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    let mut spool_backlog_active = false;
-    let mut replayed_since_drain = 0_u64;
-    let mut replay_failure_reported = false;
+    let mut last_default_partition_backlog = None;
+    let mut reported_missing_default_partition = false;
     loop {
         tokio::select! {
             _ = shutdown.changed() => return,
             _ = interval.tick() => {
-                match state.spool.peek(state.settings.spool_replay_batch_size).await {
-                    Ok(events) if !events.is_empty() => {
-                        spool_backlog_active = true;
-                        match state.database.insert_spooled_clicks(&events).await {
-                            Ok(()) => {
-                                let ids = events.iter().map(|event| event.event_id).collect::<Vec<_>>();
-                                if let Err(error) = state.spool.remove(&ids).await {
-                                    state.metrics.spool_dropped("remove_error");
-                                    if !replay_failure_reported {
-                                        error!(
-                                            error = %error,
-                                            batch_events = ids.len(),
-                                            "clicks were stored in PostgreSQL but could not be removed from spool"
-                                        );
-                                        replay_failure_reported = true;
-                                    }
-                                } else {
-                                    replayed_since_drain += u64::try_from(ids.len()).unwrap_or(u64::MAX);
-                                    replay_failure_reported = false;
-                                    tracing::debug!(batch_events = ids.len(), "replayed durable click batch");
-                                }
-                            }
-                            Err(error) => {
-                                state.metrics.postgres_error("spool_replay");
-                                if !replay_failure_reported {
-                                    warn!(
-                                        error = %error,
-                                        batch_events = events.len(),
-                                        "durable click replay deferred because PostgreSQL is unavailable"
-                                    );
-                                    replay_failure_reported = true;
-                                }
-                            }
-                        }
-                    }
-                    Ok(_) => {
-                        if spool_backlog_active {
-                            info!(
-                                replayed_events = replayed_since_drain,
-                                "durable click spool drained"
-                            );
-                            spool_backlog_active = false;
-                            replayed_since_drain = 0;
-                        }
-                        replay_failure_reported = false;
-                    }
-                    Err(SpoolError::Busy) => {
-                        tracing::debug!("durable click spool replay deferred because the spool is busy");
-                    }
+                match state.database.database_size().await {
+                    Ok(bytes) => state.metrics.database_size(bytes),
                     Err(error) => {
-                        if !replay_failure_reported {
-                            error!(error = %error, "could not read durable click spool");
-                            replay_failure_reported = true;
-                        }
+                        state.metrics.postgres_error("database_size");
+                        warn!(error = %error, "could not refresh PostgreSQL size metric");
                     }
                 }
-                state.refresh_spool_metrics().await;
-            }
-            _ = database_size_interval.tick() => {
-                if let Ok(bytes) = state.database.database_size().await {
-                    state.metrics.database_size(bytes);
+                // A click must never be rejected because its day partition is
+                // missing; the default partition makes that impossible, and rows
+                // landing in it are the one signal that the window fell behind.
+                match state.database.default_partition_backlog().await {
+                    Ok(Some(backlog)) => {
+                        state.metrics.default_partition_backlog(backlog);
+                        if last_default_partition_backlog != Some(backlog) {
+                            if backlog {
+                                error!(
+                                    "clicks are landing in the clicks_v2 default partition; the partition maintenance window is behind and retention cannot drop those clicks"
+                                );
+                            } else {
+                                info!("clicks_v2 default partition is empty again; the partition window has caught up");
+                            }
+                            last_default_partition_backlog = Some(backlog);
+                        }
+                    }
+                    Ok(None) => {
+                        if !reported_missing_default_partition {
+                            warn!(
+                                "clicks_v2 has no default partition; apply the deployment schema so a missing day partition cannot reject every click"
+                            );
+                            reported_missing_default_partition = true;
+                        }
+                    }
+                    Err(error) => {
+                        state.metrics.postgres_error("default_partition_backlog");
+                        warn!(error = %error, "could not check the clicks_v2 default partition");
+                    }
                 }
             }
         }
@@ -347,10 +273,13 @@ async fn readyz(State(state): State<AppState>) -> Response {
             StatusCode::OK,
             serde_json::json!({"status": "ready", "postgres": true}),
         ),
-        Err(_) => json_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            serde_json::json!({"status": "not_ready", "postgres": false}),
-        ),
+        Err(error) => {
+            warn!(error = %error, "readiness check failed because PostgreSQL is unavailable");
+            json_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                serde_json::json!({"status": "not_ready", "postgres": false}),
+            )
+        }
     }
 }
 
@@ -370,20 +299,59 @@ async fn redirect(
     Path(code): Path<String>,
     headers: HeaderMap,
 ) -> Response {
+    handle_redirect(&state, code, &headers, true).await
+}
+
+/// HEAD resolves the same destination but never records a click: probes, link
+/// unfurlers and prefetchers send HEAD, and none of them is a click. It also
+/// performs no durable write, so a resolved mapping is still answered while
+/// PostgreSQL is unavailable: the fail-closed rule protects the click record,
+/// not a metadata probe.
+async fn head_redirect(
+    State(state): State<AppState>,
+    Path(code): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    handle_redirect(&state, code, &headers, false).await
+}
+
+async fn handle_redirect(
+    state: &AppState,
+    code: String,
+    headers: &HeaderMap,
+    record_click: bool,
+) -> Response {
     let started = Instant::now();
-    let mut response = redirect_inner(&state, code, &headers).await;
+    let mut response = redirect_inner(state, code.clone(), headers, record_click).await;
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     state
         .metrics
         .redirect(response.status().as_u16(), started.elapsed().as_secs_f64());
+    if !matches!(response.status(), StatusCode::FOUND | StatusCode::OK) {
+        warn!(
+            short_code = %code,
+            status = response.status().as_u16(),
+            elapsed_ms = started.elapsed().as_millis(),
+            "redirect request did not complete successfully"
+        );
+    }
     response
 }
 
-async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> Response {
+async fn redirect_inner(
+    state: &AppState,
+    code: String,
+    headers: &HeaderMap,
+    record_click: bool,
+) -> Response {
     if !is_valid_code(&code) {
         state.metrics.unknown_code();
+        warn!(
+            code_length = code.len(),
+            "redirect rejected because short code format is invalid"
+        );
         return text_response(StatusCode::NOT_FOUND, "not found");
     }
     let link = if let Some(link) = state.cache.get(&code) {
@@ -404,39 +372,51 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
             }
             Ok(Ok(None)) => {
                 state.metrics.unknown_code();
+                warn!(short_code = %code, "redirect target was not found");
                 return text_response(StatusCode::NOT_FOUND, "not found");
             }
-            Ok(Err(_)) => {
+            Ok(Err(error)) => {
                 state.metrics.postgres_error("lookup_link");
+                error!(short_code = %code, error = %error, "redirect lookup failed; redirect withheld");
                 return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
             }
             Err(_) => {
                 state.metrics.pool_timeout();
+                error!(short_code = %code, timeout_ms = state.settings.link_lookup_timeout.as_millis(), "redirect lookup timed out; redirect withheld");
                 return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
             }
         }
     };
-    let event = click_from_link(
-        &link,
-        client_ip(headers),
-        header_string(headers, header::USER_AGENT, 1024),
-        header_string(headers, header::REFERER, 2048),
-    );
-    match tokio::time::timeout(
-        state.settings.click_insert_timeout,
-        state.database.insert_click(&event),
-    )
-    .await
-    {
-        Ok(Ok(())) => {}
-        Ok(Err(_)) => {
+    if record_click {
+        let event = click_from_link(
+            &link,
+            client_ip(headers),
+            header_string(headers, header::USER_AGENT, 1024),
+            header_string(headers, header::REFERER, 2048),
+        );
+        if let Err(error) = persist_click(state, &event).await {
             state.metrics.postgres_error("insert_click");
-            spool_click(state, &event).await;
+            if let Some(fault) = click_storage_fault(&error) {
+                state.metrics.click_store_fault(fault.reason);
+                error!(
+                    event_id = %event.event_id,
+                    short_code = %event.short_code,
+                    fault = fault.reason,
+                    action = fault.action,
+                    "click rejected because the click store refused it"
+                );
+            } else {
+                error!(event_id = %event.event_id, short_code = %event.short_code, error = %error, "click persistence failed; redirect withheld");
+            }
+            return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
         }
-        Err(_) => {
-            state.metrics.pool_timeout();
-            spool_click(state, &event).await;
-        }
+        debug!(event_id = %event.event_id, short_code = %event.short_code, "click persisted; issuing redirect");
+    } else {
+        debug!(short_code = %link.code, "HEAD request resolved without recording a click");
+    }
+    if HeaderValue::from_str(&link.long_url).is_err() {
+        error!(short_code = %link.code, "destination cannot be redirected because it is not a valid HTTP Location header");
+        return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
     }
     // Preserve click tracking, but prevent automated clients from following the destination.
     if crate::traffic::is_automated_request(
@@ -452,45 +432,33 @@ async fn redirect_inner(state: &AppState, code: String, headers: &HeaderMap) -> 
     redirect_response(&link.long_url)
 }
 
-async fn spool_click(state: &AppState, event: &crate::domain::ClickEvent) {
-    match state.spool.enqueue(event).await {
-        Ok(()) => {}
-        Err(SpoolError::Full) => {
-            state.metrics.spool_dropped("capacity");
-            if should_log_spool_failure(state) {
-                error!("click processor discarded events because spool capacity is exhausted");
+async fn persist_click(
+    state: &AppState,
+    event: &crate::domain::ClickEvent,
+) -> Result<(), DatabaseError> {
+    let mut last_error = None;
+    for attempt in 0..CLICK_WRITE_ATTEMPTS {
+        match tokio::time::timeout(
+            state.settings.click_insert_timeout,
+            state.database.insert_click(event),
+        )
+        .await
+        {
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(error)) => {
+                warn!(event_id = %event.event_id, short_code = %event.short_code, attempt = attempt + 1, max_attempts = CLICK_WRITE_ATTEMPTS, error = %error, "click persistence attempt failed");
+                last_error = Some(error);
+            }
+            Err(_) => {
+                warn!(event_id = %event.event_id, short_code = %event.short_code, attempt = attempt + 1, max_attempts = CLICK_WRITE_ATTEMPTS, timeout_ms = state.settings.click_insert_timeout.as_millis(), "click persistence attempt timed out");
+                last_error = Some(DatabaseError::Sql(sqlx::Error::PoolTimedOut));
             }
         }
-        Err(SpoolError::Busy) => {
-            state.metrics.spool_dropped("backpressure");
-            if should_log_spool_failure(state) {
-                error!("click processor discarded events because the spool is saturated");
-            }
-        }
-        Err(error) => {
-            state.metrics.spool_dropped("write_error");
-            if should_log_spool_failure(state) {
-                error!(error = %error, "click processor could not write to durable spool");
-            }
+        if attempt + 1 < CLICK_WRITE_ATTEMPTS {
+            time::sleep(CLICK_RETRY_DELAY * u32::try_from(attempt + 1).unwrap_or(1)).await;
         }
     }
-}
-
-fn should_log_spool_failure(state: &AppState) -> bool {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        .try_into()
-        .unwrap_or(i64::MAX);
-    let previous = state.last_spool_failure_log.load(Ordering::Relaxed);
-    if now.saturating_sub(previous) < SPOOL_FAILURE_LOG_INTERVAL_SECONDS {
-        return false;
-    }
-    state
-        .last_spool_failure_log
-        .compare_exchange(previous, now, Ordering::AcqRel, Ordering::Relaxed)
-        .is_ok()
+    Err(last_error.unwrap_or(DatabaseError::Sql(sqlx::Error::PoolTimedOut)))
 }
 
 async fn upload_links(State(state): State<AppState>, request: Request) -> Response {
@@ -499,11 +467,17 @@ async fn upload_links(State(state): State<AppState>, request: Request) -> Respon
         Ok(value) => value,
         Err(response) => {
             state.metrics.mapping_upload("auth_or_validation_error");
+            warn!("mapping upload rejected during authentication or JSON/body validation");
             return response;
         }
     };
     if parsed.links.is_empty() || parsed.links.len() > state.settings.admin_batch_max_links {
         state.metrics.mapping_upload("validation_error");
+        warn!(
+            link_count = parsed.links.len(),
+            maximum = state.settings.admin_batch_max_links,
+            "mapping upload rejected due to invalid batch size"
+        );
         return json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": format!("links must contain 1-{} items", state.settings.admin_batch_max_links)}),
@@ -513,6 +487,7 @@ async fn upload_links(State(state): State<AppState>, request: Request) -> Respon
         Ok(links) => links,
         Err(error) => {
             state.metrics.mapping_upload("validation_error");
+            warn!(error = %error, "mapping upload rejected due to invalid mapping data");
             return json_response(
                 StatusCode::BAD_REQUEST,
                 serde_json::json!({"error": error.to_string()}),
@@ -589,11 +564,13 @@ async fn fetch_clicks(
     query: Result<Query<ClickQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Response {
     if !authorized(&headers, &state.settings.api_token) {
+        warn!("click fetch rejected because authorization failed");
         return unauthorized();
     }
     let Query(query) = match query {
         Ok(query) => query,
-        Err(_) => {
+        Err(error) => {
+            warn!(error = %error, "click fetch rejected because query parameters are malformed");
             return json_response(
                 StatusCode::BAD_REQUEST,
                 serde_json::json!({"error": "after_id and limit must be integers"}),
@@ -602,6 +579,12 @@ async fn fetch_clicks(
     };
     let limit = effective_click_limit(query.limit, state.settings.click_fetch_max_limit);
     if query.after_id < 0 || limit < 1 || limit > state.settings.click_fetch_max_limit {
+        warn!(
+            after_id = query.after_id,
+            limit,
+            maximum = state.settings.click_fetch_max_limit,
+            "click fetch rejected because cursor or limit is invalid"
+        );
         return json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": format!("after_id must be non-negative and limit must be 1-{}", state.settings.click_fetch_max_limit)}),
@@ -610,6 +593,13 @@ async fn fetch_clicks(
     match state.database.fetch_clicks(query.after_id, limit).await {
         Ok((clicks, has_more)) => {
             let next_after_id = clicks.last().map_or(query.after_id, |click| click.click_id);
+            debug!(
+                after_id = query.after_id,
+                returned = clicks.len(),
+                next_after_id,
+                has_more,
+                "click page served"
+            );
             json_response(
                 StatusCode::OK,
                 ClickPage {
@@ -621,7 +611,16 @@ async fn fetch_clicks(
         }
         Err(error) => {
             state.metrics.postgres_error("fetch_clicks");
-            error!(error = %error, "click fetch failed");
+            if let Some(fault) = click_storage_fault(&error) {
+                state.metrics.click_store_fault(fault.reason);
+                error!(
+                    fault = fault.reason,
+                    action = fault.action,
+                    "click fetch rejected by the click store"
+                );
+            } else {
+                error!(error = %error, "click fetch failed");
+            }
             json_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 serde_json::json!({"error": "click fetch failed"}),
@@ -642,6 +641,10 @@ async fn acknowledge_clicks(State(state): State<AppState>, request: Request) -> 
         Err(response) => return response,
     };
     if payload.through_click_id < 0 {
+        warn!(
+            through_click_id = payload.through_click_id,
+            "click acknowledgement rejected because cursor is negative"
+        );
         return json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": "through_click_id must be a non-negative integer"}),
@@ -659,13 +662,28 @@ async fn acknowledge_clicks(State(state): State<AppState>, request: Request) -> 
                 serde_json::json!({"through_click_id": acknowledged}),
             )
         }
-        Err(DatabaseError::UnknownAcknowledgement) => json_response(
-            StatusCode::CONFLICT,
-            serde_json::json!({"error": "through_click_id is not a persisted click_id"}),
-        ),
+        Err(DatabaseError::UnknownAcknowledgement) => {
+            warn!(
+                through_click_id = payload.through_click_id,
+                "click acknowledgement rejected because click ID is unknown"
+            );
+            json_response(
+                StatusCode::CONFLICT,
+                serde_json::json!({"error": "through_click_id is not a persisted click_id"}),
+            )
+        }
         Err(error) => {
             state.metrics.postgres_error("acknowledge");
-            error!(error = %error, "click acknowledgement failed");
+            if let Some(fault) = click_storage_fault(&error) {
+                state.metrics.click_store_fault(fault.reason);
+                error!(
+                    fault = fault.reason,
+                    action = fault.action,
+                    "click acknowledgement rejected by the click store"
+                );
+            } else {
+                error!(error = %error, "click acknowledgement failed");
+            }
             json_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 serde_json::json!({"error": "acknowledgement failed"}),
@@ -680,6 +698,7 @@ async fn decode_admin_json<T: DeserializeOwned>(
     body: Body,
 ) -> Result<T, Response> {
     if !authorized(headers, &state.settings.api_token) {
+        warn!("admin API request rejected because authorization failed");
         return Err(unauthorized());
     }
     if let Some(length) = headers.get(header::CONTENT_LENGTH) {
@@ -688,12 +707,18 @@ async fn decode_admin_json<T: DeserializeOwned>(
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .ok_or_else(|| {
+                warn!("admin API request rejected because content-length is invalid");
                 json_response(
                     StatusCode::BAD_REQUEST,
                     serde_json::json!({"error": "invalid content-length"}),
                 )
             })?;
         if length > state.settings.max_admin_body_bytes {
+            warn!(
+                length,
+                maximum = state.settings.max_admin_body_bytes,
+                "admin API request rejected because body is too large"
+            );
             return Err(json_response(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 serde_json::json!({"error": "request body too large"}),
@@ -702,13 +727,15 @@ async fn decode_admin_json<T: DeserializeOwned>(
     }
     let bytes = to_bytes(body, state.settings.max_admin_body_bytes)
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            warn!(error = %error, maximum = state.settings.max_admin_body_bytes, "admin API request body could not be read");
             json_response(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 serde_json::json!({"error": "request body too large"}),
             )
         })?;
-    serde_json::from_slice(&bytes).map_err(|_| {
+    serde_json::from_slice(&bytes).map_err(|error| {
+        warn!(error = %error, body_bytes = bytes.len(), "admin API request rejected because JSON is invalid");
         json_response(
             StatusCode::BAD_REQUEST,
             serde_json::json!({"error": "invalid JSON"}),
@@ -767,8 +794,54 @@ fn truncate(value: &str, maximum_bytes: usize) -> String {
     value[..end].to_owned()
 }
 
+/// PostgreSQL reports "no partition of relation ... found for row" as a
+/// check-violation SQLSTATE, so the message decides whether this is the one
+/// check violation the click path treats as a partition-schema problem.
+const MISSING_PARTITION_SQLSTATE: &str = "23514";
+/// `insufficient_privilege`: the runtime role cannot read or write an object it
+/// needs, which is a grant problem rather than a transient database problem.
+const INSUFFICIENT_PRIVILEGE_SQLSTATE: &str = "42501";
+
+/// A click-store failure that points at the deployment instead of at a transient
+/// database problem. Naming these explicitly is what keeps a day-boundary
+/// failure from looking like a random outage.
+struct StorageFault {
+    reason: &'static str,
+    action: &'static str,
+}
+
+fn click_storage_fault(error: &DatabaseError) -> Option<StorageFault> {
+    let DatabaseError::Sql(sqlx::Error::Database(database_error)) = error else {
+        return None;
+    };
+    match database_error.code().as_deref() {
+        // The service schema installs a default partition precisely so this
+        // cannot happen; a match means the schema is stale.
+        Some(MISSING_PARTITION_SQLSTATE)
+            if database_error
+                .message()
+                .contains("no partition of relation") =>
+        {
+            Some(StorageFault {
+                reason: "missing_partition",
+                action: "clicks_v2 has no partition for this click day and no default partition; apply the deployment schema",
+            })
+        }
+        // Queries name the partitioned parent, so this is about the parent's
+        // grants or another click-store object, not about a partition's own ACL.
+        Some(INSUFFICIENT_PRIVILEGE_SQLSTATE) => Some(StorageFault {
+            reason: "permission_denied",
+            action: "the runtime role lacks privileges on the click store; run the partition maintenance unit or deploy to reconcile grants",
+        }),
+        _ => None,
+    }
+}
+
 fn redirect_response(destination: &str) -> Response {
     let Ok(location) = HeaderValue::from_str(destination) else {
+        error!(
+            "redirect response construction failed because destination is not a valid HTTP Location header"
+        );
         return text_response(StatusCode::SERVICE_UNAVAILABLE, "temporarily unavailable");
     };
     (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
@@ -784,7 +857,7 @@ fn json_response(status: StatusCode, value: impl Serialize) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::SocketAddr, path::PathBuf, time::Duration};
+    use std::{net::SocketAddr, time::Duration};
 
     use axum::{
         body::Body,
@@ -794,12 +867,11 @@ mod tests {
 
     use super::*;
 
-    fn settings(path: PathBuf) -> Settings {
+    fn settings() -> Settings {
         Settings {
             bind_addr: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
             database_url: "postgresql://postgres@127.0.0.1:1/external_shortlink".to_owned(),
             api_token: "x".repeat(32),
-            spool_path: path,
             pool_min_size: 0,
             pool_max_size: 1,
             db_command_timeout: Duration::from_millis(50),
@@ -811,11 +883,6 @@ mod tests {
             admin_batch_max_links: 100,
             click_fetch_max_limit: 100,
             max_admin_body_bytes: 1024 * 1024,
-            spool_max_bytes: 10 * 1024 * 1024,
-            spool_max_events: 100,
-            spool_replay_batch_size: 10,
-            spool_replay_interval: Duration::from_secs(60),
-            spool_operation_timeout: Duration::from_secs(1),
             acknowledged_retention_days: 7,
             purge_interval: Duration::from_secs(60),
         }
@@ -840,11 +907,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cached_mapping_redirects_and_spools_click_when_database_is_down() {
-        let directory = tempfile::tempdir().unwrap();
-        let state = AppState::initialize(settings(directory.path().join("spool.sqlite3")))
-            .await
-            .unwrap();
+    async fn cached_mapping_withholds_redirect_when_database_is_down() {
+        let state = AppState::initialize(settings()).await.unwrap();
         state.cache.insert("abc1".to_owned(), Arc::new(link()));
         let response = router(state.clone())
             .oneshot(
@@ -855,87 +919,25 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::FOUND);
-        assert_eq!(
-            response.headers()[header::LOCATION],
-            "https://example.com/destination"
-        );
-        assert_eq!(state.spool.stats().await.unwrap().events, 1);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]
-    async fn bots_are_tracked_without_redirecting_and_humans_still_redirect() {
-        let directory = tempfile::tempdir().unwrap();
-        let state = AppState::initialize(settings(directory.path().join("spool.sqlite3")))
-            .await
-            .unwrap();
-        let mut mapping = link();
-        mapping.is_test = true; // Test status must not suppress human redirects.
-        state.cache.insert("abc1".to_owned(), Arc::new(mapping));
-        for (index, ua) in [
-            "GoogleMessages",
-            "Mozilla/5.0 (X11; Linux x86_64) Chrome/120",
-            "curl/8.0",
-            "Mozilla/5.0 (iPhone) Safari/604",
-        ]
-        .iter()
-        .enumerate()
-        {
-            let response = router(state.clone())
-                .oneshot(
-                    HttpRequest::builder()
-                        .uri("/abc1")
-                        .header(header::USER_AGENT, *ua)
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
-            if index % 2 == 0 {
-                assert_eq!(response.status(), StatusCode::OK);
-                assert!(!response.headers().contains_key(header::LOCATION));
-                assert!(!response.headers().contains_key("refresh"));
-                assert!(
-                    to_bytes(response.into_body(), 1024)
-                        .await
-                        .unwrap()
-                        .is_empty()
-                );
-            } else {
-                assert_eq!(response.status(), StatusCode::FOUND);
-                assert_eq!(
-                    response.headers()[header::LOCATION],
-                    "https://example.com/destination"
-                );
-            }
-            assert_eq!(
-                state.spool.stats().await.unwrap().events,
-                (index + 1) as u64
-            );
-        }
-        assert!(
-            state
-                .metrics
-                .render()
-                .contains("external_shortlink_suppressed_bot_redirects_total 2")
-        );
-        let events = state.spool.peek(10).await.unwrap();
-        assert_eq!(events[0].user_agent.as_deref(), Some("GoogleMessages"));
-    }
-
-    #[tokio::test]
-    async fn bot_errors_and_ip_detection() {
-        let directory = tempfile::tempdir().unwrap();
-        let state = AppState::initialize(settings(directory.path().join("spool.sqlite3")))
-            .await
-            .unwrap();
+    async fn automated_head_requests_are_suppressed_without_recording_clicks() {
+        let state = AppState::initialize(settings()).await.unwrap();
         state.cache.insert("abc1".to_owned(), Arc::new(link()));
-        for ip in ["66.249.1.2", "74.125.1.2"] {
+        for (ua, ip) in [
+            ("GoogleMessages", "192.0.2.1"),
+            ("curl/8.0", "192.0.2.1"),
+            ("Mozilla/5.0", "66.249.1.2"),
+            ("Mozilla/5.0", "74.125.1.2"),
+        ] {
             let response = router(state.clone())
                 .oneshot(
                     HttpRequest::builder()
+                        .method("HEAD")
                         .uri("/abc1")
+                        .header(header::USER_AGENT, ua)
                         .header("x-forwarded-for", ip)
                         .body(Body::empty())
                         .unwrap(),
@@ -943,9 +945,30 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
             assert!(!response.headers().contains_key(header::LOCATION));
+            assert!(!response.headers().contains_key("refresh"));
+            assert!(
+                to_bytes(response.into_body(), 1024)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
         }
+        assert!(
+            state
+                .metrics
+                .render()
+                .contains("external_shortlink_suppressed_bot_redirects_total 4")
+        );
+    }
+
+    #[tokio::test]
+    async fn bot_requests_preserve_errors_when_database_is_down() {
+        let state = AppState::initialize(settings()).await.unwrap();
+        state.cache.insert("abc1".to_owned(), Arc::new(link()));
         for (path, status) in [
+            ("/abc1", StatusCode::SERVICE_UNAVAILABLE),
             ("/invalid!", StatusCode::NOT_FOUND),
             ("/missing", StatusCode::SERVICE_UNAVAILABLE),
         ] {
@@ -963,15 +986,17 @@ mod tests {
             assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
             assert!(!response.headers().contains_key(header::LOCATION));
         }
-        assert_eq!(state.spool.stats().await.unwrap().events, 2);
+        assert!(
+            state
+                .metrics
+                .render()
+                .contains("external_shortlink_suppressed_bot_redirects_total 0")
+        );
     }
 
     #[tokio::test]
     async fn admin_endpoints_require_a_bearer_token() {
-        let directory = tempfile::tempdir().unwrap();
-        let state = AppState::initialize(settings(directory.path().join("spool.sqlite3")))
-            .await
-            .unwrap();
+        let state = AppState::initialize(settings()).await.unwrap();
         let response = router(state)
             .oneshot(
                 HttpRequest::builder()
@@ -985,10 +1010,117 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[tokio::test]
+    async fn cached_mapping_answers_head_without_recording_a_click() {
+        let state = AppState::initialize(settings()).await.unwrap();
+        state.cache.insert("abc1".to_owned(), Arc::new(link()));
+        let response = router(state)
+            .oneshot(
+                HttpRequest::builder()
+                    .method("HEAD")
+                    .uri("/abc1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // PostgreSQL is unreachable in this test, so answering 302 proves HEAD
+        // did not attempt the durable click write that GET performs.
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers()[header::LOCATION],
+            "https://example.com/destination"
+        );
+    }
+
     #[test]
     fn omitted_click_limit_never_exceeds_the_configured_maximum() {
         assert_eq!(effective_click_limit(None, 100), 100);
         assert_eq!(effective_click_limit(None, 2_000), 1_000);
         assert_eq!(effective_click_limit(Some(500), 100), 500);
+    }
+
+    #[derive(Debug)]
+    struct StubDatabaseError {
+        code: &'static str,
+        message: String,
+    }
+
+    impl std::fmt::Display for StubDatabaseError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(&self.message)
+        }
+    }
+
+    impl std::error::Error for StubDatabaseError {}
+
+    impl sqlx::error::DatabaseError for StubDatabaseError {
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            sqlx::error::ErrorKind::CheckViolation
+        }
+
+        fn message(&self) -> &str {
+            &self.message
+        }
+
+        fn code(&self) -> Option<std::borrow::Cow<'_, str>> {
+            Some(std::borrow::Cow::Borrowed(self.code))
+        }
+
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+    }
+
+    fn stub_database_error(code: &'static str, message: &str) -> DatabaseError {
+        DatabaseError::Sql(sqlx::Error::Database(Box::new(StubDatabaseError {
+            code,
+            message: message.to_owned(),
+        })))
+    }
+
+    #[test]
+    fn click_store_faults_are_named_and_actionable() {
+        let missing_partition = click_storage_fault(&stub_database_error(
+            MISSING_PARTITION_SQLSTATE,
+            r#"no partition of relation "clicks_v2" found for row"#,
+        ))
+        .expect("a missing partition must be a named fault");
+        assert_eq!(missing_partition.reason, "missing_partition");
+        assert!(missing_partition.action.contains("deployment schema"));
+
+        let denied = click_storage_fault(&stub_database_error(
+            INSUFFICIENT_PRIVILEGE_SQLSTATE,
+            r#"permission denied for table clicks_v2"#,
+        ))
+        .expect("a privilege failure must be a named fault");
+        assert_eq!(denied.reason, "permission_denied");
+        assert!(denied.action.contains("grants"));
+
+        // Every other database problem stays a generic persistence failure.
+        assert!(
+            click_storage_fault(&stub_database_error(
+                MISSING_PARTITION_SQLSTATE,
+                r#"new row for relation "clicks_v2" violates check constraint "clicks_http_destination""#
+            ))
+            .is_none()
+        );
+        assert!(
+            click_storage_fault(&stub_database_error(
+                "57014",
+                "canceling statement due to statement timeout"
+            ))
+            .is_none()
+        );
+        assert!(click_storage_fault(&DatabaseError::UnknownAcknowledgement).is_none());
+        assert!(click_storage_fault(&DatabaseError::Sql(sqlx::Error::PoolTimedOut)).is_none());
     }
 }

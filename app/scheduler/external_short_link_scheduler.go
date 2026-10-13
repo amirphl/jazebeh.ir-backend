@@ -199,14 +199,35 @@ func (s *ExternalShortLinkClickScheduler) runOnce(ctx context.Context) {
 			}
 			return
 		}
-		through := page.Clicks[len(page.Clicks)-1].ClickID
+		through, newest := externalClickPageCursor(cursor, page.Clicks)
+		if through != page.NextAfterID {
+			// The cursor below is derived from the rows themselves, so a page
+			// that lowers, repeats, or omits an ID still makes progress instead
+			// of stalling click import forever. Report the contract violation.
+			s.logger.Printf(
+				"external short-link click scheduler: page after_id=%d reported next_after_id=%d but its highest click id is %d",
+				cursor,
+				page.NextAfterID,
+				through,
+			)
+		}
 		if err := s.repo.ImportPage(ctx, models.ShortLinkClickSourceExternal, page.Clicks, through); err != nil {
 			s.logger.Printf("external short-link click scheduler: import through_click_id=%d failed: %v", through, err)
 			return
 		}
+		if through <= cursor {
+			// ImportPage quarantines every row it cannot import, so nothing was
+			// lost, but the cursor has nowhere to advance to. Retrying the same
+			// page would only repeat that work, so wait for operator review.
+			s.logger.Printf(
+				"external short-link click scheduler: page after_id=%d carried %d rows but no click id above the cursor; halting this run for operator review",
+				cursor,
+				len(page.Clicks),
+			)
+			return
+		}
 		cursor = through
 		externalClickCursor.Set(float64(cursor))
-		newest := page.Clicks[len(page.Clicks)-1].ClickedAt
 		if !newest.IsZero() {
 			externalClickSyncLag.Set(max(0, time.Since(newest).Seconds()))
 		}
@@ -231,21 +252,32 @@ func validateExternalClickPage(afterID int64, page *ExternalShortLinkClickPage) 
 	if page == nil {
 		return fmt.Errorf("response page is nil")
 	}
-	previous := afterID
-	for _, click := range page.Clicks {
-		if click.ClickID <= previous {
-			return fmt.Errorf("click IDs are not strictly increasing: previous=%d current=%d", previous, click.ClickID)
-		}
-		previous = click.ClickID
-	}
-	if len(page.Clicks) == 0 {
-		if page.NextAfterID != afterID || page.HasMore {
-			return fmt.Errorf("empty page has inconsistent cursor or has_more")
-		}
-		return nil
-	}
-	if page.NextAfterID != previous {
-		return fmt.Errorf("next_after_id=%d does not match last click_id=%d", page.NextAfterID, previous)
+	// Rows must be ordered for the import cursor to mean anything, but a single
+	// out-of-order, repeated, or unusable ID is quarantined per row by the
+	// importer rather than failing the whole page: a hard failure here stops
+	// every later click from ever being imported. Only an empty page, which
+	// offers nothing to advance the cursor to, is structurally fatal.
+	if len(page.Clicks) == 0 && (page.NextAfterID != afterID || page.HasMore) {
+		return fmt.Errorf("empty page has inconsistent cursor or has_more")
 	}
 	return nil
+}
+
+// externalClickPageCursor derives the cursor a page may advance to, plus the
+// newest click timestamp it carried. The external service is expected to return
+// strictly increasing click IDs, but ordering anomalies must not stall the
+// importer: the cursor only ever moves to the highest ID actually accounted for
+// in the page, so a malformed page can neither skip nor rewind the stream.
+func externalClickPageCursor(cursor int64, clicks []models.ExternalShortLinkClick) (int64, time.Time) {
+	highest := cursor
+	var newest time.Time
+	for _, click := range clicks {
+		if click.ClickID > highest {
+			highest = click.ClickID
+		}
+		if click.ClickedAt.After(newest) {
+			newest = click.ClickedAt
+		}
+	}
+	return highest, newest
 }

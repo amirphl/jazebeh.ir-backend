@@ -15,6 +15,14 @@ async fn main() -> Result<()> {
         .with_target(false)
         .compact()
         .init();
+    if let Err(error) = run().await {
+        tracing::error!(error = %error, "external short-link service terminated unexpectedly");
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn run() -> Result<()> {
     let settings = Settings::from_env()?;
     let state = AppState::initialize(settings).await?;
     serve(state).await

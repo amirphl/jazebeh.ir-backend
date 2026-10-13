@@ -113,3 +113,103 @@ CREATE TABLE IF NOT EXISTS click_acknowledgements (
 INSERT INTO click_acknowledgements(singleton, through_click_id)
 VALUES (TRUE, 0)
 ON CONFLICT (singleton) DO NOTHING;
+
+-- New writes use daily partitions. The legacy clicks table stays read-only
+-- during the online cutover and is included by the API until its acknowledged
+-- retention window (EXTERNAL_SHORTLINK_ACK_RETENTION_DAYS) has elapsed.
+CREATE TABLE IF NOT EXISTS click_event_dedup (
+    event_id UUID PRIMARY KEY,
+    click_id BIGINT NOT NULL,
+    clicked_at TIMESTAMPTZ NOT NULL
+);
+
+-- Upgrade installations that briefly ran the first PostgreSQL-only release
+-- before click IDs were recorded in the deduplication table. The backfill is
+-- below the partitioned table definition, because it reads clicks_v2.
+ALTER TABLE click_event_dedup ADD COLUMN IF NOT EXISTS click_id BIGINT;
+
+CREATE INDEX IF NOT EXISTS idx_click_event_dedup_clicked_at
+    ON click_event_dedup (clicked_at);
+
+CREATE TABLE IF NOT EXISTS clicks_v2 (
+    click_id BIGINT NOT NULL DEFAULT nextval('clicks_click_id_seq'),
+    event_id UUID NOT NULL,
+    short_code VARCHAR(64) NOT NULL,
+    link_id BIGINT NOT NULL REFERENCES links(link_id) ON DELETE RESTRICT,
+    long_url VARCHAR(4096) NOT NULL,
+    short_url VARCHAR(4096),
+    source_link_id BIGINT,
+    campaign_id BIGINT,
+    client_id BIGINT,
+    scenario_id BIGINT,
+    scenario_name VARCHAR(512),
+    phone_number VARCHAR(32),
+    is_test BOOLEAN NOT NULL DEFAULT FALSE,
+    link_created_at TIMESTAMPTZ,
+    link_updated_at TIMESTAMPTZ,
+    clicked_at TIMESTAMPTZ NOT NULL,
+    client_ip VARCHAR(64),
+    user_agent VARCHAR(1024),
+    referer VARCHAR(2048)
+) PARTITION BY RANGE (clicked_at);
+
+DO $$
+DECLARE
+    partition_day DATE;
+    partition_name TEXT;
+BEGIN
+    -- Pre-create a two-week window. The installed maintenance timer extends it
+    -- daily without granting the application runtime role DDL privileges.
+    FOR partition_day IN SELECT generate_series(current_date - 8, current_date + 14, interval '1 day')::date LOOP
+        partition_name := format('clicks_v2_%s', to_char(partition_day, 'YYYYMMDD'));
+        BEGIN
+            EXECUTE format(
+                'CREATE TABLE IF NOT EXISTS %I PARTITION OF clicks_v2 FOR VALUES FROM (%L) TO (%L)',
+                partition_name, partition_day, partition_day + 1
+            );
+        EXCEPTION WHEN OTHERS THEN
+            -- A default partition that already holds rows for this day refuses a
+            -- new range for it. That is not fatal: the rows stay in the default
+            -- partition, which serves clicks, and the maintenance timer relocates
+            -- them. Aborting the whole schema import here would block a deploy.
+            RAISE WARNING 'click partition % was not created: %', partition_name, SQLERRM;
+        END;
+    END LOOP;
+END $$;
+
+-- Safety net for the redirect path. A click insert must never fail because the
+-- partition for its UTC day is missing: without this, one missed maintenance run
+-- after the pre-created window is exhausted turns every redirect into a 503.
+-- The maintenance timer keeps this partition empty and relocates any rows that
+-- land in it; it is intentionally never dropped by retention.
+CREATE TABLE IF NOT EXISTS clicks_v2_default PARTITION OF clicks_v2 DEFAULT;
+
+CREATE INDEX IF NOT EXISTS idx_clicks_v2_click_id ON clicks_v2 (click_id);
+
+UPDATE click_event_dedup AS dedup
+SET click_id = click.click_id
+FROM clicks_v2 AS click
+WHERE click.event_id = dedup.event_id
+  AND dedup.click_id IS NULL;
+-- An orphaned dedup row would make an event retry look successful without a
+-- click row. Refuse cutover instead of permitting that inconsistent state.
+ALTER TABLE click_event_dedup ALTER COLUMN click_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_click_event_dedup_click_id
+    ON click_event_dedup (click_id);
+
+-- Cutover is one-way: the runtime may delete expired legacy rows, but it must
+-- never create or modify them. An accidental old-binary restart then fails
+-- loudly instead of silently mixing post-cutover writes into the legacy table.
+CREATE OR REPLACE FUNCTION reject_legacy_click_write()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'legacy clicks table is read-only after partitioned click cutover';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS reject_legacy_click_write ON clicks;
+CREATE TRIGGER reject_legacy_click_write
+BEFORE INSERT OR UPDATE ON clicks
+FOR EACH ROW EXECUTE FUNCTION reject_legacy_click_write();

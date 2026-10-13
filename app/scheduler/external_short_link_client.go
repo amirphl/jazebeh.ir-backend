@@ -6,14 +6,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/config"
 	"github.com/amirphl/Yamata-no-Orochi/models"
@@ -21,6 +25,7 @@ import (
 
 const maxExternalMappingBodyBytes = 12 * 1024 * 1024
 const maxExternalMappingBatchSize = 500
+const externalShortLinkRequestAttempts = 3
 
 type ExternalShortLinkClickPage struct {
 	Clicks      []models.ExternalShortLinkClick `json:"clicks"`
@@ -119,11 +124,61 @@ func (c *HTTPExternalShortLinkClient) request(ctx context.Context, method, path 
 		}
 		return c.requestPayload(ctx, method, path, payload, out)
 	}
-	return c.requestReader(ctx, method, path, reader, false, out)
+	return c.requestWithRetry(ctx, func() error {
+		return c.requestReader(ctx, method, path, reader, false, out)
+	})
 }
 
 func (c *HTTPExternalShortLinkClient) requestPayload(ctx context.Context, method, path string, payload []byte, out any) error {
-	return c.requestReader(ctx, method, path, bytes.NewReader(payload), true, out)
+	return c.requestWithRetry(ctx, func() error {
+		return c.requestReader(ctx, method, path, bytes.NewReader(payload), true, out)
+	})
+}
+
+type externalHTTPStatusError struct{ status int }
+
+func (e *externalHTTPStatusError) Error() string {
+	return fmt.Sprintf("external service returned HTTP %d", e.status)
+}
+
+func (c *HTTPExternalShortLinkClient) requestWithRetry(ctx context.Context, request func() error) error {
+	var last error
+	for attempt := 0; attempt < externalShortLinkRequestAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		last = request()
+		if last == nil || !retryableExternalRequest(last) || attempt+1 == externalShortLinkRequestAttempts {
+			return last
+		}
+		// Keep recovery responsive for the single scheduler, while jittering
+		// concurrent campaign uploads so they do not retry in lockstep.
+		baseDelay := []time.Duration{100 * time.Millisecond, 250 * time.Millisecond}[attempt]
+		delay := baseDelay/2 + time.Duration(rand.Int64N(int64(baseDelay/2)+1))
+		log.Printf("external short-link client: retrying request attempt=%d max_attempts=%d delay=%s error=%s", attempt+2, externalShortLinkRequestAttempts, delay, externalRequestErrorSummary(last))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return last
+}
+
+func externalRequestErrorSummary(err error) string {
+	var status *externalHTTPStatusError
+	if errors.As(err, &status) {
+		return fmt.Sprintf("HTTP %d", status.status)
+	}
+	return err.Error()
+}
+
+func retryableExternalRequest(err error) bool {
+	var status *externalHTTPStatusError
+	if errors.As(err, &status) {
+		return status.status == http.StatusRequestTimeout || status.status == http.StatusTooManyRequests || status.status >= 500
+	}
+	return true
 }
 
 func (c *HTTPExternalShortLinkClient) requestReader(ctx context.Context, method, path string, reader io.Reader, hasJSONBody bool, out any) error {
@@ -143,7 +198,7 @@ func (c *HTTPExternalShortLinkClient) requestReader(ctx context.Context, method,
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("external short-link %s %s returned %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(message)))
+		return fmt.Errorf("external short-link %s %s: %w: %s", method, path, &externalHTTPStatusError{status: resp.StatusCode}, strings.TrimSpace(string(message)))
 	}
 	if out == nil {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
@@ -240,9 +295,10 @@ func (c *HTTPExternalShortLinkClient) UploadMappings(ctx context.Context, links 
 		parallelism = chunkCount
 	}
 
-	// The redirect service treats mapping batches as idempotent and has an
-	// eight-connection pool. A bounded fan-out dramatically shortens a large
-	// allocation without monopolizing that pool or reordering any local state.
+	// The redirect service treats mapping batches as idempotent and serves them
+	// from a bounded connection pool (EXTERNAL_SHORTLINK_POOL_MAX_SIZE). A bounded
+	// fan-out dramatically shortens a large allocation without monopolizing that
+	// pool or reordering any local state.
 	uploadCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	jobs := make(chan uploadChunk)

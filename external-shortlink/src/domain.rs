@@ -100,8 +100,12 @@ impl LinkInput {
         self.short_url = clean_optional(self.short_url, "short_url", 4096)?;
         self.scenario_name = clean_optional(self.scenario_name, "scenario_name", 512)?;
         self.phone_number = clean_optional(self.phone_number, "phone_number", 32)?;
+        if self.source_link_id.is_some_and(|id| id <= 0) {
+            return Err(ValidationError::new(
+                "source_link_id must be a positive 64-bit integer or null",
+            ));
+        }
         for (name, value) in [
-            ("source_link_id", self.source_link_id),
             ("campaign_id", self.campaign_id),
             ("client_id", self.client_id),
             ("scenario_id", self.scenario_id),
@@ -292,6 +296,25 @@ mod tests {
             },
         ];
         assert!(unique_validated_links(links).is_err());
+    }
+
+    #[test]
+    fn source_link_id_must_be_positive() {
+        let link = LinkInput {
+            code: "campaign-1".into(),
+            long_url: "https://example.com/offer".into(),
+            short_url: None,
+            source_link_id: Some(0),
+            campaign_id: None,
+            client_id: None,
+            scenario_id: None,
+            scenario_name: None,
+            phone_number: None,
+            is_test: false,
+            source_created_at: None,
+            source_updated_at: None,
+        };
+        assert!(link.validate_and_normalize().is_err());
     }
 
     #[test]

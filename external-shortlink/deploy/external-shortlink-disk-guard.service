@@ -1,0 +1,7 @@
+[Unit]
+Description=Check external short-link PostgreSQL disk headroom
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/external-shortlink/app/scripts/check-disk-headroom.sh

@@ -86,17 +86,13 @@ pub struct Metrics {
     suppressed_bot_redirects: AtomicU64,
     postgres_errors: LabelledCounter,
     pool_timeouts: AtomicU64,
-    spool_events: AtomicI64,
-    spool_bytes: AtomicI64,
-    spool_disk_bytes: AtomicI64,
-    spool_oldest_age: AtomicI64,
-    spool_dead_letter_events: AtomicI64,
-    spool_dropped: LabelledCounter,
     mapping_uploads: LabelledCounter,
     last_mapping_upload: AtomicI64,
     last_ack_id: AtomicI64,
     database_bytes: AtomicI64,
     cache_lookups: LabelledCounter,
+    default_partition_backlog: AtomicI64,
+    click_store_faults: LabelledCounter,
 }
 
 impl Default for Metrics {
@@ -108,17 +104,13 @@ impl Default for Metrics {
             suppressed_bot_redirects: AtomicU64::new(0),
             postgres_errors: LabelledCounter::default(),
             pool_timeouts: AtomicU64::new(0),
-            spool_events: AtomicI64::new(0),
-            spool_bytes: AtomicI64::new(0),
-            spool_disk_bytes: AtomicI64::new(0),
-            spool_oldest_age: AtomicI64::new(0),
-            spool_dead_letter_events: AtomicI64::new(0),
-            spool_dropped: LabelledCounter::default(),
             mapping_uploads: LabelledCounter::default(),
             last_mapping_upload: AtomicI64::new(0),
             last_ack_id: AtomicI64::new(0),
             database_bytes: AtomicI64::new(0),
             cache_lookups: LabelledCounter::default(),
+            default_partition_backlog: AtomicI64::new(0),
+            click_store_faults: LabelledCounter::default(),
         }
     }
 }
@@ -146,10 +138,6 @@ impl Metrics {
         self.pool_timeouts.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn spool_dropped(&self, reason: &str) {
-        self.spool_dropped.increment(reason);
-    }
-
     pub fn mapping_upload(&self, result: &str) {
         self.mapping_uploads.increment(result);
     }
@@ -167,32 +155,21 @@ impl Metrics {
         self.cache_lookups.increment(result);
     }
 
-    pub fn spool_stats(
-        &self,
-        events: u64,
-        queued_bytes: u64,
-        disk_bytes: u64,
-        oldest_age_seconds: f64,
-        dead_letter_events: u64,
-    ) {
-        self.spool_events
-            .store(events.min(i64::MAX as u64) as i64, Ordering::Relaxed);
-        self.spool_bytes
-            .store(queued_bytes.min(i64::MAX as u64) as i64, Ordering::Relaxed);
-        self.spool_disk_bytes
-            .store(disk_bytes.min(i64::MAX as u64) as i64, Ordering::Relaxed);
-        self.spool_oldest_age.store(
-            oldest_age_seconds.max(0.0).min(i64::MAX as f64) as i64,
-            Ordering::Relaxed,
-        );
-        self.spool_dead_letter_events.store(
-            dead_letter_events.min(i64::MAX as u64) as i64,
-            Ordering::Relaxed,
-        );
-    }
-
     pub fn database_size(&self, bytes: i64) {
         self.database_bytes.store(bytes.max(0), Ordering::Relaxed);
+    }
+
+    /// Reports whether clicks are landing in the default partition, which
+    /// happens only when the partition maintenance window has fallen behind.
+    pub fn default_partition_backlog(&self, backlog: bool) {
+        self.default_partition_backlog
+            .store(i64::from(backlog), Ordering::Relaxed);
+    }
+
+    /// Counts clicks the click store refused for a deployment reason rather than
+    /// a transient one: a missing partition, or a missing runtime privilege.
+    pub fn click_store_fault(&self, reason: &str) {
+        self.click_store_faults.increment(reason);
     }
 
     pub fn render(&self) -> String {
@@ -245,47 +222,6 @@ impl Metrics {
             "PostgreSQL pool or operation timeouts",
             &self.pool_timeouts,
         );
-        emit_gauge(
-            &mut output,
-            "external_shortlink_spool_events",
-            "Events awaiting PostgreSQL replay",
-            &self.spool_events,
-        );
-        emit_gauge(
-            &mut output,
-            "external_shortlink_spool_bytes",
-            "Logical bytes occupied by click events awaiting PostgreSQL replay",
-            &self.spool_bytes,
-        );
-        emit_gauge(
-            &mut output,
-            "external_shortlink_spool_disk_bytes",
-            "Physical bytes used by the durable click spool and its SQLite sidecar files",
-            &self.spool_disk_bytes,
-        );
-        emit_gauge(
-            &mut output,
-            "external_shortlink_spool_oldest_event_age_seconds",
-            "Age of the oldest spooled click",
-            &self.spool_oldest_age,
-        );
-        emit_gauge(
-            &mut output,
-            "external_shortlink_spool_dead_letter_events",
-            "Corrupt spool records quarantined to preserve replay progress",
-            &self.spool_dead_letter_events,
-        );
-        emit_help_type(
-            &mut output,
-            "external_shortlink_spool_rejected_total",
-            "Clicks that could not be durably spooled",
-            "counter",
-        );
-        self.spool_dropped.render(
-            &mut output,
-            "external_shortlink_spool_rejected_total",
-            "reason",
-        );
         emit_help_type(
             &mut output,
             "external_shortlink_mapping_upload_total",
@@ -314,6 +250,23 @@ impl Metrics {
             "external_shortlink_database_size_bytes",
             "Current PostgreSQL database size",
             &self.database_bytes,
+        );
+        emit_gauge(
+            &mut output,
+            "external_shortlink_default_partition_backlog",
+            "1 when clicks are landing in the clicks_v2 default partition, which means the partition window fell behind",
+            &self.default_partition_backlog,
+        );
+        emit_help_type(
+            &mut output,
+            "external_shortlink_click_store_fault_total",
+            "Clicks the click store refused because of a deployment fault (missing partition or missing privilege)",
+            "counter",
+        );
+        self.click_store_faults.render(
+            &mut output,
+            "external_shortlink_click_store_fault_total",
+            "reason",
         );
         emit_help_type(
             &mut output,
@@ -364,6 +317,26 @@ mod tests {
         assert!(text.contains("external_shortlink_redirect_requests_total{status=\"302\"} 1"));
         assert!(
             text.contains("external_shortlink_redirect_latency_seconds_bucket{le=\"0.005\"} 1")
+        );
+    }
+
+    #[test]
+    fn partition_health_metrics_are_exported() {
+        let metrics = Metrics::default();
+        metrics.default_partition_backlog(true);
+        metrics.click_store_fault("missing_partition");
+        metrics.click_store_fault("permission_denied");
+        let text = metrics.render();
+        assert!(text.contains("external_shortlink_default_partition_backlog 1"));
+        assert!(
+            text.contains(
+                "external_shortlink_click_store_fault_total{reason=\"missing_partition\"} 1"
+            )
+        );
+        assert!(
+            text.contains(
+                "external_shortlink_click_store_fault_total{reason=\"permission_denied\"} 1"
+            )
         );
     }
 }
