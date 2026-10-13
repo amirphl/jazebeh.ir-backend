@@ -234,7 +234,6 @@ func clearCampaignSmartTargetingTestSamplingPreviewFields(campaign *models.Campa
 	campaign.NumAudience = utils.ToPtr(uint64(0))
 }
 
-
 func (s *CampaignFlowImpl) clearCampaignSmartTargetingTestSamplingPreview(ctx context.Context, campaignID uint) error {
 	return smartTargetingDB(ctx, s.db).Model(&models.Campaign{}).Where("id = ?", campaignID).Updates(map[string]any{
 		"smart_targeting_test_satisfied_tag_ids":     pq.Int64Array{},
@@ -351,6 +350,25 @@ func (s *CampaignFlowImpl) StartSmartTargetingTestSampling(ctx context.Context, 
 				if remaining != nil {
 					return repository.ErrCampaignTargetingTestSamplingStateConflict
 				}
+			}
+		}
+		// A preview request is safe to retry after the worker has completed too.
+		// Re-running an unchanged, current calculation would first clear the
+		// published campaign preview below, making the UI and approval path lose a
+		// valid result until the new worker finishes. Reuse it instead; a stale
+		// result still falls through and is recalculated.
+		calculated, err := s.samplingCalculationRepo.LatestCalculatedByInput(txCtx, lockedCampaign.ID, input.hash)
+		if err != nil {
+			return err
+		}
+		if calculated != nil {
+			current, err := s.isCurrentSmartTargetingTestSampling(txCtx, &lockedCampaign, calculated)
+			if err != nil {
+				return err
+			}
+			if current {
+				calculation = calculated
+				return nil
 			}
 		}
 		generation := lockedCampaign.SmartTargetingTestSamplingGeneration + 1
