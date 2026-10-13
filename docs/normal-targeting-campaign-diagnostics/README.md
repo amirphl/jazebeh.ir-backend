@@ -40,6 +40,9 @@ ledger.
 | [`smart-targeting-bundle-audience-reduction-funnel.sql`](reporting/smart-targeting-bundle-audience-reduction-funnel.sql) | Bundle-wide capacity and white/pink/black reduction for each Smart Targeting campaign |
 | [`available-audience-by-grade-combination.sql`](reporting/available-audience-by-grade-combination.sql) | Available white/pink audience for hypothetical grade combinations |
 | [`pre-execution-audience-availability.sql`](reporting/pre-execution-audience-availability.sql) | Scheduler-equivalent availability before execution |
+| [`customer-financial-flow.sql`](reporting/customer-financial-flow.sql) | Immutable customer wallet audit trail from a timestamp |
+| [`refunded-campaigns.sql`](reporting/refunded-campaigns.sql) | Campaign refunds, original charges, and refund metadata from a timestamp |
+| [`campaigns-awaiting-refund.sql`](reporting/campaigns-awaiting-refund.sql) | Charged cancelled/rejected or eligible under-delivered campaigns without a refund |
 | [`exact-count-allocation-failure/`](reporting/exact-count-allocation-failure/) | Focused investigation of exact-count allocation failures |
 
 ## Validation queries
