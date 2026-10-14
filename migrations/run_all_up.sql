@@ -431,5 +431,8 @@
 \echo 'Running 0140_persist_smart_targeting_test_sample_selections.sql...'
 \i migrations/0140_persist_smart_targeting_test_sample_selections.sql
 
+\echo 'Running 0141_snapshot_smart_targeting_allowed_colors.sql...'
+\i migrations/0141_snapshot_smart_targeting_allowed_colors.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
