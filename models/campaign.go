@@ -183,10 +183,11 @@ func IsValidCampaignAudienceTargetingMethod(method string) bool {
 }
 
 // SmartTargetingAllowedColors returns the delivery-eligible audience colors
-// for a campaign platform. An empty result means the platform has no color
-// restriction.
-func SmartTargetingAllowedColors(platform string) []string {
-	if strings.EqualFold(strings.TrimSpace(platform), CampaignPlatformSMS) {
+// for a campaign platform and SMS provider. Candoo delivery has no color
+// restriction; PayamSMS retains the white/pink restriction. An empty result
+// means the delivery route has no color restriction.
+func SmartTargetingAllowedColors(platform string, provider SMSProvider) []string {
+	if strings.EqualFold(strings.TrimSpace(platform), CampaignPlatformSMS) && provider != SMSProviderCandoo {
 		return []string{"white", "pink"}
 	}
 	return nil
@@ -281,7 +282,7 @@ type Campaign struct {
 	// from replacing a newer sample. The pointer identifies the sole snapshot
 	// eligible for finalization and runtime delivery.
 	SmartTargetingTestSamplingGeneration int64  `gorm:"not null;default:0" json:"-"`
-	ActiveSmartTargetingTestSelectionID   *int64 `json:"-"`
+	ActiveSmartTargetingTestSelectionID  *int64 `json:"-"`
 
 	BundleID *uint         `gorm:"index:idx_campaigns_bundle_id" json:"bundle_id,omitempty"`
 	Phase    CampaignPhase `gorm:"type:campaign_phase;not null;default:'execution'" json:"phase"`
