@@ -15,6 +15,11 @@ const (
 	CampaignTargetingCapacityCalculating CampaignTargetingCapacityCalculationStatus = "calculating"
 	CampaignTargetingCapacityCalculated  CampaignTargetingCapacityCalculationStatus = "calculated"
 	CampaignTargetingCapacityFailed      CampaignTargetingCapacityCalculationStatus = "failed"
+
+	// SmartTargetingCapacityAlgorithmVersion must be used by both the capacity
+	// flow and the delivery scheduler when they persist and consume an exact
+	// capacity calculation.
+	SmartTargetingCapacityAlgorithmVersion = 4
 )
 
 // CampaignTargetingCapacityCalculation captures every input and output needed
@@ -26,9 +31,11 @@ type CampaignTargetingCapacityCalculation struct {
 	CampaignID uint  `gorm:"not null;index:idx_campaign_targeting_capacity_campaign_created,priority:1;index:idx_campaign_targeting_capacity_campaign_status,priority:1" json:"campaign_id"`
 	BundleID   uint  `gorm:"not null;index:idx_campaign_targeting_capacity_bundle" json:"bundle_id"`
 	CustomerID uint  `gorm:"not null" json:"customer_id"`
-	// Platform is an eligibility snapshot. It participates in calculation
-	// identity because delivery colors differ by platform.
+	// Platform and AllowedColors are delivery-eligibility snapshots. They
+	// participate in calculation identity because the SMS provider controls
+	// whether color eligibility is restricted.
 	Platform                      string                                     `gorm:"type:varchar(32);not null" json:"platform"`
+	AllowedColors                 pq.StringArray                             `gorm:"type:text[];not null;default:'{}'" json:"allowed_colors"`
 	RequestedByCustomerID         uint                                       `gorm:"not null" json:"requested_by_customer_id"`
 	SelectedTagIDs                pq.Int64Array                              `gorm:"type:bigint[];not null" json:"selected_tag_ids"`
 	SelectedTagsHash              string                                     `gorm:"type:char(64);not null;index:idx_campaign_targeting_capacity_tags_hash" json:"selected_tags_hash"`
