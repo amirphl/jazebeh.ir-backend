@@ -23,8 +23,7 @@ import (
 )
 
 const (
-	smartTargetingCapacityAlgorithmVersion = 3
-	smartTargetingCapacityTTL              = 24 * time.Hour
+	smartTargetingCapacityTTL = 24 * time.Hour
 )
 
 var (
@@ -49,6 +48,7 @@ type SmartTargetingCapacityFlowImpl struct {
 	campaignRepo    repository.CampaignRepository
 	selectionRepo   repository.CampaignSelectedTagRepository
 	calculationRepo repository.CampaignTargetingCapacityRepository
+	lineNumberRepo  repository.LineNumberRepository
 	db              *gorm.DB
 }
 
@@ -75,10 +75,11 @@ func NewSmartTargetingCapacityFlow(
 	campaignRepo repository.CampaignRepository,
 	selectionRepo repository.CampaignSelectedTagRepository,
 	calculationRepo repository.CampaignTargetingCapacityRepository,
+	lineNumberRepo repository.LineNumberRepository,
 	db *gorm.DB,
 ) SmartTargetingCapacityFlow {
 	return &SmartTargetingCapacityFlowImpl{
-		campaignRepo: campaignRepo, selectionRepo: selectionRepo, calculationRepo: calculationRepo, db: db,
+		campaignRepo: campaignRepo, selectionRepo: selectionRepo, calculationRepo: calculationRepo, lineNumberRepo: lineNumberRepo, db: db,
 	}
 }
 
@@ -162,13 +163,14 @@ func smartTargetingCapacityAppliesBundleExclusions(campaign *models.Campaign) bo
 	return campaign != nil && campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseTest
 }
 
-func smartTargetingInputHash(tagHash string, classes []string, platform string, applyBundleAudienceExclusions bool) string {
+func smartTargetingInputHash(tagHash string, classes []string, platform string, allowedColors []string, applyBundleAudienceExclusions bool) string {
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	return hashSmartTargetingCapacityString(
-		"v3|algorithm=" + strconv.Itoa(smartTargetingCapacityAlgorithmVersion) +
+		"v4|algorithm=" + strconv.Itoa(models.SmartTargetingCapacityAlgorithmVersion) +
 			"|tags=" + tagHash +
 			"|classes=" + strings.Join(classes, ",") +
 			"|platform=" + platform +
+			"|colors=" + strings.Join(allowedColors, ",") +
 			"|bundle_exclusions=" + strconv.FormatBool(applyBundleAudienceExclusions),
 	)
 }
@@ -291,6 +293,10 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 		if !models.IsValidCampaignPlatform(platform) {
 			return ErrInvalidState
 		}
+		allowedColors, err := smartTargetingAllowedColorsForCampaign(txCtx, f.lineNumberRepo, &lockedCampaign)
+		if err != nil {
+			return err
+		}
 		effectiveClasses := classes
 		if len(req.ScoreClasses) == 0 {
 			effectiveClasses, err = normalizeSmartTargetingScoreClasses(lockedCampaign.Spec.AudienceGrades)
@@ -328,7 +334,7 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 		now := time.Now().UTC()
 		tagHash := smartTargetingTagHash(lockedCampaign.ID, ids)
 		applyBundleAudienceExclusions := smartTargetingCapacityAppliesBundleExclusions(&lockedCampaign)
-		inputHash := smartTargetingInputHash(tagHash, effectiveClasses, platform, applyBundleAudienceExclusions)
+		inputHash := smartTargetingInputHash(tagHash, effectiveClasses, platform, allowedColors, applyBundleAudienceExclusions)
 		active, err := f.calculationRepo.ActiveByCampaignID(txCtx, lockedCampaign.ID)
 		if err != nil {
 			return err
@@ -355,7 +361,7 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 			return err
 		}
 		if reusable != nil {
-			current, err := isCurrentSmartTargetingCapacity(txCtx, f.db, f.selectionRepo, reusable, &lockedCampaign)
+			current, err := isCurrentSmartTargetingCapacity(txCtx, f.db, f.selectionRepo, f.lineNumberRepo, reusable, &lockedCampaign)
 			if err != nil {
 				return err
 			}
@@ -370,6 +376,7 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 			BundleID:                      *lockedCampaign.BundleID,
 			CustomerID:                    lockedCampaign.CustomerID,
 			Platform:                      platform,
+			AllowedColors:                 pq.StringArray(allowedColors),
 			RequestedByCustomerID:         req.CustomerID,
 			SelectedTagIDs:                canonicalSmartTargetingCapacityTagIDs(ids),
 			SelectedTagsHash:              tagHash,
@@ -380,7 +387,7 @@ func (f *SmartTargetingCapacityFlowImpl) Start(ctx context.Context, req *dto.Sta
 			RawAudienceCount:              0,
 			AllocationFingerprint:         emptySmartTargetingAllocationFingerprint(),
 			Status:                        models.CampaignTargetingCapacityCalculating,
-			CalculationVersion:            smartTargetingCapacityAlgorithmVersion,
+			CalculationVersion:            models.SmartTargetingCapacityAlgorithmVersion,
 			CreatedAt:                     now,
 			ExpiresAt:                     ptrTime(calculationExpiry(now, &lockedCampaign)),
 		}
@@ -420,10 +427,15 @@ func (f *SmartTargetingCapacityFlowImpl) GetCurrent(ctx context.Context, custome
 		if classErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_SCORE_CLASSES_INVALID", "Audience score classes are invalid", classErr)
 		}
+		allowedColors, colorsErr := smartTargetingAllowedColorsForCampaign(ctx, f.lineNumberRepo, campaign)
+		if colorsErr != nil {
+			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_LOOKUP_FAILED", "Failed to resolve Smart Targeting delivery eligibility", colorsErr)
+		}
 		inputHash := smartTargetingInputHash(
 			smartTargetingTagHash(campaign.ID, ids),
 			classes,
 			campaign.Spec.Platform,
+			allowedColors,
 			smartTargetingCapacityAppliesBundleExclusions(campaign),
 		)
 		calculated, calculatedErr := f.calculationRepo.LatestCalculatedByInput(ctx, campaign.ID, inputHash)
@@ -431,7 +443,7 @@ func (f *SmartTargetingCapacityFlowImpl) GetCurrent(ctx context.Context, custome
 			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_LOOKUP_FAILED", "Failed to load exact capacity calculation", calculatedErr)
 		}
 		if calculated != nil {
-			current, currentErr := isCurrentSmartTargetingCapacity(ctx, f.db, f.selectionRepo, calculated, campaign)
+			current, currentErr := isCurrentSmartTargetingCapacity(ctx, f.db, f.selectionRepo, f.lineNumberRepo, calculated, campaign)
 			if currentErr != nil {
 				return nil, NewBusinessError("SMART_TARGETING_CAPACITY_LOOKUP_FAILED", "Failed to validate exact capacity calculation", currentErr)
 			}
@@ -495,7 +507,7 @@ func (f *SmartTargetingCapacityFlowImpl) statusDTO(ctx context.Context, campaign
 		response.Status = "expired"
 		return response, nil
 	}
-	valid, err := isCurrentSmartTargetingCapacity(ctx, f.db, f.selectionRepo, calculation, campaign)
+	valid, err := isCurrentSmartTargetingCapacity(ctx, f.db, f.selectionRepo, f.lineNumberRepo, calculation, campaign)
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_CAPACITY_LOOKUP_FAILED", "Failed to validate exact capacity calculation", err)
 	}
@@ -504,7 +516,7 @@ func (f *SmartTargetingCapacityFlowImpl) statusDTO(ctx context.Context, campaign
 
 // CurrentSmartTargetingCapacity is shared by campaign cost calculation. It
 // intentionally rejects pending, failed, expired and fingerprint-stale rows.
-func CurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selectionRepo repository.CampaignSelectedTagRepository, calculationRepo repository.CampaignTargetingCapacityRepository, campaign *models.Campaign) (*models.CampaignTargetingCapacityCalculation, error) {
+func CurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selectionRepo repository.CampaignSelectedTagRepository, calculationRepo repository.CampaignTargetingCapacityRepository, lineNumberRepo repository.LineNumberRepository, campaign *models.Campaign) (*models.CampaignTargetingCapacityCalculation, error) {
 	if campaign == nil || !campaign.Spec.UsesSmartTargeting() || campaign.BundleID == nil {
 		return nil, ErrSmartTargetingExactCapacityRequired
 	}
@@ -519,17 +531,22 @@ func CurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selectionRe
 	if err != nil {
 		return nil, err
 	}
+	allowedColors, err := smartTargetingAllowedColorsForCampaign(ctx, lineNumberRepo, campaign)
+	if err != nil {
+		return nil, err
+	}
 	inputHash := smartTargetingInputHash(
 		smartTargetingTagHash(campaign.ID, ids),
 		classes,
 		campaign.Spec.Platform,
+		allowedColors,
 		smartTargetingCapacityAppliesBundleExclusions(campaign),
 	)
 	calculation, err := calculationRepo.LatestCalculatedByInput(ctx, campaign.ID, inputHash)
 	if err != nil {
 		return nil, err
 	}
-	valid, err := isCurrentSmartTargetingCapacity(ctx, db, selectionRepo, calculation, campaign)
+	valid, err := isCurrentSmartTargetingCapacity(ctx, db, selectionRepo, lineNumberRepo, calculation, campaign)
 	if err != nil {
 		return nil, err
 	}
@@ -548,16 +565,17 @@ func EnsureCurrentSmartTargetingCapacity(
 	campaignRepo repository.CampaignRepository,
 	selectionRepo repository.CampaignSelectedTagRepository,
 	calculationRepo repository.CampaignTargetingCapacityRepository,
+	lineNumberRepo repository.LineNumberRepository,
 	campaign *models.Campaign,
 ) (*models.CampaignTargetingCapacityCalculation, error) {
-	current, err := CurrentSmartTargetingCapacity(ctx, db, selectionRepo, calculationRepo, campaign)
+	current, err := CurrentSmartTargetingCapacity(ctx, db, selectionRepo, calculationRepo, lineNumberRepo, campaign)
 	if err == nil {
 		return current, nil
 	}
 	if !errors.Is(err, ErrSmartTargetingExactCapacityRequired) || campaign == nil {
 		return nil, err
 	}
-	flow := NewSmartTargetingCapacityFlow(campaignRepo, selectionRepo, calculationRepo, db)
+	flow := NewSmartTargetingCapacityFlow(campaignRepo, selectionRepo, calculationRepo, lineNumberRepo, db)
 	response, startErr := flow.Start(ctx, &dto.StartSmartTargetingCapacityCalculationRequest{
 		CustomerID: campaign.CustomerID, CampaignUUID: campaign.UUID.String(),
 	}, nil)
@@ -565,12 +583,12 @@ func EnsureCurrentSmartTargetingCapacity(
 		return nil, startErr
 	}
 	if response != nil && response.IsCurrent && response.Status == string(models.CampaignTargetingCapacityCalculated) {
-		return CurrentSmartTargetingCapacity(ctx, db, selectionRepo, calculationRepo, campaign)
+		return CurrentSmartTargetingCapacity(ctx, db, selectionRepo, calculationRepo, lineNumberRepo, campaign)
 	}
 	return nil, &SmartTargetingCapacityPendingError{Response: response}
 }
 
-func isCurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selectionRepo repository.CampaignSelectedTagRepository, calculation *models.CampaignTargetingCapacityCalculation, campaign *models.Campaign) (bool, error) {
+func isCurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selectionRepo repository.CampaignSelectedTagRepository, lineNumberRepo repository.LineNumberRepository, calculation *models.CampaignTargetingCapacityCalculation, campaign *models.Campaign) (bool, error) {
 	if calculation == nil || campaign == nil || calculation.CampaignID != campaign.ID || calculation.BundleID == 0 || campaign.BundleID == nil || calculation.BundleID != *campaign.BundleID {
 		return false, nil
 	}
@@ -601,13 +619,18 @@ func isCurrentSmartTargetingCapacity(ctx context.Context, db *gorm.DB, selection
 		return false, err
 	}
 	platform := strings.ToLower(strings.TrimSpace(campaign.Spec.Platform))
+	allowedColors, err := smartTargetingAllowedColorsForCampaign(ctx, lineNumberRepo, campaign)
+	if err != nil {
+		return false, err
+	}
 	applyBundleAudienceExclusions := smartTargetingCapacityAppliesBundleExclusions(campaign)
 	if calculation.Platform != platform || calculation.ApplyBundleAudienceExclusions != applyBundleAudienceExclusions ||
-		!sameSmartTargetingScoreClasses(classes, []string(calculation.SelectedScoreClasses)) {
+		!sameSmartTargetingScoreClasses(classes, []string(calculation.SelectedScoreClasses)) ||
+		!slices.Equal([]string(calculation.AllowedColors), allowedColors) {
 		return false, nil
 	}
-	if calculation.CalculationVersion != smartTargetingCapacityAlgorithmVersion ||
-		smartTargetingInputHash(smartTargetingTagHash(campaign.ID, ids), classes, platform, applyBundleAudienceExclusions) != calculation.InputHash {
+	if calculation.CalculationVersion != models.SmartTargetingCapacityAlgorithmVersion ||
+		smartTargetingInputHash(smartTargetingTagHash(campaign.ID, ids), classes, platform, allowedColors, applyBundleAudienceExclusions) != calculation.InputHash {
 		return false, nil
 	}
 	_, fingerprint, err := approvedCampaignDeduction(ctx, db, calculation, campaign.ID)
@@ -715,7 +738,7 @@ func smartTargetingCapacityAudienceQuery(calculation *models.CampaignTargetingCa
 		ApplyBundleAudienceExclusions:          calculation.ApplyBundleAudienceExclusions,
 		TagIDs:                                 []int64(calculation.SelectedTagIDs),
 		ScoreClasses:                           []string(calculation.SelectedScoreClasses),
-		AllowedColors:                          models.SmartTargetingAllowedColors(calculation.Platform),
+		AllowedColors:                          []string(calculation.AllowedColors),
 	}
 }
 
