@@ -48,17 +48,21 @@ func TestSmartTargetingCapacityHashIsOrderIndependent(t *testing.T) {
 	if first == smartTargetingTagHash(19, []uint{2, 7, 9}) {
 		t.Fatal("campaign ID must participate in the tag hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, false) == smartTargetingInputHash(first, []string{"A", "C"}, models.CampaignPlatformSMS, false) {
+	payamColors := []string{"white", "pink"}
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "C"}, models.CampaignPlatformSMS, payamColors, false) {
 		t.Fatal("score classes must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, false) != smartTargetingInputHash(first, []string{"A", "B"}, " SMS ", false) {
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) != smartTargetingInputHash(first, []string{"A", "B"}, " SMS ", payamColors, false) {
 		t.Fatal("equal targeting inputs must produce equal hashes")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformBale, false) {
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformBale, nil, false) {
 		t.Fatal("platform must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, true) {
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, true) {
 		t.Fatal("Bundle-exclusion eligibility must participate in the input hash")
+	}
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, nil, false) {
+		t.Fatal("delivery-provider color eligibility must participate in the input hash")
 	}
 }
 
@@ -93,6 +97,7 @@ func TestSmartTargetingCapacityAudienceQueryUsesSnapshotEligibility(t *testing.T
 		CampaignID:                    17,
 		BundleID:                      3,
 		Platform:                      models.CampaignPlatformSMS,
+		AllowedColors:                 pq.StringArray{"white", "pink"},
 		ApplyBundleAudienceExclusions: true,
 		SelectedTagIDs:                pq.Int64Array{2, 9},
 		SelectedScoreClasses:          pq.StringArray{"A", "C"},
@@ -100,6 +105,20 @@ func TestSmartTargetingCapacityAudienceQueryUsesSnapshotEligibility(t *testing.T
 	query := smartTargetingCapacityAudienceQuery(calculation)
 	if query.BundleID != 3 || query.ExcludeActiveTestReservationCampaignID != 17 || !query.ApplyBundleAudienceExclusions || !reflect.DeepEqual(query.TagIDs, []int64{2, 9}) || !reflect.DeepEqual(query.ScoreClasses, []string{"A", "C"}) || !reflect.DeepEqual(query.AllowedColors, []string{"white", "pink"}) {
 		t.Fatalf("capacity audience query = %#v", query)
+	}
+}
+
+func TestSmartTargetingCapacityAudienceQueryKeepsCandooUnrestricted(t *testing.T) {
+	query := smartTargetingCapacityAudienceQuery(&models.CampaignTargetingCapacityCalculation{
+		CampaignID:           17,
+		BundleID:             3,
+		Platform:             models.CampaignPlatformSMS,
+		AllowedColors:        pq.StringArray{},
+		SelectedTagIDs:       pq.Int64Array{2, 9},
+		SelectedScoreClasses: pq.StringArray{"A", "C"},
+	})
+	if len(query.AllowedColors) != 0 {
+		t.Fatalf("Candoo capacity query colors = %v, want no restriction", query.AllowedColors)
 	}
 }
 
@@ -119,7 +138,7 @@ func TestCurrentSmartTargetingCapacityRejectsUnavailableSelectedTags(t *testing.
 		selected:    []*models.CampaignSelectedTag{{CampaignID: 17, BundleID: bundleID, TagID: 9}},
 		validateErr: repository.ErrInvalidCampaignSelectedTags,
 	}
-	current, err := isCurrentSmartTargetingCapacity(t.Context(), nil, selectionRepo, calculation, campaign)
+	current, err := isCurrentSmartTargetingCapacity(t.Context(), nil, selectionRepo, nil, calculation, campaign)
 	if err != nil || current {
 		t.Fatalf("current capacity = (%t, %v), want unavailable selection to be stale", current, err)
 	}
