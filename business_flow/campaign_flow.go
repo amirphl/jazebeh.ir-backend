@@ -367,7 +367,7 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	if err := s.prepareAudienceTargetingUpdate(ctx, req, &campaign); err != nil {
 		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
 	}
-	samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(&campaign, req)
+	samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(ctx, s.lineNumberRepo, &campaign, req)
 	if err != nil {
 		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
 	}
@@ -581,7 +581,7 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 			if err := s.requireCurrentSmartTargetingTestSampling(txCtx, lockedCampaign); err != nil {
 				return err
 			}
-			intent, err := currentSmartTargetingTestSamplingIntent(txCtx, s.selectedTagRepo, lockedCampaign, true)
+			intent, err := currentSmartTargetingTestSamplingIntent(txCtx, s.selectedTagRepo, s.lineNumberRepo, lockedCampaign, true)
 			if err != nil {
 				return err
 			}
@@ -760,7 +760,7 @@ func applyFinalizedCampaignCost(campaign *models.Campaign, cost *dto.CalculateCa
 // smartTargetingTestSamplingConfigurationChanged compares effective values,
 // not merely field presence. Full-form clients commonly resubmit unchanged
 // values while finalizing; that must not discard a current sampling preview.
-func smartTargetingTestSamplingConfigurationChanged(campaign *models.Campaign, req *dto.UpdateCampaignRequest) (bool, error) {
+func smartTargetingTestSamplingConfigurationChanged(ctx context.Context, lineNumberRepo repository.LineNumberRepository, campaign *models.Campaign, req *dto.UpdateCampaignRequest) (bool, error) {
 	if campaign == nil || req == nil {
 		return false, nil
 	}
@@ -800,10 +800,22 @@ func smartTargetingTestSamplingConfigurationChanged(campaign *models.Campaign, r
 			return true, nil
 		}
 	}
-	if req.Platform != nil && !slices.Equal(
-		models.SmartTargetingAllowedColors(campaign.Spec.Platform),
-		models.SmartTargetingAllowedColors(*req.Platform),
-	) {
+	currentColors, err := smartTargetingAllowedColorsForCampaign(ctx, lineNumberRepo, campaign)
+	if err != nil {
+		return false, err
+	}
+	updatedCampaign := *campaign
+	if req.Platform != nil {
+		updatedCampaign.Spec.Platform = *req.Platform
+	}
+	if req.LineNumber != nil {
+		updatedCampaign.Spec.LineNumber = req.LineNumber
+	}
+	updatedColors, err := smartTargetingAllowedColorsForCampaign(ctx, lineNumberRepo, &updatedCampaign)
+	if err != nil {
+		return false, err
+	}
+	if !slices.Equal(currentColors, updatedColors) {
 		return true, nil
 	}
 	return false, nil
@@ -1397,7 +1409,7 @@ func (s *CampaignFlowImpl) CalculateCampaignCapacity(ctx context.Context, req *d
 		if s.capacityCalculationRepo == nil {
 			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_UNAVAILABLE", "Exact Smart Targeting capacity calculation is unavailable", ErrSmartTargetingExactCapacityRequired)
 		}
-		exact, err := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, &campaign)
+		exact, err := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, &campaign)
 		if err != nil {
 			if errors.Is(err, ErrSmartTargetingCapacityPending) {
 				return nil, NewBusinessError("SMART_TARGETING_CAPACITY_PENDING", "Exact Smart Targeting capacity calculation was submitted; please wait and retry", err)
@@ -1637,7 +1649,7 @@ func (s *CampaignFlowImpl) CalculateCampaignCost(ctx context.Context, req *dto.C
 		if currentErr := s.requireCurrentSmartTargetingTestSampling(ctx, &campaign); currentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", currentErr)
 		}
-		intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, &campaign, true)
+		intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, &campaign, true)
 		if intentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", intentErr)
 		}
@@ -1690,7 +1702,7 @@ func (s *CampaignFlowImpl) CalculateCampaignCostV2(ctx context.Context, req *dto
 		if currentErr := s.requireCurrentSmartTargetingTestSampling(ctx, &campaign); currentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", currentErr)
 		}
-		intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, &campaign, true)
+		intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, &campaign, true)
 		if intentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", intentErr)
 		}
@@ -1817,7 +1829,7 @@ func (s *CampaignFlowImpl) computeCostInputs(
 		if s.capacityCalculationRepo == nil {
 			return 0, 0, NewBusinessError("SMART_TARGETING_EXACT_CAPACITY_REQUIRED", "A current exact Smart Targeting capacity calculation is required", ErrSmartTargetingExactCapacityRequired)
 		}
-		exact, err := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, &campaign)
+		exact, err := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, &campaign)
 		if err != nil {
 			if errors.Is(err, ErrSmartTargetingCapacityPending) {
 				return 0, 0, NewBusinessError("SMART_TARGETING_CAPACITY_PENDING", "Exact Smart Targeting capacity calculation was submitted; please wait and retry", err)
@@ -3113,7 +3125,7 @@ func (s *CampaignFlowImpl) canFinalizeCampaign(ctx context.Context, campaign *mo
 			if err := s.requireCurrentSmartTargetingTestSampling(ctx, campaign); err != nil {
 				return err
 			}
-			if _, err := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, campaign, true); err != nil {
+			if _, err := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, campaign, true); err != nil {
 				return err
 			}
 		}
