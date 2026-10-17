@@ -113,18 +113,6 @@ func TestNormalizeSchedulerScoreClassesRejectsDuplicate(t *testing.T) {
 	}
 }
 
-func TestSmartTargetingSchedulerAllowedColorsRestrictsOnlySMS(t *testing.T) {
-	colors := smartTargetingSchedulerAllowedColors(" SMS ")
-	if len(colors) != 2 || colors[0] != "white" || colors[1] != "pink" {
-		t.Fatalf("SMS allowed colors = %v, want [white pink]", colors)
-	}
-	for _, platform := range []string{models.CampaignPlatformRubika, models.CampaignPlatformBale, models.CampaignPlatformSPlus, ""} {
-		if colors := smartTargetingSchedulerAllowedColors(platform); len(colors) != 0 {
-			t.Fatalf("platform %q allowed colors = %v, want no restriction", platform, colors)
-		}
-	}
-}
-
 func TestSmartTargetingSchedulerAudienceQueryEnablesBundleExclusionsOnlyForTest(t *testing.T) {
 	testPhase := string(models.CampaignPhaseTest)
 	campaign := dto.BotGetCampaignResponse{
@@ -133,16 +121,19 @@ func TestSmartTargetingSchedulerAudienceQueryEnablesBundleExclusionsOnlyForTest(
 		Phase:           &testPhase,
 		Platform:        string(models.CampaignPlatformSMS),
 	}
-	query := smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"})
+	query := smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"}, []string{"white", "pink"})
 	if !query.ApplyBundleAudienceExclusions || query.BundleID != 3 || len(query.TagIDs) != 2 || len(query.AllowedColors) != 2 {
 		t.Fatalf("Smart Test scheduler audience query = %#v, want Bundle-scoped SMS query", query)
 	}
 
 	executionPhase := string(models.CampaignPhaseExecution)
 	campaign.Phase = &executionPhase
-	query = smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"})
+	query = smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"}, nil)
 	if query.ApplyBundleAudienceExclusions {
 		t.Fatalf("execution scheduler audience query applies Test-only settings: %#v", query)
+	}
+	if len(query.AllowedColors) != 0 {
+		t.Fatalf("Candoo-compatible scheduler query color filter = %v, want none", query.AllowedColors)
 	}
 }
 
@@ -178,7 +169,7 @@ func (r *capacitySchedulerTestRepo) LatestByInput(context.Context, uint, string)
 	return nil, nil
 }
 
-func (r *capacitySchedulerTestRepo) CurrentForExecution(context.Context, uint, uint, string, bool, []int64, []string, int, time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *capacitySchedulerTestRepo) CurrentForExecution(context.Context, uint, uint, string, bool, []int64, []string, []string, int, time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
 	return nil, nil
 }
 
