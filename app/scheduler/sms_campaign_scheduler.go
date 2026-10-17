@@ -346,7 +346,7 @@ func (s *SMSCampaignScheduler) processSMSCampaign(ctx context.Context, jazzAcces
 		if c.BundleID == nil || *c.BundleID == 0 {
 			return fmt.Errorf("campaign id=%d has no bundle", c.ID)
 		}
-		audienceResult, err = s.fetchSMSAudiencePhonesByBundle(ctx, c, jazzAccessToken, correlationID)
+		audienceResult, err = s.fetchSMSAudiencePhonesByBundle(ctx, c, jazzAccessToken, correlationID, providerName)
 		if err != nil {
 			return fmt.Errorf("fetch audience phones for campaign id=%d: %w", c.ID, err)
 		}
@@ -685,9 +685,8 @@ func (s *SMSCampaignScheduler) resolveScoreConstraint(ctx context.Context, c dto
 	return gradesToScoreConstraint(c.AudienceGrades, percentiles.P33, percentiles.P66), nil
 }
 
-// selectTagAudiences preserves SMS eligibility and priority: white recipients
-// are selected first, then pink recipients fill any remaining capacity. Black
-// recipients are intentionally excluded from standard SMS campaigns.
+// selectTagAudiences applies the delivery provider's color eligibility. Payam
+// recipients are selected white-first then pink; Candoo has no color filter.
 func (s *SMSCampaignScheduler) selectTagAudiences(
 	ctx context.Context,
 	campaignID uint,
@@ -696,6 +695,7 @@ func (s *SMSCampaignScheduler) selectTagAudiences(
 	exclude map[int64]struct{},
 	excludeBundleID *uint,
 	scoreConstraint *models.NormalizedScoreConstraint,
+	allowedColors []string,
 ) (phones []string, ids []int64, uids []string, err error) {
 	if numAudiences <= 0 {
 		return []string{}, []int64{}, []string{}, nil
@@ -719,34 +719,43 @@ func (s *SMSCampaignScheduler) selectTagAudiences(
 		uids = append(uids, ap.UID)
 	}
 
-	selectColor := func(color string, colorLimit int) error {
+	selectColor := func(color *string, colorLimit int) error {
 		if colorLimit <= 0 {
 			return nil
 		}
 		candidates, err := s.audRepo.SelectCampaignCandidates(ctx, models.AudienceProfileFilter{
 			Tags:            &tagIDs,
-			Color:           utils.ToPtr(color),
+			Color:           color,
 			NormalizedScore: scoreConstraint,
 			ExcludeBundleID: excludeBundleID,
 		}, excludeIDs, colorLimit)
 		if err != nil {
 			return err
 		}
-		s.logger.Printf("selectTagAudiences %s candidates: campaign_id=%d count=%d limit=%d excluded=%d", color, campaignID, len(candidates), colorLimit, len(excludeIDs))
+		colorLabel := "unrestricted"
+		if color != nil {
+			colorLabel = *color
+		}
+		s.logger.Printf("selectTagAudiences %s candidates: campaign_id=%d count=%d limit=%d excluded=%d", colorLabel, campaignID, len(candidates), colorLimit, len(excludeIDs))
 		for _, ap := range candidates {
 			appendCandidate(ap)
 		}
 		return nil
 	}
 
-	if err := selectColor("white", limit); err != nil {
-		s.logger.Printf("selectTagAudiences fetch white failed: campaign_id=%d err=%v", campaignID, err)
-		return nil, nil, nil, err
+	if len(allowedColors) == 0 {
+		if err := selectColor(nil, limit); err != nil {
+			s.logger.Printf("selectTagAudiences fetch unrestricted candidates failed: campaign_id=%d err=%v", campaignID, err)
+			return nil, nil, nil, err
+		}
+		return phones, ids, uids, nil
 	}
-	remaining := limit - len(ids)
-	if err := selectColor("pink", remaining); err != nil {
-		s.logger.Printf("selectTagAudiences fetch pink failed: campaign_id=%d err=%v", campaignID, err)
-		return nil, nil, nil, err
+	for _, color := range allowedColors {
+		remaining := limit - len(ids)
+		if err := selectColor(utils.ToPtr(color), remaining); err != nil {
+			s.logger.Printf("selectTagAudiences fetch %s failed: campaign_id=%d err=%v", color, campaignID, err)
+			return nil, nil, nil, err
+		}
 	}
 
 	return phones, ids, uids, nil
@@ -762,6 +771,7 @@ func (s *SMSCampaignScheduler) fetchSMSAudiencePhonesByBundle(
 	c dto.BotGetCampaignResponse,
 	jazzAccessToken string,
 	correlationID string,
+	providerName models.SMSProvider,
 ) (*AudiencePhonesResult, error) {
 	bundleID := *c.BundleID
 	numAudiences, err := schedulerConfiguredAudienceCount(c)
@@ -788,13 +798,14 @@ func (s *SMSCampaignScheduler) fetchSMSAudiencePhonesByBundle(
 	var ids []int64
 	var uids []string
 	var selectionID uint
+	allowedColors := models.SmartTargetingAllowedColors(c.Platform, providerName)
 	if usesSmartAudienceTargeting(c) {
-		phones, ids, uids, selectionID, err = selectAndReserveExactSmartTargetingCandidates(ctx, s.db, c, numAudiences, correlationID)
+		phones, ids, uids, selectionID, err = selectAndReserveExactSmartTargetingCandidates(ctx, s.db, c, numAudiences, correlationID, allowedColors)
 	} else {
 		phones, ids, uids, selectionID, err = selectAndReserveStandardBundleCandidates(
 			ctx, s.db, s.bundleAudienceCache, c.ID, c.CustomerID, bundleID, numAudiences, correlationID,
 			func(selectionCtx context.Context, exclude map[int64]struct{}) ([]string, []int64, []string, error) {
-				return s.selectTagAudiences(selectionCtx, c.ID, tagIDs, numAudiences, exclude, &bundleID, scoreConstraint)
+				return s.selectTagAudiences(selectionCtx, c.ID, tagIDs, numAudiences, exclude, &bundleID, scoreConstraint, allowedColors)
 			},
 			func(selectionCtx context.Context, ids []int64) ([]string, []int64, []string, error) {
 				return loadReservedBundleAudience(selectionCtx, s.audRepo, ids)
