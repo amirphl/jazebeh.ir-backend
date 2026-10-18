@@ -357,3 +357,8 @@ Current review: the offset-overflow and auto-select candidate-lock issues are fi
    [repository projection](repository/campaign_selected_tag_repository.go:187), [DTO](app/dto/smart_targeting_dto.go:22), [mapper](business_flow/smart_targeting_flow.go:276), [documented explanation fields](docs/smart-targeting-api.md:43)
 
 `go test ./business_flow ./repository ./app/handlers` passes.
+
+---
+
+Candoo Black Send:
+P2 — Execution does not validate the persisted color-eligibility snapshot. allowed_colors is stored, but CurrentForExecution only matches platform, tags, grades, and version. If an admin changes a line’s provider after capacity calculation, scheduler selection uses the new provider rule against a capacity count made with the old one—leading to a late execution failure or stale capacity use. [capacity lookup (line 73)](/home/amirphl/Downloads/Yamata-no-Orochi/repository/campaign_targeting_capacity_repository.go:73)
