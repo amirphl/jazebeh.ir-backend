@@ -92,6 +92,7 @@ var (
 	ErrCampaignAudienceTargetingMethodInvalid   = errors.New("campaign audience targeting method is invalid")
 	ErrSmartTargetingTagsRequired               = errors.New("at least one tag must be selected for Smart Targeting")
 	ErrSmartTargetingTagInvalid                 = errors.New("one or more selected tags are unavailable for this bundle")
+	ErrSmartTargetingTagCapacityInvalid         = errors.New("smart targeting tag capacity must be non-negative")
 	ErrSmartTargetingSortInvalid                = errors.New("smart targeting sort field or direction is invalid")
 	ErrSmartTargetingScoreUnavailable           = errors.New("bundle persona fit score is unavailable")
 	ErrSmartTargetingSearchTooLong              = errors.New("smart targeting search must not exceed 200 characters")
