@@ -296,7 +296,7 @@ type TagRepository interface {
 // reads prefer the latest completed evaluation snapshot and fall back to the
 // active tag catalog when a bundle has no current score rows.
 type CampaignSelectedTagRepository interface {
-	ListAvailable(ctx context.Context, bundleID, campaignID uint, search, sortBy, sortDirection string, limit, offset int) ([]*models.SmartTargetingTagRow, int64, error)
+	ListAvailable(ctx context.Context, bundleID, campaignID uint, search string, capacity *int64, sortBy, sortDirection string, limit, offset int) ([]*models.SmartTargetingTagRow, int64, error)
 	ListAvailableTagIDs(ctx context.Context, bundleID uint, search, sortBy, sortDirection string, limit int) ([]uint, error)
 	ListSelected(ctx context.Context, campaignID uint) ([]*models.CampaignSelectedTag, error)
 	Summary(ctx context.Context, campaignID uint) (*models.CampaignSelectedTagSummary, error)
