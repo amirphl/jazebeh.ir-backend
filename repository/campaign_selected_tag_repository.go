@@ -152,14 +152,18 @@ func availableSmartTagsQuery(db *gorm.DB, bundleID uint) *gorm.DB {
 	) AS available_tags`, bundleID, bundleID)
 }
 
-func (r *CampaignSelectedTagRepositoryImpl) baseAvailableQuery(ctx context.Context, bundleID uint, search string) *gorm.DB {
+func (r *CampaignSelectedTagRepositoryImpl) baseAvailableQuery(ctx context.Context, bundleID uint, search string, capacity *int64) *gorm.DB {
 	query := availableSmartTagsQuery(r.getDB(ctx), bundleID).
 		Joins(`LEFT JOIN tag_test_phase_performance_summaries AS tag_test_summary
                  ON tag_test_summary.bundle_id = ?
 				AND tag_test_summary.tag_id = available_tags.tag_id`, bundleID).
 		Joins(`LEFT JOIN tag_overall_performance_summaries AS tag_overall_summary
 				 ON tag_overall_summary.tag_id = available_tags.tag_id`)
-	return applySmartTagSearch(query, search)
+	query = applySmartTagSearch(query, search)
+	if capacity != nil {
+		query = query.Where("available_tags.tag_audience_count > ?", *capacity)
+	}
+	return query
 }
 
 func applyCampaignTestPerformance(query *gorm.DB, campaignID, bundleID uint) *gorm.DB {
@@ -170,20 +174,20 @@ func applyCampaignTestPerformance(query *gorm.DB, campaignID, bundleID uint) *go
 				AND campaign_test_performance.phase_type = 'test'`, campaignID, bundleID)
 }
 
-func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(ctx context.Context, bundleID, campaignID uint, search, sortBy, sortDirection string, limit, offset int) ([]*models.SmartTargetingTagRow, int64, error) {
+func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(ctx context.Context, bundleID, campaignID uint, search string, capacity *int64, sortBy, sortDirection string, limit, offset int) ([]*models.SmartTargetingTagRow, int64, error) {
 	order, err := smartTagOrder(sortBy, sortDirection)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	countQuery := r.baseAvailableQuery(ctx, bundleID, search)
+	countQuery := r.baseAvailableQuery(ctx, bundleID, search, capacity)
 	var total int64
 	if err := countQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	rows := make([]*models.SmartTargetingTagRow, 0)
-	query := r.baseAvailableQuery(ctx, bundleID, search).
+	query := r.baseAvailableQuery(ctx, bundleID, search, capacity).
 		Select(`available_tags.tag_id,
                  available_tags.tag_name,
                  available_tags.tag_display_title,
@@ -231,7 +235,7 @@ func (r *CampaignSelectedTagRepositoryImpl) ListAvailableTagIDs(ctx context.Cont
 		return nil, err
 	}
 	var ids []uint
-	query := r.baseAvailableQuery(ctx, bundleID, search).Select("available_tags.tag_id").Order(order)
+	query := r.baseAvailableQuery(ctx, bundleID, search, nil).Select("available_tags.tag_id").Order(order)
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
