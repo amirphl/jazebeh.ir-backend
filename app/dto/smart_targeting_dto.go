@@ -5,10 +5,14 @@ import "time"
 // ListSmartTargetingTagsRequest carries normalized list filters from either a
 // campaign-scoped or bundle-scoped Smart Targeting endpoint.
 type ListSmartTargetingTagsRequest struct {
-	CustomerID    uint
-	BundleID      uint
-	CampaignUUID  string
-	Search        string
+	CustomerID   uint
+	BundleID     uint
+	CampaignUUID string
+	Search       string
+	// Capacity, when present, returns only tags whose capacity is strictly
+	// greater than this value. A pointer keeps an omitted filter distinct from
+	// a zero-capacity threshold.
+	Capacity      *int64
 	SortBy        string
 	SortDirection string
 	Page          int
