@@ -268,13 +268,14 @@ func (h *CampaignHandler) GetSmartTargetingCapacityCalculationByID(c fiber.Ctx) 
 // @Security BearerAuth
 // @Param uuid path string true "Owned campaign UUID" format(uuid)
 // @Param search query string false "Case-insensitive tag name or display-title search (maximum 200 characters)"
+// @Param capacity query integer false "Return tags with capacity strictly greater than this value" minimum(0)
 // @Param sort_by query string false "Sort field. bundle_persona_fit_score requires a completed bundle evaluation." Enums(tag_capacity,bundle_persona_fit_score,test_phase_avg_ctr,overall_avg_ctr)
 // @Param sort_direction query string false "Sort direction" Enums(asc,desc)
 // @Param page query int false "Page number" default(1) minimum(1)
 // @Param page_size query int false "Items per page; limit is accepted as a backward-compatible alias" default(20) minimum(1) maximum(100)
 // @Param limit query int false "Backward-compatible alias for page_size; ignored when page_size is supplied" minimum(1) maximum(100)
 // @Success 200 {object} dto.APIResponse{data=dto.ListSmartTargetingTagsResponse} "Tag page and complete selection state"
-// @Failure 400 {object} dto.APIResponse "Invalid UUID, pagination, search, or sort; persona score unavailable"
+// @Failure 400 {object} dto.APIResponse "Invalid UUID, capacity, pagination, search, or sort; persona score unavailable"
 // @Failure 401 {object} dto.APIResponse "Authentication required"
 // @Failure 403 {object} dto.APIResponse "Campaign belongs to another customer"
 // @Failure 404 {object} dto.APIResponse "Campaign or bundle not found"
@@ -297,11 +298,15 @@ func (h *CampaignHandler) ListSmartTargetingTags(c fiber.Ctx) error {
 	if err != nil {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page", "INVALID_PAGE", nil)
 	}
+	capacity, err := parseOptionalNonNegativeInt64Query(c.Query("capacity"))
+	if err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid capacity", "INVALID_CAPACITY", nil)
+	}
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/tags", 30*time.Second)
 	defer cancel()
 	res, err := h.smartTargetingFlow.ListTags(ctx, &dto.ListSmartTargetingTagsRequest{
 		CustomerID: customerID, CampaignUUID: c.Params("uuid"), Search: c.Query("search"),
-		SortBy: c.Query("sort_by"), SortDirection: c.Query("sort_direction"), Page: page, PageSize: pageSize,
+		Capacity: capacity, SortBy: c.Query("sort_by"), SortDirection: c.Query("sort_direction"), Page: page, PageSize: pageSize,
 	})
 	if err != nil {
 		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to list Smart Targeting tags", "SMART_TARGETING_TAG_LIST_FAILED")
@@ -317,13 +322,14 @@ func (h *CampaignHandler) ListSmartTargetingTags(c fiber.Ctx) error {
 // @Security BearerAuth
 // @Param id path int true "Owned bundle ID" minimum(1)
 // @Param search query string false "Case-insensitive tag name or display-title search (maximum 200 characters)"
+// @Param capacity query integer false "Return tags with capacity strictly greater than this value" minimum(0)
 // @Param sort_by query string false "Sort field. bundle_persona_fit_score requires a completed bundle evaluation." Enums(tag_capacity,bundle_persona_fit_score,test_phase_avg_ctr,overall_avg_ctr)
 // @Param sort_direction query string false "Sort direction" Enums(asc,desc)
 // @Param page query int false "Page number" default(1) minimum(1)
 // @Param page_size query int false "Items per page; limit is accepted as a backward-compatible alias" default(20) minimum(1) maximum(100)
 // @Param limit query int false "Backward-compatible alias for page_size; ignored when page_size is supplied" minimum(1) maximum(100)
 // @Success 200 {object} dto.APIResponse{data=dto.ListSmartTargetingTagsResponse} "Available tag page"
-// @Failure 400 {object} dto.APIResponse "Invalid bundle ID, pagination, search, or sort; persona score unavailable"
+// @Failure 400 {object} dto.APIResponse "Invalid bundle ID, capacity, pagination, search, or sort; persona score unavailable"
 // @Failure 401 {object} dto.APIResponse "Authentication required"
 // @Failure 403 {object} dto.APIResponse "Bundle belongs to another customer"
 // @Failure 404 {object} dto.APIResponse "Bundle not found"
@@ -350,11 +356,15 @@ func (h *CampaignHandler) ListBundleSmartTargetingTags(c fiber.Ctx) error {
 	if err != nil {
 		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid page", "INVALID_PAGE", nil)
 	}
+	capacity, err := parseOptionalNonNegativeInt64Query(c.Query("capacity"))
+	if err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid capacity", "INVALID_CAPACITY", nil)
+	}
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/smart-targeting/tags", 30*time.Second)
 	defer cancel()
 	res, err := h.smartTargetingFlow.ListBundleTags(ctx, &dto.ListSmartTargetingTagsRequest{
 		CustomerID: customerID, BundleID: uint(bundleID), Search: c.Query("search"),
-		SortBy: c.Query("sort_by"), SortDirection: c.Query("sort_direction"), Page: page, PageSize: pageSize,
+		Capacity: capacity, SortBy: c.Query("sort_by"), SortDirection: c.Query("sort_direction"), Page: page, PageSize: pageSize,
 	})
 	if err != nil {
 		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to list Smart Targeting tags", "SMART_TARGETING_TAG_LIST_FAILED")
@@ -371,6 +381,17 @@ func parseBoundedPositiveQuery(value string, defaultValue, max int) (int, error)
 		return 0, errors.New("invalid positive integer")
 	}
 	return parsed, nil
+}
+
+func parseOptionalNonNegativeInt64Query(value string) (*int64, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 {
+		return nil, errors.New("invalid non-negative integer")
+	}
+	return &parsed, nil
 }
 
 // maxPageForSmartTargetingOffset returns the greatest page whose zero-based
