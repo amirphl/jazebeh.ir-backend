@@ -98,7 +98,7 @@ func TestBaseAvailableSmartTagsQueryReadsMaterializedTestPerformance(t *testing.
 	repo := &CampaignSelectedTagRepositoryImpl{db: db}
 
 	var rows []uint
-	statement := repo.baseAvailableQuery(t.Context(), 42, "").
+	statement := repo.baseAvailableQuery(t.Context(), 42, "", nil).
 		Select("available_tags.tag_id").
 		Order("tag_test_summary.test_phase_avg_ctr DESC NULLS LAST").
 		Find(&rows).Statement
@@ -119,6 +119,30 @@ func TestBaseAvailableSmartTagsQueryReadsMaterializedTestPerformance(t *testing.
 	}
 }
 
+func TestBaseAvailableSmartTagsQueryFiltersCapacityStrictly(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test dbname=test sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+	repo := &CampaignSelectedTagRepositoryImpl{db: db}
+	capacity := int64(100)
+	var rows []uint
+	statement := repo.baseAvailableQuery(t.Context(), 42, "", &capacity).
+		Select("available_tags.tag_id").
+		Find(&rows).Statement
+	if statement.Error != nil {
+		t.Fatalf("build capacity-filtered tag query: %v", statement.Error)
+	}
+	if !strings.Contains(statement.SQL.String(), "available_tags.tag_audience_count > $4") {
+		t.Fatalf("capacity query is not strict-greater-than:\n%s", statement.SQL.String())
+	}
+	if got, want := statement.Vars[len(statement.Vars)-1], capacity; got != want {
+		t.Fatalf("capacity bind = %#v, want %d", got, want)
+	}
+}
+
 func TestCampaignTestPerformanceJoinIsBundleScoped(t *testing.T) {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN: "host=localhost user=test dbname=test sslmode=disable",
@@ -129,7 +153,7 @@ func TestCampaignTestPerformanceJoinIsBundleScoped(t *testing.T) {
 	repo := &CampaignSelectedTagRepositoryImpl{db: db}
 
 	var rows []uint
-	statement := applyCampaignTestPerformance(repo.baseAvailableQuery(t.Context(), 42, ""), 77, 42).
+	statement := applyCampaignTestPerformance(repo.baseAvailableQuery(t.Context(), 42, "", nil), 77, 42).
 		Select("available_tags.tag_id").
 		Find(&rows).Statement
 	if statement.Error != nil {
