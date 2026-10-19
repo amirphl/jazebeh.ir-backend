@@ -148,16 +148,68 @@ func smartTargetingPageOffset(page, pageSize int) (int, error) {
 	return (page - 1) * pageSize, nil
 }
 
+type smartTargetingTagListSource struct {
+	bundleID            uint
+	campaignID          uint
+	evaluationAvailable bool
+	executionPhase      bool
+}
+
+func smartTargetingTagListOffset(req *dto.ListSmartTargetingTagsRequest) (int, error) {
+	if req == nil || req.Page < 1 || req.PageSize < 1 || req.PageSize > 100 {
+		return 0, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", ErrInvalidPage)
+	}
+	if req.Capacity != nil && *req.Capacity < 0 {
+		return 0, NewBusinessError("SMART_TARGETING_QUERY_INVALID", ErrSmartTargetingTagCapacityInvalid.Error(), ErrSmartTargetingTagCapacityInvalid)
+	}
+	offset, err := smartTargetingPageOffset(req.Page, req.PageSize)
+	if err != nil {
+		return 0, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", err)
+	}
+	return offset, nil
+}
+
+// listAvailableTags contains the shared query, filtering, sorting, and
+// pagination behavior for campaign- and bundle-scoped tag tables.
+func (s *SmartTargetingFlowImpl) listAvailableTags(ctx context.Context, req *dto.ListSmartTargetingTagsRequest, source smartTargetingTagListSource, offset int) (*dto.ListSmartTargetingTagsResponse, error) {
+	search, sortBy, direction, err := normalizeSmartTargetingQuery(
+		req.Search,
+		req.SortBy,
+		req.SortDirection,
+		source.evaluationAvailable,
+		source.executionPhase,
+	)
+	if err != nil {
+		return nil, NewBusinessError("SMART_TARGETING_QUERY_INVALID", err.Error(), err)
+	}
+	rows, total, err := s.selectionRepo.ListAvailable(ctx, source.bundleID, source.campaignID, search, req.Capacity, sortBy, direction, req.PageSize, offset)
+	if err != nil {
+		return nil, NewBusinessError("SMART_TARGETING_TAG_LIST_FAILED", "Failed to list smart targeting tags", err)
+	}
+	items := make([]dto.SmartTargetingTagItem, 0, len(rows))
+	for _, row := range rows {
+		if row != nil {
+			items = append(items, smartTargetingTagItem(row))
+		}
+	}
+	totalPages := 0
+	if total > 0 {
+		totalPages = int(math.Ceil(float64(total) / float64(req.PageSize)))
+	}
+	return &dto.ListSmartTargetingTagsResponse{
+		Items: items, EvaluationAvailable: source.evaluationAvailable,
+		EffectiveSortBy: sortBy, EffectiveSortDirection: direction,
+		Pagination: dto.PaginationInfo{Total: total, Page: req.Page, Limit: req.PageSize, TotalPages: totalPages},
+	}, nil
+}
+
 // ListTags returns one page of tags for an owned campaign plus the complete
 // persisted selection and summary. SelectedTagIDs intentionally spans all
 // pages so clients can paginate without discarding off-page selections.
 func (s *SmartTargetingFlowImpl) ListTags(ctx context.Context, req *dto.ListSmartTargetingTagsRequest) (*dto.ListSmartTargetingTagsResponse, error) {
-	if req == nil || req.Page < 1 || req.PageSize < 1 || req.PageSize > 100 {
-		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", ErrInvalidPage)
-	}
-	offset, err := smartTargetingPageOffset(req.Page, req.PageSize)
+	offset, err := smartTargetingTagListOffset(req)
 	if err != nil {
-		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", err)
+		return nil, err
 	}
 	campaign, err := s.ownedCampaign(ctx, req.CustomerID, req.CampaignUUID)
 	if err != nil {
@@ -167,19 +219,12 @@ func (s *SmartTargetingFlowImpl) ListTags(ctx context.Context, req *dto.ListSmar
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_EVALUATION_LOOKUP_FAILED", "Failed to lookup bundle evaluation", err)
 	}
-	search, sortBy, direction, err := normalizeSmartTargetingQuery(
-		req.Search,
-		req.SortBy,
-		req.SortDirection,
-		evaluated,
-		campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseExecution,
-	)
+	response, err := s.listAvailableTags(ctx, req, smartTargetingTagListSource{
+		bundleID: *campaign.BundleID, campaignID: campaign.ID, evaluationAvailable: evaluated,
+		executionPhase: campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseExecution,
+	}, offset)
 	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_QUERY_INVALID", err.Error(), err)
-	}
-	rows, total, err := s.selectionRepo.ListAvailable(ctx, *campaign.BundleID, campaign.ID, search, sortBy, direction, req.PageSize, offset)
-	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_TAG_LIST_FAILED", "Failed to list smart targeting tags", err)
+		return nil, err
 	}
 	selected, err := s.selectionRepo.ListSelected(ctx, campaign.ID)
 	if err != nil {
@@ -189,27 +234,12 @@ func (s *SmartTargetingFlowImpl) ListTags(ctx context.Context, req *dto.ListSmar
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_SELECTION_LOOKUP_FAILED", "Failed to load selection summary", err)
 	}
-
-	items := make([]dto.SmartTargetingTagItem, 0, len(rows))
-	for _, row := range rows {
-		if row != nil {
-			items = append(items, smartTargetingTagItem(row))
-		}
-	}
-	selectedIDs := make([]uint, 0, len(selected))
+	response.SelectedTagIDs = make([]uint, 0, len(selected))
 	for _, item := range selected {
-		selectedIDs = append(selectedIDs, item.TagID)
+		response.SelectedTagIDs = append(response.SelectedTagIDs, item.TagID)
 	}
-	totalPages := 0
-	if total > 0 {
-		totalPages = int(math.Ceil(float64(total) / float64(req.PageSize)))
-	}
-	return &dto.ListSmartTargetingTagsResponse{
-		Items: items, SelectedTagIDs: selectedIDs, EvaluationAvailable: evaluated,
-		EffectiveSortBy: sortBy, EffectiveSortDirection: direction,
-		Pagination: dto.PaginationInfo{Total: total, Page: req.Page, Limit: req.PageSize, TotalPages: totalPages},
-		Summary:    dto.SmartTargetingSelectionSummary{SelectedTagCount: summary.SelectedTagCount, SelectedRawCapacity: summary.SelectedRawCapacity},
-	}, nil
+	response.Summary = dto.SmartTargetingSelectionSummary{SelectedTagCount: summary.SelectedTagCount, SelectedRawCapacity: summary.SelectedRawCapacity}
+	return response, nil
 }
 
 // ListBundleTags returns the selectable tag table before a campaign exists.
@@ -217,12 +247,9 @@ func (s *SmartTargetingFlowImpl) ListTags(ctx context.Context, req *dto.ListSmar
 // explicitly empty because selected IDs are submitted atomically when the
 // campaign is created.
 func (s *SmartTargetingFlowImpl) ListBundleTags(ctx context.Context, req *dto.ListSmartTargetingTagsRequest) (*dto.ListSmartTargetingTagsResponse, error) {
-	if req == nil || req.Page < 1 || req.PageSize < 1 || req.PageSize > 100 {
-		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", ErrInvalidPage)
-	}
-	offset, err := smartTargetingPageOffset(req.Page, req.PageSize)
+	offset, err := smartTargetingTagListOffset(req)
 	if err != nil {
-		return nil, NewBusinessError("INVALID_PAGINATION", "Page must be at least 1 and page_size must be between 1 and 100", err)
+		return nil, err
 	}
 	if req.CustomerID == 0 {
 		return nil, NewBusinessError("MISSING_CUSTOMER_ID", "Customer ID is required", ErrCustomerNotFound)
@@ -241,33 +268,18 @@ func (s *SmartTargetingFlowImpl) ListBundleTags(ctx context.Context, req *dto.Li
 	if err != nil {
 		return nil, NewBusinessError("SMART_TARGETING_EVALUATION_LOOKUP_FAILED", "Failed to lookup bundle evaluation", err)
 	}
-	search, sortBy, direction, err := normalizeSmartTargetingQuery(req.Search, req.SortBy, req.SortDirection, evaluated, false)
+	response, err := s.listAvailableTags(ctx, req, smartTargetingTagListSource{
+		bundleID: bundle.ID, evaluationAvailable: evaluated,
+	}, offset)
 	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_QUERY_INVALID", err.Error(), err)
+		return nil, err
 	}
-	rows, total, err := s.selectionRepo.ListAvailable(ctx, bundle.ID, 0, search, sortBy, direction, req.PageSize, offset)
-	if err != nil {
-		return nil, NewBusinessError("SMART_TARGETING_TAG_LIST_FAILED", "Failed to list smart targeting tags", err)
+	response.SelectedTagIDs = []uint{}
+	response.Summary = dto.SmartTargetingSelectionSummary{
+		SelectedTagCount:    0,
+		SelectedRawCapacity: 0,
 	}
-	items := make([]dto.SmartTargetingTagItem, 0, len(rows))
-	for _, row := range rows {
-		if row != nil {
-			items = append(items, smartTargetingTagItem(row))
-		}
-	}
-	totalPages := 0
-	if total > 0 {
-		totalPages = int(math.Ceil(float64(total) / float64(req.PageSize)))
-	}
-	return &dto.ListSmartTargetingTagsResponse{
-		Items: items, SelectedTagIDs: []uint{}, EvaluationAvailable: evaluated,
-		EffectiveSortBy: sortBy, EffectiveSortDirection: direction,
-		Pagination: dto.PaginationInfo{Total: total, Page: req.Page, Limit: req.PageSize, TotalPages: totalPages},
-		Summary: dto.SmartTargetingSelectionSummary{
-			SelectedTagCount:    0,
-			SelectedRawCapacity: 0,
-		},
-	}, nil
+	return response, nil
 }
 
 // smartTargetingTagItem maps every read-model field into its API counterpart.
