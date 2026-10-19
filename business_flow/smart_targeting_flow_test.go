@@ -79,6 +79,39 @@ func TestSmartTargetingPageOffsetRejectsOverflow(t *testing.T) {
 	}
 }
 
+func TestSmartTargetingTagListOffsetValidatesCapacity(t *testing.T) {
+	capacity := int64(-1)
+	_, err := smartTargetingTagListOffset(&dto.ListSmartTargetingTagsRequest{
+		Page: 1, PageSize: 20, Capacity: &capacity,
+	})
+	if !errors.Is(err, ErrSmartTargetingTagCapacityInvalid) {
+		t.Fatalf("negative capacity error = %v, want ErrSmartTargetingTagCapacityInvalid", err)
+	}
+
+	zero := int64(0)
+	offset, err := smartTargetingTagListOffset(&dto.ListSmartTargetingTagsRequest{
+		Page: 2, PageSize: 20, Capacity: &zero,
+	})
+	if err != nil || offset != 20 {
+		t.Fatalf("zero capacity offset = (%d, %v), want (20, nil)", offset, err)
+	}
+}
+
+func TestListAvailableTagsForwardsCapacityFilter(t *testing.T) {
+	repo := &samplingSelectedTagRepositoryStub{}
+	flow := &SmartTargetingFlowImpl{selectionRepo: repo}
+	capacity := int64(100)
+	req := &dto.ListSmartTargetingTagsRequest{Page: 1, PageSize: 20, Capacity: &capacity}
+
+	response, err := flow.listAvailableTags(t.Context(), req, smartTargetingTagListSource{bundleID: 7}, 0)
+	if err != nil {
+		t.Fatalf("listAvailableTags() error = %v", err)
+	}
+	if response.Pagination.Total != 0 || repo.capacity == nil || *repo.capacity != capacity {
+		t.Fatalf("capacity filter was not forwarded: response=%#v repository capacity=%v", response.Pagination, repo.capacity)
+	}
+}
+
 func TestNormalizeSmartTargetingQueryDefaults(t *testing.T) {
 	tests := []struct {
 		name      string
