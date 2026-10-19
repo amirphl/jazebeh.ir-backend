@@ -152,7 +152,7 @@ WHERE campaign_id = 1900000003`, executionLease.Add(-time.Second), executionLeas
 	assertOverallTagPerformanceIntegration(t, db, 1900000001, 4, 4, 4, 2, 0.5)
 	assertOverallTagPerformanceNullCTR(t, db, 1900000003)
 	rows, _, err := NewCampaignSelectedTagRepository(db).ListAvailable(
-		context.Background(), 1900000001, 1900000003, "", "overall_avg_ctr", "desc", 10, 0,
+		context.Background(), 1900000001, 1900000003, "", nil, "overall_avg_ctr", "desc", 10, 0,
 	)
 	if err != nil {
 		t.Fatalf("read Execution tag table: %v", err)
@@ -467,6 +467,7 @@ func assertTagTestPerformanceMaterializedAPIRead(t *testing.T, db *gorm.DB) {
 		1900000001,
 		1900000001,
 		"",
+		nil,
 		"test_phase_avg_ctr",
 		"desc",
 		10,
