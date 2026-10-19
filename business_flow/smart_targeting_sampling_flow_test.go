@@ -18,6 +18,7 @@ import (
 type samplingSelectedTagRepositoryStub struct {
 	selected    []*models.CampaignSelectedTag
 	validateErr error
+	capacity    *int64
 }
 
 type smartTargetingLineNumberRepositoryStub struct {
@@ -33,7 +34,8 @@ func (s *smartTargetingLineNumberRepositoryStub) ByValue(_ context.Context, valu
 	return s.line, nil
 }
 
-func (s *samplingSelectedTagRepositoryStub) ListAvailable(context.Context, uint, uint, string, string, string, int, int) ([]*models.SmartTargetingTagRow, int64, error) {
+func (s *samplingSelectedTagRepositoryStub) ListAvailable(_ context.Context, _ uint, _ uint, _ string, capacity *int64, _ string, _ string, _ int, _ int) ([]*models.SmartTargetingTagRow, int64, error) {
+	s.capacity = capacity
 	return nil, 0, nil
 }
 
