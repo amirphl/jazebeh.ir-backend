@@ -4343,6 +4343,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Return tags with capacity strictly greater than this value",
+                        "name": "capacity",
+                        "in": "query"
+                    },
+                    {
                         "enum": [
                             "tag_capacity",
                             "bundle_persona_fit_score",
@@ -4410,7 +4417,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid bundle ID, pagination, search, or sort; persona score unavailable",
+                        "description": "Invalid bundle ID, capacity, pagination, search, or sort; persona score unavailable",
                         "schema": {
                             "$ref": "#/definitions/dto.APIResponse"
                         }
@@ -4577,6 +4584,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Evaluation already active or feature disabled",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Daily evaluation limit reached",
                         "schema": {
                             "$ref": "#/definitions/dto.APIResponse"
                         }
@@ -6100,6 +6113,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Return tags with capacity strictly greater than this value",
+                        "name": "capacity",
+                        "in": "query"
+                    },
+                    {
                         "enum": [
                             "tag_capacity",
                             "bundle_persona_fit_score",
@@ -6167,7 +6187,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid UUID, pagination, search, or sort; persona score unavailable",
+                        "description": "Invalid UUID, capacity, pagination, search, or sort; persona score unavailable",
                         "schema": {
                             "$ref": "#/definitions/dto.APIResponse"
                         }
@@ -10878,6 +10898,9 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "smart_targeting_test_selection_id": {
+                    "type": "integer"
                 },
                 "status": {
                     "type": "string"
