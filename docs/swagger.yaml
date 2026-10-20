@@ -1552,6 +1552,8 @@ definitions:
         items:
           type: integer
         type: array
+      smart_targeting_test_selection_id:
+        type: integer
       status:
         type: string
       tags:
@@ -6207,6 +6209,11 @@ paths:
         in: query
         name: search
         type: string
+      - description: Return tags with capacity strictly greater than this value
+        in: query
+        minimum: 0
+        name: capacity
+        type: integer
       - description: Sort field. bundle_persona_fit_score requires a completed bundle
           evaluation.
         enum:
@@ -6257,8 +6264,8 @@ paths:
                   $ref: '#/definitions/dto.ListSmartTargetingTagsResponse'
               type: object
         "400":
-          description: Invalid bundle ID, pagination, search, or sort; persona score
-            unavailable
+          description: Invalid bundle ID, capacity, pagination, search, or sort; persona
+            score unavailable
           schema:
             $ref: '#/definitions/dto.APIResponse'
         "401":
@@ -6367,6 +6374,10 @@ paths:
             $ref: '#/definitions/dto.APIResponse'
         "409":
           description: Evaluation already active or feature disabled
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "429":
+          description: Daily evaluation limit reached
           schema:
             $ref: '#/definitions/dto.APIResponse'
         "500":
@@ -7024,6 +7035,11 @@ paths:
         in: query
         name: search
         type: string
+      - description: Return tags with capacity strictly greater than this value
+        in: query
+        minimum: 0
+        name: capacity
+        type: integer
       - description: Sort field. bundle_persona_fit_score requires a completed bundle
           evaluation.
         enum:
@@ -7074,7 +7090,8 @@ paths:
                   $ref: '#/definitions/dto.ListSmartTargetingTagsResponse'
               type: object
         "400":
-          description: Invalid UUID, pagination, search, or sort; persona score unavailable
+          description: Invalid UUID, capacity, pagination, search, or sort; persona
+            score unavailable
           schema:
             $ref: '#/definitions/dto.APIResponse'
         "401":
