@@ -376,6 +376,7 @@ type SystemConfig struct {
 // PayamSMSConfig holds credentials and endpoints for PayamSMS OAuth
 type PayamSMSConfig struct {
 	TokenURL        string `json:"token_url"`
+	BalanceURL      string `json:"balance_url"`
 	SystemName      string `json:"system_name"`
 	Username        string `json:"username"`
 	Password        string `json:"password"`
@@ -448,6 +449,10 @@ type SchedulerConfig struct {
 	TagTestPerformanceSchedulerEnabled         bool          `json:"tag_test_performance_scheduler_enabled"`
 	TagTestPerformanceSchedulerInterval        time.Duration `json:"tag_test_performance_scheduler_interval"`
 	TagTestPerformanceSchedulerBatchSize       int           `json:"tag_test_performance_scheduler_batch_size"`
+	PayamBalanceMonitorEnabled                 bool          `json:"payam_balance_monitor_enabled"`
+	PayamBalanceMonitorInterval                time.Duration `json:"payam_balance_monitor_interval"`
+	PayamBalanceMonitorThresholdTomans         int64         `json:"payam_balance_monitor_threshold_tomans"`
+	PayamBalanceMonitorMaxAlertInterval        time.Duration `json:"payam_balance_monitor_max_alert_interval"`
 }
 
 // ExternalShortLinkConfig controls outbound mapping publication and inbound click synchronization.
@@ -481,6 +486,10 @@ func loadSchedulerConfig() SchedulerConfig {
 		TagTestPerformanceSchedulerEnabled:         getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
 		TagTestPerformanceSchedulerInterval:        getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
 		TagTestPerformanceSchedulerBatchSize:       getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
+		PayamBalanceMonitorEnabled:                 getEnvBool("PAYAM_BALANCE_MONITOR_ENABLED", true),
+		PayamBalanceMonitorInterval:                getEnvDuration("PAYAM_BALANCE_MONITOR_INTERVAL", 5*time.Minute),
+		PayamBalanceMonitorThresholdTomans:         getEnvInt64("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", 100_000_000),
+		PayamBalanceMonitorMaxAlertInterval:        getEnvDuration("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", time.Hour),
 	}
 }
 
@@ -760,6 +769,7 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 		},
 		PayamSMS: PayamSMSConfig{
 			TokenURL:        getEnvString("PAYAM_SMS_TOKEN_URL", "https://www.payamsms.com/auth/oauth/token/"),
+			BalanceURL:      getEnvString("PAYAM_SMS_BALANCE_URL", "https://www.payamsms.com/accounting/webservice/balance"),
 			SystemName:      getEnvString("PAYAM_SMS_SYSTEM_NAME", "jaazebeh.ir"),
 			Username:        getEnvString("PAYAM_SMS_USERNAME", ""),
 			Password:        getEnvString("PAYAM_SMS_PASSWORD", ""),
@@ -961,6 +971,15 @@ func getEnvInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
+func getEnvInt64(key string, defaultValue int64) int64 {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
 func getEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		if parsed, err := strconv.ParseBool(value); err == nil {
@@ -1116,6 +1135,20 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		}
 		if cfg.SMS.SourceNumber == "" {
 			errors = append(errors, "SMS_SOURCE_NUMBER is required for SMS provider")
+		}
+	}
+	if cfg.Scheduler.CampaignExecutionEnabled && cfg.Scheduler.PayamBalanceMonitorEnabled {
+		if strings.TrimSpace(cfg.PayamSMS.RootAccessToken) == "" {
+			errors = append(errors, "PAYAM_SMS_ROOT_ACCESS_TOKEN is required when PAYAM_BALANCE_MONITOR_ENABLED is true")
+		}
+		if strings.TrimSpace(cfg.PayamSMS.Username) == "" {
+			errors = append(errors, "PAYAM_SMS_USERNAME is required when PAYAM_BALANCE_MONITOR_ENABLED is true")
+		}
+		if strings.TrimSpace(cfg.PayamSMS.Password) == "" {
+			errors = append(errors, "PAYAM_SMS_PASSWORD is required when PAYAM_BALANCE_MONITOR_ENABLED is true")
+		}
+		if cfg.Scheduler.PayamBalanceMonitorThresholdTomans <= 0 || cfg.Scheduler.PayamBalanceMonitorThresholdTomans > 922_337_203_685_477_580 {
+			errors = append(errors, "PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS must be between 1 and 922337203685477580")
 		}
 	}
 	if cfg.CandooSMS.Enabled {
