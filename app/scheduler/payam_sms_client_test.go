@@ -278,6 +278,88 @@ func TestPayamFetchStatusStopsAfterThreeUnauthorizedAttempts(t *testing.T) {
 	}
 }
 
+func TestPayamFetchBalanceUsesRootTokenAndBearerToken(t *testing.T) {
+	t.Parallel()
+
+	client := newHTTPPayamSMSClientWithClient(config.PayamSMSConfig{
+		TokenURL:        "https://payam.example/auth/oauth/token",
+		BalanceURL:      "https://payam.example/accounting/webservice/balance",
+		RootAccessToken: "root-token",
+	}, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/auth/oauth/token":
+			if got := req.Header.Get("Authorization"); got != "Basic root-token" {
+				t.Fatalf("token authorization = %q, want root token", got)
+			}
+			return payamTestResponse(req, http.StatusOK, `{"access_token":"bearer-token"}`), nil
+		case "/accounting/webservice/balance":
+			if got := req.Header.Get("Authorization"); got != "Bearer bearer-token" {
+				t.Fatalf("balance authorization = %q, want bearer token", got)
+			}
+			return payamTestResponse(req, http.StatusOK, "4366117164"), nil
+		default:
+			t.Fatalf("unexpected request path %q", req.URL.Path)
+			return nil, nil
+		}
+	})})
+
+	balance, err := client.FetchBalance(context.Background())
+	if err != nil {
+		t.Fatalf("FetchBalance() error = %v", err)
+	}
+	if balance != 4_366_117_164 {
+		t.Fatalf("FetchBalance() = %d, want 4366117164", balance)
+	}
+}
+
+func TestPayamFetchBalanceRefreshesUnauthorizedTokenAndRetriesTransientFailure(t *testing.T) {
+	t.Parallel()
+
+	tokenCalls, balanceCalls := 0, 0
+	client := newHTTPPayamSMSClientWithClient(config.PayamSMSConfig{
+		TokenURL:        "https://payam.example/auth/oauth/token",
+		BalanceURL:      "https://payam.example/accounting/webservice/balance",
+		RootAccessToken: "root-token",
+	}, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/auth/oauth/token" {
+			tokenCalls++
+			return payamTestResponse(req, http.StatusOK, fmt.Sprintf(`{"access_token":"token-%d"}`, tokenCalls)), nil
+		}
+		balanceCalls++
+		switch balanceCalls {
+		case 1:
+			return payamTestResponse(req, http.StatusUnauthorized, "expired"), nil
+		case 2:
+			return payamTestResponse(req, http.StatusServiceUnavailable, "temporary"), nil
+		default:
+			return payamTestResponse(req, http.StatusOK, "100"), nil
+		}
+	})})
+	client.balanceRetryDelay = func(int) time.Duration { return 0 }
+
+	balance, err := client.FetchBalance(context.Background())
+	if err != nil {
+		t.Fatalf("FetchBalance() error = %v", err)
+	}
+	if balance != 100 || tokenCalls != 2 || balanceCalls != 3 {
+		t.Fatalf("balance=%d tokenCalls=%d balanceCalls=%d, want 100/2/3", balance, tokenCalls, balanceCalls)
+	}
+}
+
+func TestPayamFetchBalanceRejectsMalformedResponse(t *testing.T) {
+	t.Parallel()
+
+	client := newHTTPPayamSMSClientWithClient(config.PayamSMSConfig{TokenURL: "https://payam.example/token", BalanceURL: "https://payam.example/balance"}, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/token" {
+			return payamTestResponse(req, http.StatusOK, `{"access_token":"token"}`), nil
+		}
+		return payamTestResponse(req, http.StatusOK, `{"balance":100}`), nil
+	})})
+	if _, err := client.FetchBalance(context.Background()); err == nil {
+		t.Fatal("FetchBalance() unexpectedly accepted malformed balance")
+	}
+}
+
 func payamTestResponse(req *http.Request, statusCode int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
