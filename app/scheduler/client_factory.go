@@ -16,9 +16,24 @@ func NewPayamSMSClient(cfg config.PayamSMSConfig) PayamSMSClient {
 	return newHTTPPayamSMSClient(cfg)
 }
 
+// NewPayamBalanceClient creates a direct Payam balance client.
+func NewPayamBalanceClient(cfg config.PayamSMSConfig) PayamBalanceClient {
+	return newHTTPPayamSMSClient(cfg)
+}
+
 // NewPayamSMSClientWithHTTPSProxy creates a new PayamSMS client that routes
 // requests through the provided HTTPS proxy URL.
 func NewPayamSMSClientWithHTTPSProxy(cfg config.PayamSMSConfig, proxyURL string) (PayamSMSClient, error) {
+	client, err := newHTTPClientWithHTTPSProxy(60*time.Second, proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	return newHTTPPayamSMSClientWithClient(cfg, client), nil
+}
+
+// NewPayamBalanceClientWithHTTPSProxy creates a Payam balance client using the
+// same optional outbound proxy configuration as the other provider clients.
+func NewPayamBalanceClientWithHTTPSProxy(cfg config.PayamSMSConfig, proxyURL string) (PayamBalanceClient, error) {
 	client, err := newHTTPClientWithHTTPSProxy(60*time.Second, proxyURL)
 	if err != nil {
 		return nil, err
