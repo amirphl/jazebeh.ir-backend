@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,9 +39,13 @@ func isPayamRetryableError(err error) bool {
 	return strings.Contains(msg, "429") ||
 		strings.Contains(msg, "too many requests") ||
 		strings.Contains(msg, "http status: 500") ||
+		strings.Contains(msg, "http status 500") ||
 		strings.Contains(msg, "http status: 502") ||
+		strings.Contains(msg, "http status 502") ||
 		strings.Contains(msg, "http status: 503") ||
+		strings.Contains(msg, "http status 503") ||
 		strings.Contains(msg, "http status: 504") ||
+		strings.Contains(msg, "http status 504") ||
 		strings.Contains(msg, "timeout") ||
 		strings.Contains(msg, "timed out") ||
 		strings.Contains(msg, "connection reset") ||
@@ -116,6 +121,13 @@ type PayamSMSClient interface {
 	FetchStatus(ctx context.Context, token string, ids []string) (PayamStatusFetchResult, error)
 }
 
+// PayamBalanceClient is the minimal provider API needed by the balance monitor.
+// Keeping it separate from campaign delivery avoids coupling that worker to SMS
+// submission and delivery-status behavior.
+type PayamBalanceClient interface {
+	FetchBalance(ctx context.Context) (int64, error)
+}
+
 type httpPayamSMSClient struct {
 	cfg    config.PayamSMSConfig
 	client *http.Client
@@ -125,6 +137,7 @@ type httpPayamSMSClient struct {
 	accessToken string
 
 	statusUnauthorizedRetryDelay func(attempt int) time.Duration
+	balanceRetryDelay            func(attempt int) time.Duration
 }
 
 func newHTTPPayamSMSClient(cfg config.PayamSMSConfig) *httpPayamSMSClient {
@@ -139,6 +152,7 @@ func newHTTPPayamSMSClientWithClient(cfg config.PayamSMSConfig, client *http.Cli
 		cfg:                          cfg,
 		client:                       client,
 		statusUnauthorizedRetryDelay: payamRetryBackoffDelay,
+		balanceRetryDelay:            payamRetryBackoffDelay,
 	}
 }
 
@@ -393,6 +407,93 @@ func (c *httpPayamSMSClient) FetchStatus(ctx context.Context, token string, trac
 		token = refreshedToken
 	}
 	return out, nil
+}
+
+// FetchBalance returns the PayamSMS account balance in Rials. It obtains an
+// OAuth bearer token through GetToken (and therefore the configured root token),
+// retries transient failures, and refreshes a rejected bearer token.
+func (c *httpPayamSMSClient) FetchBalance(ctx context.Context) (int64, error) {
+	token, err := c.GetToken(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("payamsms balance token: %w", err)
+	}
+
+	for attempt := 0; attempt < payamStatusUnauthorizedMaxAttempts; attempt++ {
+		balance, err := c.fetchBalanceWithRetry(ctx, token)
+		if !isPayamUnauthorizedError(err) {
+			return balance, err
+		}
+		if attempt+1 >= payamStatusUnauthorizedMaxAttempts {
+			return 0, err
+		}
+		delay := payamRetryBackoffDelay(attempt)
+		if c.balanceRetryDelay != nil {
+			delay = c.balanceRetryDelay(attempt)
+		}
+		if sleepErr := sleepWithContext(ctx, delay); sleepErr != nil {
+			return 0, ctx.Err()
+		}
+		token, err = c.refreshTokenAfterUnauthorized(ctx, token)
+		if err != nil {
+			return 0, fmt.Errorf("payamsms balance token refresh after 401: %w", err)
+		}
+	}
+	return 0, fmt.Errorf("payamsms balance authorization loop ended unexpectedly")
+}
+
+func (c *httpPayamSMSClient) fetchBalanceWithRetry(ctx context.Context, token string) (int64, error) {
+	var (
+		balance int64
+		err     error
+	)
+	for attempt := 0; ; attempt++ {
+		balance, err = c.fetchBalanceOnce(ctx, token)
+		if !isPayamRetryableError(err) {
+			return balance, err
+		}
+		if payamRetryMaxAttempts > 0 && attempt+1 >= payamRetryMaxAttempts {
+			break
+		}
+		delay := payamRetryBackoffDelay(attempt)
+		if c.balanceRetryDelay != nil {
+			delay = c.balanceRetryDelay(attempt)
+		}
+		if sleepErr := sleepWithContext(ctx, delay); sleepErr != nil {
+			return 0, ctx.Err()
+		}
+	}
+	return balance, err
+}
+
+func (c *httpPayamSMSClient) fetchBalanceOnce(ctx context.Context, token string) (int64, error) {
+	balanceURL := strings.TrimSpace(c.cfg.BalanceURL)
+	if balanceURL == "" {
+		balanceURL = "https://www.payamsms.com/accounting/webservice/balance"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, balanceURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create payamsms balance request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return 0, fmt.Errorf("read payamsms balance response: %w", readErr)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return 0, &payamHTTPStatusError{operation: "balance", statusCode: resp.StatusCode, body: string(body)}
+	}
+
+	balance, err := strconv.ParseInt(strings.TrimSpace(string(body)), 10, 64)
+	if err != nil || balance < 0 {
+		return 0, fmt.Errorf("invalid payamsms balance response %q", strings.TrimSpace(string(body)))
+	}
+	return balance, nil
 }
 
 func (c *httpPayamSMSClient) fetchStatusWithRetry(ctx context.Context, token string, trackingIDs []string) (PayamStatusFetchResult, error) {
