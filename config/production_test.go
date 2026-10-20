@@ -185,6 +185,27 @@ func TestLoadSchedulerConfigReadsTagTestPerformanceSettings(t *testing.T) {
 	}
 }
 
+func TestLoadSchedulerConfigReadsPayamBalanceMonitorSettings(t *testing.T) {
+	t.Setenv("PAYAM_BALANCE_MONITOR_ENABLED", "false")
+	t.Setenv("PAYAM_BALANCE_MONITOR_INTERVAL", "17m")
+	t.Setenv("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", "123456789")
+	t.Setenv("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", "3h")
+
+	cfg := loadSchedulerConfig()
+	if cfg.PayamBalanceMonitorEnabled {
+		t.Fatal("PayamBalanceMonitorEnabled = true, want false")
+	}
+	if cfg.PayamBalanceMonitorInterval != 17*time.Minute {
+		t.Fatalf("PayamBalanceMonitorInterval = %s, want 17m", cfg.PayamBalanceMonitorInterval)
+	}
+	if cfg.PayamBalanceMonitorThresholdTomans != 123456789 {
+		t.Fatalf("PayamBalanceMonitorThresholdTomans = %d, want 123456789", cfg.PayamBalanceMonitorThresholdTomans)
+	}
+	if cfg.PayamBalanceMonitorMaxAlertInterval != 3*time.Hour {
+		t.Fatalf("PayamBalanceMonitorMaxAlertInterval = %s, want 3h", cfg.PayamBalanceMonitorMaxAlertInterval)
+	}
+}
+
 func TestReadConfigTextFilePreservesMultilineContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "prompt")
 	want := "first line\n\n  indented line\nlast line\n"
@@ -339,6 +360,38 @@ func TestValidateProductionConfigRejectsInvalidEnabledCandooSettings(t *testing.
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("validation error %q does not include %q", err, want)
 		}
+	}
+}
+
+func TestValidateProductionConfigRequiresPayamBalanceMonitorCredentials(t *testing.T) {
+	cfg := &ProductionConfig{Scheduler: SchedulerConfig{
+		CampaignExecutionEnabled:           true,
+		PayamBalanceMonitorEnabled:         true,
+		PayamBalanceMonitorThresholdTomans: 100_000_000,
+	}}
+	err := ValidateProductionConfig(cfg)
+	if err == nil {
+		t.Fatal("missing Payam balance-monitor credentials unexpectedly passed validation")
+	}
+	for _, want := range []string{"PAYAM_SMS_ROOT_ACCESS_TOKEN", "PAYAM_SMS_USERNAME", "PAYAM_SMS_PASSWORD"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("validation error %q does not include %q", err, want)
+		}
+	}
+}
+
+func TestValidateProductionConfigRejectsOverflowingPayamBalanceThreshold(t *testing.T) {
+	cfg := &ProductionConfig{
+		PayamSMS: PayamSMSConfig{RootAccessToken: "root", Username: "user", Password: "password"},
+		Scheduler: SchedulerConfig{
+			CampaignExecutionEnabled:           true,
+			PayamBalanceMonitorEnabled:         true,
+			PayamBalanceMonitorThresholdTomans: 922_337_203_685_477_581,
+		},
+	}
+	err := ValidateProductionConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS") {
+		t.Fatalf("validation error = %v, want threshold range failure", err)
 	}
 }
 
