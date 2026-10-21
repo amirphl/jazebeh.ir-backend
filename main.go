@@ -976,7 +976,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			testSamplingCalculationRepo,
 			log.Default(),
 			5*time.Second,
-			1,
+			cfg.Scheduler.SmartTargetingTestSamplingMaxParallelRuns,
 		)
 		stopTestSamplingScheduler := testSamplingScheduler.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopTestSamplingScheduler)

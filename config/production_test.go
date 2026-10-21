@@ -284,6 +284,20 @@ func TestLoadSchedulerConfigReadsSmartTargetingCapacitySchedulerFlag(t *testing.
 }
 
 func TestLoadSchedulerConfigReadsIndependentSmartTargetingTestSamplingSchedulerFlag(t *testing.T) {
+	t.Run("sampling concurrency defaults to one", func(t *testing.T) {
+		t.Setenv("SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS", "")
+		if got := loadSchedulerConfig().SmartTargetingTestSamplingMaxParallelRuns; got != 1 {
+			t.Fatalf("SmartTargetingTestSamplingMaxParallelRuns = %d, want 1", got)
+		}
+	})
+
+	t.Run("sampling concurrency can be increased explicitly", func(t *testing.T) {
+		t.Setenv("SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS", "2")
+		if got := loadSchedulerConfig().SmartTargetingTestSamplingMaxParallelRuns; got != 2 {
+			t.Fatalf("SmartTargetingTestSamplingMaxParallelRuns = %d, want 2", got)
+		}
+	})
+
 	t.Run("inherits capacity flag when unset", func(t *testing.T) {
 		t.Setenv("SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED", "true")
 		t.Setenv("SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED", "")

@@ -90,6 +90,8 @@ The checked-in production workflow requires the following `.env.beta` values:
 CAMPAIGN_EXECUTION_ENABLED=false
 SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED=true
 SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED=true
+# Default is 1. Increase only after verifying PostgreSQL can sustain concurrent audience scans.
+SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS=1
 TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED=true
 SMART_TAG_EVALUATION_ENABLED=true
 SMART_TAG_EVALUATION_SCHEDULER_ENABLED=true
@@ -107,7 +109,10 @@ running API container and overrides those responsibilities:
 
 The capacity and Test-sampling switches are independent. When the sampling
 variable is omitted, it inherits the capacity switch for backward
-compatibility; set it explicitly in production.
+compatibility; set it explicitly in production. Test sampling has one worker
+by default. Set `SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS=2` to prevent
+one large sampling request from blocking the whole queue, but do so only after
+confirming PostgreSQL has headroom for two simultaneous large audience scans.
 
 This prevents two processes from claiming the same job family. Run
 `scripts/deploy-production-beta.sh` after any image or environment change;

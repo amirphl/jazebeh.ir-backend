@@ -192,6 +192,14 @@ specific historical job. Status is `not_calculated`, `calculating`,
 when `is_current` is true; stale output is deliberately hidden and
 `recalculation_required` is true.
 
+Clients must treat GET as read-only: it never queues sampling work. After a
+selection or other sampling input changes, and whenever GET reports
+`not_calculated`, `stale`, `failed`, or `recalculation_required: true`, submit
+one POST to request/retry the generation, then poll only while the returned
+job is `calculating`. Repeated POSTs for unchanged input reuse the active job
+or a current completed result; clients should nevertheless avoid using polling
+as the trigger for POST retries.
+
 The worker processes selected tag IDs in persisted order:
 
 1. choose exactly `sample_size_per_tag` currently eligible audiences for the

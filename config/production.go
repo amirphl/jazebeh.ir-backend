@@ -446,6 +446,7 @@ type SchedulerConfig struct {
 	MessageSendMockEnabled                     bool          `json:"message_send_mock_enabled"`
 	SmartTargetingCapacitySchedulerEnabled     bool          `json:"smart_targeting_capacity_scheduler_enabled"`
 	SmartTargetingTestSamplingSchedulerEnabled bool          `json:"smart_targeting_test_sampling_scheduler_enabled"`
+	SmartTargetingTestSamplingMaxParallelRuns  int           `json:"smart_targeting_test_sampling_max_parallel_runs"`
 	TagTestPerformanceSchedulerEnabled         bool          `json:"tag_test_performance_scheduler_enabled"`
 	TagTestPerformanceSchedulerInterval        time.Duration `json:"tag_test_performance_scheduler_interval"`
 	TagTestPerformanceSchedulerBatchSize       int           `json:"tag_test_performance_scheduler_batch_size"`
@@ -483,13 +484,16 @@ func loadSchedulerConfig() SchedulerConfig {
 		// Fall back to the former shared switch for a backward-compatible rollout.
 		// An explicit sampling value always wins, so either worker can be enabled alone.
 		SmartTargetingTestSamplingSchedulerEnabled: getEnvBool("SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED", capacitySchedulerEnabled),
-		TagTestPerformanceSchedulerEnabled:         getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
-		TagTestPerformanceSchedulerInterval:        getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
-		TagTestPerformanceSchedulerBatchSize:       getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
-		PayamBalanceMonitorEnabled:                 getEnvBool("PAYAM_BALANCE_MONITOR_ENABLED", true),
-		PayamBalanceMonitorInterval:                getEnvDuration("PAYAM_BALANCE_MONITOR_INTERVAL", 5*time.Minute),
-		PayamBalanceMonitorThresholdTomans:         getEnvInt64("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", 100_000_000),
-		PayamBalanceMonitorMaxAlertInterval:        getEnvDuration("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", time.Hour),
+		// Sampling can be expensive, so retain the original single-worker behavior
+		// unless an operator deliberately provisions more database capacity.
+		SmartTargetingTestSamplingMaxParallelRuns: getEnvInt("SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS", 1),
+		TagTestPerformanceSchedulerEnabled:        getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
+		TagTestPerformanceSchedulerInterval:       getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
+		TagTestPerformanceSchedulerBatchSize:      getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
+		PayamBalanceMonitorEnabled:                getEnvBool("PAYAM_BALANCE_MONITOR_ENABLED", true),
+		PayamBalanceMonitorInterval:               getEnvDuration("PAYAM_BALANCE_MONITOR_INTERVAL", 5*time.Minute),
+		PayamBalanceMonitorThresholdTomans:        getEnvInt64("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", 100_000_000),
+		PayamBalanceMonitorMaxAlertInterval:       getEnvDuration("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", time.Hour),
 	}
 }
 
