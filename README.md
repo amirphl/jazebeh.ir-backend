@@ -252,10 +252,19 @@ When `CAMPAIGN_EXECUTION_ENABLED=true`, the app starts scheduler workers for:
 - Bale
 - Rubika
 - Soroush Plus
+- PayamSMS balance monitoring (when `PAYAM_BALANCE_MONITOR_ENABLED=true`)
 
 Schedulers poll ready campaigns through the internal bot API, fetch audience data, send through the configured provider clients, create sent-message rows, enqueue status checks, update processed campaign statistics, and notify configured admins on notable failures.
 
 For local API development, set `CAMPAIGN_EXECUTION_ENABLED=false` unless you intentionally want the workers to call provider and bot endpoints.
+
+The PayamSMS balance monitor runs immediately and then every
+`PAYAM_BALANCE_MONITOR_INTERVAL` (default `5m`). It obtains a bearer token with
+`PAYAM_SMS_ROOT_ACCESS_TOKEN`, checks `PAYAM_SMS_BALANCE_URL`, and warns
+`ADMIN_MOBILE` when the balance falls below
+`PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS` (default `100000000`). Repeated
+warnings double their delay up to `PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL`
+(default `1h`) and reset once the balance recovers.
 
 Smart-tag evaluation is independent of campaign execution. When both `SMART_TAG_EVALUATION_ENABLED=true` and `SMART_TAG_EVALUATION_SCHEDULER_ENABLED=true`, a bounded-concurrency worker claims queued bundle evaluations and processes persona analysis and tag-score batches through the configured OpenAI-compatible Responses API.
 
