@@ -834,6 +834,24 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	}
 
 	if cfg.Scheduler.CampaignExecutionEnabled {
+		if cfg.Scheduler.PayamBalanceMonitorEnabled {
+			balanceClient, err := scheduler.NewPayamBalanceClientWithHTTPSProxy(cfg.PayamSMS, cfg.IRHTTPSProxy)
+			if err != nil {
+				log.Printf("payamsms balance monitor: proxy client setup failed, using direct connection: %v", err)
+				balanceClient = scheduler.NewPayamBalanceClient(cfg.PayamSMS)
+			}
+			balanceScheduler := scheduler.NewPayamBalanceScheduler(
+				balanceClient,
+				notificationService,
+				cfg.Admin,
+				log.Default(),
+				cfg.Scheduler.PayamBalanceMonitorInterval,
+				cfg.Scheduler.PayamBalanceMonitorThresholdTomans,
+				cfg.Scheduler.PayamBalanceMonitorMaxAlertInterval,
+			)
+			stopFuncs = append(stopFuncs, balanceScheduler.Start(context.Background()))
+		}
+
 		// Start SMS campaign scheduler.
 		smsSched := scheduler.NewCampaignScheduler(
 			audienceProfileRepo,
