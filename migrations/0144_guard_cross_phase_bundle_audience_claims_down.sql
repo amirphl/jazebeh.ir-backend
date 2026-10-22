@@ -1,0 +1,8 @@
+BEGIN;
+
+DROP TRIGGER IF EXISTS trg_guard_materialized_bundle_audience_claim ON bundle_audience_selection_members;
+DROP TRIGGER IF EXISTS trg_guard_execution_bundle_audience_claim ON campaign_targeting_execution_reservations;
+DROP TRIGGER IF EXISTS trg_guard_test_bundle_audience_claim ON campaign_targeting_test_sample_reservations;
+DROP FUNCTION IF EXISTS guard_bundle_audience_claim();
+
+COMMIT;
