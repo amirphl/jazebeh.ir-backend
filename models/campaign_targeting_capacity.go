@@ -42,6 +42,7 @@ type CampaignTargetingCapacityCalculation struct {
 	InputHash                     string                                     `gorm:"type:char(64);not null" json:"input_hash"`
 	SelectedScoreClasses          pq.StringArray                             `gorm:"type:text[];not null" json:"selected_score_classes"`
 	SelectedTagCount              int                                        `gorm:"not null" json:"selected_tag_count"`
+	Phase                         string                                     `gorm:"type:varchar(16);not null;default:'execution'" json:"phase"`
 	ApplyBundleAudienceExclusions bool                                       `gorm:"not null;default:false" json:"apply_bundle_audience_exclusions"`
 	RawAudienceCount              int64                                      `gorm:"type:bigint;not null;default:0" json:"raw_audience_count"`
 	EligibleUniqueAudienceCount   int64                                      `gorm:"type:bigint;not null;default:0" json:"eligible_unique_audience_count_before_approved_campaign_deduction"`
