@@ -434,5 +434,26 @@
 \echo 'Running 0141_snapshot_smart_targeting_allowed_colors.sql...'
 \i migrations/0141_snapshot_smart_targeting_allowed_colors.sql
 
+\echo 'Running 0142_create_smart_targeting_execution_reservations.sql...'
+\i migrations/0142_create_smart_targeting_execution_reservations.sql
+
+\echo 'Running 0143_version_execution_reservations_and_capacity_phase.sql...'
+\i migrations/0143_version_execution_reservations_and_capacity_phase.sql
+
+\echo 'Running 0144_guard_cross_phase_bundle_audience_claims.sql...'
+\i migrations/0144_guard_cross_phase_bundle_audience_claims.sql
+
+\echo 'Running 0145_add_interrupted_campaign_status.sql...'
+\i migrations/0145_add_interrupted_campaign_status.sql
+
+\echo 'Running 0146_harden_execution_reservation_headers.sql...'
+\i migrations/0146_harden_execution_reservation_headers.sql
+
+\echo 'Running 0147_include_interrupted_campaigns_in_capacity_index.sql...'
+\i migrations/0147_include_interrupted_campaigns_in_capacity_index.sql
+
+\echo 'Running 0148_add_short_link_allocation_idempotency.sql...'
+\i migrations/0148_add_short_link_allocation_idempotency.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
