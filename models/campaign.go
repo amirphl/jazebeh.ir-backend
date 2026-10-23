@@ -32,11 +32,15 @@ const (
 	CampaignStatusWaitingForApproval  CampaignStatus = "waiting-for-approval"
 	CampaignStatusApproved            CampaignStatus = "approved"
 	CampaignStatusRunning             CampaignStatus = "running"
-	CampaignStatusExecuted            CampaignStatus = "executed"
-	CampaignStatusExpired             CampaignStatus = "expired"
-	CampaignStatusRejected            CampaignStatus = "rejected"
-	CampaignStatusCancelled           CampaignStatus = "cancelled"
-	CampaignStatusCancelledByAdmin    CampaignStatus = "cancelled-by-admin"
+	// CampaignStatusInterrupted is a terminal operational state. It is used
+	// when a scheduler lease expires after durable delivery records exist: the
+	// provider may have accepted some requests, so automatic replay is unsafe.
+	CampaignStatusInterrupted      CampaignStatus = "interrupted"
+	CampaignStatusExecuted         CampaignStatus = "executed"
+	CampaignStatusExpired          CampaignStatus = "expired"
+	CampaignStatusRejected         CampaignStatus = "rejected"
+	CampaignStatusCancelled        CampaignStatus = "cancelled"
+	CampaignStatusCancelledByAdmin CampaignStatus = "cancelled-by-admin"
 )
 
 func IsValidCampaignPlatform(p string) bool {
@@ -60,7 +64,7 @@ func (s CampaignStatus) Valid() bool {
 		CampaignStatusWaitingForApproval, CampaignStatusApproved,
 		CampaignStatusRejected, CampaignStatusCancelled,
 		CampaignStatusCancelledByAdmin,
-		CampaignStatusRunning, CampaignStatusExecuted, CampaignStatusExpired:
+		CampaignStatusRunning, CampaignStatusInterrupted, CampaignStatusExecuted, CampaignStatusExpired:
 		return true
 	default:
 		return false
@@ -283,6 +287,12 @@ type Campaign struct {
 	// eligible for finalization and runtime delivery.
 	SmartTargetingTestSamplingGeneration int64  `gorm:"not null;default:0" json:"-"`
 	ActiveSmartTargetingTestSelectionID  *int64 `json:"-"`
+	// SmartTargetingExecutionReservationVersion is a durable scheduler contract.
+	// Zero explicitly identifies campaigns approved before execution audience
+	// reservations existed; every newly finalized Smart Targeting execution
+	// campaign is marked with the current non-zero version and must have a
+	// matching execution reservation header before it can run.
+	SmartTargetingExecutionReservationVersion int `gorm:"not null;default:0" json:"-"`
 
 	BundleID *uint         `gorm:"index:idx_campaigns_bundle_id" json:"bundle_id,omitempty"`
 	Phase    CampaignPhase `gorm:"type:campaign_phase;not null;default:'execution'" json:"phase"`
@@ -398,6 +408,8 @@ func (c *Campaign) GetStatusDisplayName() string {
 		return "Cancelled by Admin"
 	case CampaignStatusRunning:
 		return "Running"
+	case CampaignStatusInterrupted:
+		return "Interrupted"
 	case CampaignStatusExecuted:
 		return "Executed"
 	default:
@@ -424,6 +436,8 @@ func (c *Campaign) GetStatusColor() string {
 		return "#6c757d" // gray
 	case CampaignStatusRunning:
 		return "#17a2b8" // cyan
+	case CampaignStatusInterrupted:
+		return "#dc3545" // red
 	case CampaignStatusExecuted:
 		return "#343a40" // dark gray
 	default:
