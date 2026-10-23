@@ -5,6 +5,27 @@
 
 \echo 'Starting database rollback...'
 
+\echo 'Running 0148_add_short_link_allocation_idempotency_down.sql...'
+\i migrations/0148_add_short_link_allocation_idempotency_down.sql
+
+\echo 'Running 0147_include_interrupted_campaigns_in_capacity_index_down.sql...'
+\i migrations/0147_include_interrupted_campaigns_in_capacity_index_down.sql
+
+\echo 'Running 0146_harden_execution_reservation_headers_down.sql...'
+\i migrations/0146_harden_execution_reservation_headers_down.sql
+
+\echo 'Running 0145_add_interrupted_campaign_status_down.sql...'
+\i migrations/0145_add_interrupted_campaign_status_down.sql
+
+\echo 'Running 0144_guard_cross_phase_bundle_audience_claims_down.sql...'
+\i migrations/0144_guard_cross_phase_bundle_audience_claims_down.sql
+
+\echo 'Running 0143_version_execution_reservations_and_capacity_phase_down.sql...'
+\i migrations/0143_version_execution_reservations_and_capacity_phase_down.sql
+
+\echo 'Running 0142_create_smart_targeting_execution_reservations_down.sql...'
+\i migrations/0142_create_smart_targeting_execution_reservations_down.sql
+
 \echo 'Running 0141_snapshot_smart_targeting_allowed_colors_down.sql...'
 \i migrations/0141_snapshot_smart_targeting_allowed_colors_down.sql
 
