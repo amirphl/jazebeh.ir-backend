@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
@@ -20,7 +21,7 @@ type CampaignTargetingCapacityRepository interface {
 	ActiveByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingCapacityCalculation, error)
 	LatestByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingCapacityCalculation, error)
 	LatestCalculatedByInput(ctx context.Context, campaignID uint, inputHash string) (*models.CampaignTargetingCapacityCalculation, error)
-	CurrentForExecution(ctx context.Context, campaignID, bundleID uint, platform string, applyBundleAudienceExclusions bool, tagIDs []int64, scoreClasses, allowedColors []string, calculationVersion int, at time.Time) (*models.CampaignTargetingCapacityCalculation, error)
+	CurrentForPhase(ctx context.Context, campaignID, bundleID uint, platform string, phase SmartTargetingSelectionPhase, tagIDs []int64, scoreClasses, allowedColors []string, calculationVersion int, at time.Time) (*models.CampaignTargetingCapacityCalculation, error)
 	Supersede(ctx context.Context, id int64, code, message string, at time.Time) error
 	ClaimPending(ctx context.Context, limit int, staleBefore, at time.Time) ([]*models.CampaignTargetingCapacityCalculation, error)
 	Complete(ctx context.Context, id int64, leaseStartedAt time.Time, raw, eligible, deduction, usable int64, fingerprint string, at time.Time) error
@@ -70,14 +71,20 @@ func (r *CampaignTargetingCapacityRepositoryImpl) Supersede(ctx context.Context,
 	return nil
 }
 
-func (r *CampaignTargetingCapacityRepositoryImpl) CurrentForExecution(ctx context.Context, campaignID, bundleID uint, platform string, applyBundleAudienceExclusions bool, tagIDs []int64, scoreClasses, allowedColors []string, calculationVersion int, at time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
+// CurrentForPhase retrieves a capacity calculation only for its explicit
+// selection phase. Bundle exclusions are a hard invariant for every modern
+// phase, not a caller-controlled Test-only behavior.
+func (r *CampaignTargetingCapacityRepositoryImpl) CurrentForPhase(ctx context.Context, campaignID, bundleID uint, platform string, phase SmartTargetingSelectionPhase, tagIDs []int64, scoreClasses, allowedColors []string, calculationVersion int, at time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
+	if phase != SmartTargetingSelectionPhaseTest && phase != SmartTargetingSelectionPhaseExecution {
+		return nil, fmt.Errorf("invalid smart-targeting selection phase %q", phase)
+	}
 	var row models.CampaignTargetingCapacityCalculation
 	err := r.getDB(ctx).
-		Where(`campaign_id = ? AND bundle_id = ? AND platform = ? AND apply_bundle_audience_exclusions = ?
+		Where(`campaign_id = ? AND bundle_id = ? AND platform = ? AND phase = ? AND apply_bundle_audience_exclusions = TRUE
 			AND status = ? AND calculation_version = ?
 			AND expires_at > ? AND selected_tag_ids = ?::bigint[] AND selected_score_classes = ?::text[]
 			AND allowed_colors = ?::text[]`,
-			campaignID, bundleID, platform, applyBundleAudienceExclusions,
+			campaignID, bundleID, platform, string(phase),
 			models.CampaignTargetingCapacityCalculated, calculationVersion, at, pq.Array(tagIDs), pq.Array(scoreClasses), pq.Array(allowedColors)).
 		Order("created_at DESC, id DESC").First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
