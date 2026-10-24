@@ -54,7 +54,14 @@ func (r *ShortLinkRepositoryImpl) SaveBatch(ctx context.Context, entities []*mod
 		}
 	}
 
-	// Try COPY via database/sql using lib/pq for maximum throughput
+	// COPY owns its database/sql transaction. If a caller has already opened a
+	// GORM transaction, use its connection instead of creating a second,
+	// independent transaction that could commit even if the caller rolls back.
+	if _, inTransaction := ctx.Value(TxContextKey).(*gorm.DB); inTransaction {
+		return r.BaseRepository.SaveBatch(ctx, entities)
+	}
+
+	// Try COPY via database/sql using lib/pq for maximum throughput.
 	sqlDB, err := r.DB.DB()
 	if err == nil && sqlDB != nil {
 		if err := r.copyInShortLinks(ctx, sqlDB, entities); err == nil {
@@ -64,11 +71,10 @@ func (r *ShortLinkRepositoryImpl) SaveBatch(ctx context.Context, entities []*mod
 	}
 
 	// Fallback: use GORM batching
-	db := r.getDB(ctx)
-	return db.CreateInBatches(entities, 1000).Error
+	return r.BaseRepository.SaveBatch(ctx, entities)
 }
 
-func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *sql.DB, entities []*models.ShortLink) error {
+func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *sql.DB, entities []*models.ShortLink) (err error) {
 	tx, err := sqlDB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return err
@@ -77,7 +83,7 @@ func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *s
 		if err != nil {
 			_ = tx.Rollback()
 		} else {
-			_ = tx.Commit()
+			err = tx.Commit()
 		}
 	}()
 
@@ -92,6 +98,8 @@ func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *s
 		"long_link",
 		"short_link",
 		"is_test",
+		"allocation_key",
+		"allocation_position",
 		"created_at",
 		"updated_at",
 	))
@@ -105,6 +113,8 @@ func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *s
 		var scenarioID interface{}
 		var scenarioName interface{}
 		var phone interface{}
+		var allocationKey interface{}
+		var allocationPosition interface{}
 		if e.CampaignID != nil {
 			campaignID = *e.CampaignID
 		}
@@ -120,6 +130,12 @@ func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *s
 		if e.PhoneNumber != nil && strings.TrimSpace(*e.PhoneNumber) != "" {
 			phone = *e.PhoneNumber
 		}
+		if e.AllocationKey != nil && strings.TrimSpace(*e.AllocationKey) != "" {
+			allocationKey = *e.AllocationKey
+		}
+		if e.AllocationPosition != nil {
+			allocationPosition = *e.AllocationPosition
+		}
 
 		_, err = stmt.Exec(
 			e.UID,
@@ -131,6 +147,8 @@ func (r *ShortLinkRepositoryImpl) copyInShortLinks(ctx context.Context, sqlDB *s
 			e.LongLink,
 			e.ShortLink,
 			e.IsTest,
+			allocationKey,
+			allocationPosition,
 			e.CreatedAt,
 			e.UpdatedAt,
 		)
@@ -185,6 +203,23 @@ func (r *ShortLinkRepositoryImpl) ByUIDs(ctx context.Context, uids []string) ([]
 			return nil, err
 		}
 		rows = append(rows, chunk...)
+	}
+	return rows, nil
+}
+
+// ByAllocationKey returns one immutable bulk-allocation attempt in request
+// order.  A retry republishes these rows rather than creating another 200K
+// links after an ambiguous client/proxy timeout.
+func (r *ShortLinkRepositoryImpl) ByAllocationKey(ctx context.Context, allocationKey string) ([]*models.ShortLink, error) {
+	if strings.TrimSpace(allocationKey) == "" {
+		return []*models.ShortLink{}, nil
+	}
+	var rows []*models.ShortLink
+	if err := r.getDB(ctx).
+		Where("allocation_key = ?", allocationKey).
+		Order("allocation_position ASC, id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
 	}
 	return rows, nil
 }
