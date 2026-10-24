@@ -56,27 +56,137 @@ func LockBundleForShare(ctx context.Context, bundleID uint) error {
 	return tx.WithContext(ctx).Exec("SELECT id FROM bundles WHERE id = ? FOR SHARE", bundleID).Error
 }
 
-// ReleaseUnpreparedCampaign returns a scheduler claim to the durable approved
-// queue only when no processed-campaign checkpoint exists. Once a checkpoint
-// exists, delivery may have started and an automatic replay would be unsafe.
+// ReleaseUnpreparedCampaign settles a failed scheduler run immediately. A
+// checkpoint with no persisted delivery intent is retired and requeued; once a
+// sent-message intent exists, a provider call may already have succeeded, so
+// the campaign becomes interrupted instead of being replayed.
 func ReleaseUnpreparedCampaign(ctx context.Context, db *gorm.DB, campaignID uint) error {
-	return db.WithContext(ctx).Model(&models.Campaign{}).
-		Where(`id = ? AND status = ? AND NOT EXISTS (
-			SELECT 1 FROM processed_campaigns WHERE processed_campaigns.campaign_id = campaigns.id
-		)`, campaignID, models.CampaignStatusRunning).
-		Updates(map[string]any{"status": models.CampaignStatusApproved, "updated_at": utils.UTCNow()}).Error
+	if campaignID == 0 {
+		return nil
+	}
+	return recoverUndeliveredCampaigns(ctx, db, `campaigns.id = ?`, []any{campaignID}, &CampaignExecutionRecoveryResult{})
 }
 
-// ReleaseStaleUnpreparedCampaigns recovers claims left behind by a process
-// crash before the processed-campaign checkpoint. No provider delivery can
-// have started before that checkpoint, so these rows are safe to retry.
-func ReleaseStaleUnpreparedCampaigns(ctx context.Context, db *gorm.DB, staleBefore time.Time) (int64, error) {
+// CampaignExecutionRecoveryResult distinguishes the two safe stale-run
+// outcomes. Requeued campaigns contain no persisted send intent and can be
+// retried. Interrupted campaigns retain one or more send-intent records and
+// deliberately require an explicit operator decision rather than risking
+// duplicate sends.
+type CampaignExecutionRecoveryResult struct {
+	Requeued    int64
+	Interrupted int64
+}
+
+// RecoverStaleCampaignRuns clears every stale running claim. It is intentionally
+// conservative: a campaign returns to approved only if no sent-message intent
+// exists in any of its attempts. Otherwise it becomes interrupted, a terminal
+// non-runnable state that preserves the exact delivery audit trail.
+func RecoverStaleCampaignRuns(ctx context.Context, db *gorm.DB, staleBefore time.Time) (CampaignExecutionRecoveryResult, error) {
+	result := CampaignExecutionRecoveryResult{}
+	err := recoverUndeliveredCampaigns(ctx, db, `campaigns.updated_at < ?`, []any{staleBefore}, &result)
+	return result, err
+}
+
+// TouchRunningCampaign is a lightweight scheduler lease heartbeat. Recovery
+// only acts on a stale heartbeat, not merely on the original running transition.
+func TouchRunningCampaign(ctx context.Context, db *gorm.DB, campaignID uint) error {
+	if db == nil || campaignID == 0 {
+		return nil
+	}
 	result := db.WithContext(ctx).Model(&models.Campaign{}).
-		Where(`status = ? AND updated_at < ? AND NOT EXISTS (
-			SELECT 1 FROM processed_campaigns WHERE processed_campaigns.campaign_id = campaigns.id
-		)`, models.CampaignStatusRunning, staleBefore).
-		Updates(map[string]any{"status": models.CampaignStatusApproved, "updated_at": utils.UTCNow()})
-	return result.RowsAffected, result.Error
+		Where("id = ? AND status = ?", campaignID, models.CampaignStatusRunning).
+		Updates(map[string]any{"updated_at": utils.UTCNow()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCampaignExecutionClaimLost
+	}
+	return nil
+}
+
+// ErrCampaignExecutionClaimLost means the scheduler lease was recovered or
+// completed before a worker reached a provider dispatch boundary.
+var ErrCampaignExecutionClaimLost = errors.New("campaign execution claim is no longer running")
+
+const campaignHasDeliveryRecordSQL = `
+EXISTS (
+    SELECT 1
+    FROM processed_campaigns AS processed
+    WHERE processed.campaign_id = campaigns.id
+      AND (
+          -- Excel-targeting writes local AUDIENCE_UID_NOT_FOUND audit rows
+          -- before any provider call.  They deliberately have an empty phone
+          -- number and must not turn an otherwise undelivered run into an
+          -- interrupted, non-retryable campaign.
+          EXISTS (SELECT 1 FROM sent_sms AS sent WHERE sent.processed_campaign_id = processed.id AND NULLIF(BTRIM(sent.phone_number), '') IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM sent_bale_messages AS sent WHERE sent.processed_campaign_id = processed.id AND NULLIF(BTRIM(sent.phone_number), '') IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM sent_rubika_messages AS sent WHERE sent.processed_campaign_id = processed.id AND NULLIF(BTRIM(sent.phone_number), '') IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM sent_splus_messages AS sent WHERE sent.processed_campaign_id = processed.id AND NULLIF(BTRIM(sent.phone_number), '') IS NOT NULL)
+      )
+)`
+
+// recoverUndeliveredCampaigns executes the status transition and checkpoint
+// retirement in one transaction. selector is evaluated against campaigns and
+// must be accompanied by selectorArgs. When staleResult is non-nil, the helper
+// also terminalizes runs with delivery intent. A sent row is written immediately
+// before external dispatch, so it is the durable no-replay boundary even if the
+// worker dies before persisting a provider response.
+func recoverUndeliveredCampaigns(ctx context.Context, db *gorm.DB, selector string, selectorArgs []any, staleResult *CampaignExecutionRecoveryResult) error {
+	if db == nil {
+		return errors.New("campaign execution recovery database is nil")
+	}
+	return WithTransaction(ctx, db, func(txCtx context.Context) error {
+		tx, err := transactionForLock(txCtx)
+		if err != nil {
+			return err
+		}
+		now := utils.UTCNow()
+		where := "status = ? AND " + selector
+		args := append([]any{models.CampaignStatusRunning}, selectorArgs...)
+
+		// Retire only the current checkpoint for an entirely undelivered
+		// campaign. Historical checkpoints remain immutable audit records.
+		retire := tx.WithContext(txCtx).Exec(`UPDATE processed_campaigns AS processed
+			SET is_current = FALSE
+			FROM campaigns
+			WHERE processed.campaign_id = campaigns.id
+			  AND processed.is_current
+			  AND `+where+`
+			  AND NOT (`+campaignHasDeliveryRecordSQL+`)`, args...)
+		if retire.Error != nil {
+			return retire.Error
+		}
+
+		requeue := tx.WithContext(txCtx).Model(&models.Campaign{}).
+			Where(where, args...).
+			Where("NOT (" + campaignHasDeliveryRecordSQL + ")").
+			Where(`NOT EXISTS (
+				SELECT 1 FROM processed_campaigns
+				WHERE processed_campaigns.campaign_id = campaigns.id
+				  AND processed_campaigns.is_current
+			)`).
+			Updates(map[string]any{"status": models.CampaignStatusApproved, "updated_at": now})
+		if requeue.Error != nil {
+			return requeue.Error
+		}
+		if staleResult != nil {
+			staleResult.Requeued += requeue.RowsAffected
+		}
+
+		if staleResult == nil {
+			return nil
+		}
+		interrupted := tx.WithContext(txCtx).Model(&models.Campaign{}).
+			Where(where, args...).
+			Where(campaignHasDeliveryRecordSQL).
+			Updates(map[string]any{"status": models.CampaignStatusInterrupted, "updated_at": now})
+		if interrupted.Error != nil {
+			return interrupted.Error
+		}
+		staleResult.Interrupted += interrupted.RowsAffected
+		return nil
+	})
 }
 
 type BundleCampaignAllocation struct {
@@ -86,10 +196,10 @@ type BundleCampaignAllocation struct {
 	Materialized bool                  `gorm:"column:materialized"`
 }
 
-// BundleActiveTestReservation is one immutable Test selection that currently
-// removes concrete audiences from a Bundle's candidate population. Selection
-// IDs are immutable, so the ID plus active member count is sufficient for the
-// capacity fingerprint without loading every reserved audience ID.
+// BundleActiveTestReservation is one immutable concrete reservation that
+// currently removes audiences from a Bundle's candidate population.  The name
+// is retained for Test compatibility; execution reservations use the same
+// shape with their first reservation-row ID as SelectionID.
 type BundleActiveTestReservation struct {
 	CampaignID    uint  `gorm:"column:campaign_id"`
 	SelectionID   int64 `gorm:"column:selection_id"`
@@ -126,6 +236,21 @@ func ListBundleActiveTestReservations(ctx context.Context, db *gorm.DB, bundleID
 	return rows, err
 }
 
+// ListBundleActiveExecutionReservations returns execution-phase reservations
+// in the same compact fingerprint form as Test snapshots.
+func ListBundleActiveExecutionReservations(ctx context.Context, db *gorm.DB, bundleID, excludedCampaignID uint) ([]BundleActiveTestReservation, error) {
+	queryDB := db.WithContext(ctx)
+	if tx, ok := ctx.Value(TxContextKey).(*gorm.DB); ok && tx != nil {
+		queryDB = tx.WithContext(ctx)
+	}
+	var rows []BundleActiveTestReservation
+	err := queryDB.Table("campaign_targeting_execution_reservations").
+		Select("campaign_id, MIN(id) AS selection_id, COUNT(*) AS audience_count").
+		Where("bundle_id = ? AND campaign_id <> ? AND state = 'active'", bundleID, excludedCampaignID).
+		Group("campaign_id").Order("campaign_id ASC").Find(&rows).Error
+	return rows, err
+}
+
 func bundleActiveTestReservationsQuery(db *gorm.DB, bundleID, excludedCampaignID uint) *gorm.DB {
 	return db.Table("campaign_targeting_test_sample_reservations").
 		Select("campaign_id, selection_id, COUNT(*) AS audience_count").
@@ -143,7 +268,7 @@ func bundleCampaignAllocationsQuery(db *gorm.DB, bundleID, excludedCampaignID ui
 				WHERE selection.campaign_id = campaigns.id
 			) AS materialized`).
 		Where("bundle_id = ? AND id <> ? AND status IN ?", bundleID, excludedCampaignID, []models.CampaignStatus{
-			models.CampaignStatusApproved, models.CampaignStatusRunning, models.CampaignStatusExecuted,
+			models.CampaignStatusApproved, models.CampaignStatusRunning, models.CampaignStatusInterrupted, models.CampaignStatusExecuted,
 		}).
 		Where(`CASE
 			WHEN LOWER(BTRIM(COALESCE(spec->>'audience_targeting_method', ''))) IN (?, ?, ?)
