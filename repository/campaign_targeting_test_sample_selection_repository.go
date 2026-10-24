@@ -7,6 +7,7 @@ import (
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -19,18 +20,34 @@ var (
 const testSampleSelectionAvailabilityQuery = `
 SELECT COUNT(*)
 FROM campaign_targeting_test_sample_selection_members AS member
+JOIN campaign_targeting_test_sample_selections AS snapshot
+  ON snapshot.id = member.selection_id
+JOIN campaign_targeting_capacity_calculations AS calculation
+  ON calculation.id = snapshot.calculation_id
 LEFT JOIN audience_profiles AS audience ON audience.id = member.audience_id
 LEFT JOIN bundle_audience_selection_members AS materialized
   ON materialized.bundle_id = ? AND materialized.audience_id = member.audience_id
 LEFT JOIN campaign_targeting_test_sample_reservations AS reserved
   ON reserved.bundle_id = ? AND reserved.audience_id = member.audience_id
  AND reserved.state = 'active' AND reserved.campaign_id <> ?
+LEFT JOIN campaign_targeting_execution_reservations AS execution_reserved
+  ON execution_reserved.bundle_id = ? AND execution_reserved.audience_id = member.audience_id
+ AND execution_reserved.state = 'active'
 LEFT JOIN bundle_audience_exclusions AS excluded
   ON excluded.bundle_id = ? AND excluded.audience_id = member.audience_id
 WHERE member.selection_id = ?
-  AND (audience.id IS NULL OR audience.phone_number IS NULL OR BTRIM(audience.phone_number) = ''
-       OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR excluded.audience_id IS NOT NULL)`
+	  AND (audience.id IS NULL OR audience.phone_number IS NULL OR BTRIM(audience.phone_number) = ''
+	   OR NOT (audience.tags @> ARRAY[member.assigned_tag_id]::integer[])
+	   OR (cardinality(calculation.allowed_colors) > 0 AND (audience.color IS NULL OR audience.color <> ALL(calculation.allowed_colors)))
+	   OR audience.normalized_score IS DISTINCT FROM member.audience_score
+	   OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR execution_reserved.id IS NOT NULL OR excluded.audience_id IS NOT NULL)`
 
+// TODO(smart-targeting-score-bounds): Test reservation validation below checks
+// each saved score but not its current percentile class. Changes to other
+// eligible profiles can shift p33/p66 and invalidate a restricted A/B/C
+// selection; persist/revalidate bounds or re-evaluate members under the Bundle
+// lock before reserving.
+//
 // CampaignTargetingTestSampleSelectionRepository owns immutable Test sampling
 // output and its separate, releasable reservation lifecycle.
 type CampaignTargetingTestSampleSelectionRepository interface {
@@ -157,11 +174,22 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReserveForCampaign(
 		}
 		return nil
 	}
+	memberIDs := make([]int64, 0, len(selection.Members))
+	for _, member := range selection.Members {
+		memberIDs = append(memberIDs, member.AudienceID)
+	}
+	var lockedIDs []int64
+	if err := db.Raw(`SELECT id FROM audience_profiles WHERE id = ANY(?::bigint[]) FOR UPDATE`, pq.Int64Array(memberIDs)).Scan(&lockedIDs).Error; err != nil {
+		return err
+	}
+	if len(lockedIDs) != len(memberIDs) {
+		return ErrSmartTargetingTestSelectionConflict
+	}
 
 	// Check the immutable snapshot against the current hard-safety population.
 	// Do not substitute candidates here: a collision requires a fresh sample.
 	var unavailable int64
-	if err := db.Raw(testSampleSelectionAvailabilityQuery, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.ID).Scan(&unavailable).Error; err != nil {
+	if err := db.Raw(testSampleSelectionAvailabilityQuery, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.BundleID, selection.ID).Scan(&unavailable).Error; err != nil {
 		return err
 	}
 	if unavailable != 0 {
