@@ -19,6 +19,11 @@ type ShortLink struct {
 	ShortLink           string     `gorm:"type:text;not null" json:"short_link"`
 	IsTest              bool       `gorm:"not null;default:false;index:idx_short_links_test" json:"is_test"`
 	ExternalPublishedAt *time.Time `gorm:"index:idx_short_links_external_unpublished,where:external_published_at IS NULL" json:"external_published_at,omitempty"`
+	// AllocationKey and AllocationPosition make the scheduler's bulk allocation
+	// idempotent across client/proxy timeout ambiguity. They are nil for admin
+	// and legacy short links.
+	AllocationKey      *string `gorm:"size:64;index:idx_short_links_allocation_key" json:"-"`
+	AllocationPosition *int    `gorm:"index:idx_short_links_allocation_key" json:"-"`
 
 	CreatedAt time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC');index:idx_short_links_created_at" json:"created_at"`
 	UpdatedAt time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"updated_at"`
