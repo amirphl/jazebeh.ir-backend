@@ -37,6 +37,20 @@ func TestReserveTestSampleSelectionChecksCompositeKeyBundleExclusions(t *testing
 	}
 }
 
+func TestReserveTestSampleSelectionRechecksCurrentTargetingEligibility(t *testing.T) {
+	query := strings.ToLower(testSampleSelectionAvailabilityQuery)
+	for _, fragment := range []string{
+		"campaign_targeting_capacity_calculations",
+		"audience.tags @> array[member.assigned_tag_id]::integer[]",
+		"calculation.allowed_colors",
+		"audience.normalized_score is distinct from member.audience_score",
+	} {
+		if !strings.Contains(query, fragment) {
+			t.Fatalf("reservation availability query is missing current targeting validation %q:\n%s", fragment, testSampleSelectionAvailabilityQuery)
+		}
+	}
+}
+
 func TestMaterializeTestSampleReservationsRequiresEveryExpectedActiveRow(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
