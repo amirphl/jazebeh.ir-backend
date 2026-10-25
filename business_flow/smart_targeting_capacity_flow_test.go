@@ -49,19 +49,21 @@ func TestSmartTargetingCapacityHashIsOrderIndependent(t *testing.T) {
 		t.Fatal("campaign ID must participate in the tag hash")
 	}
 	payamColors := []string{"white", "pink"}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "C"}, models.CampaignPlatformSMS, payamColors, false) {
+	execution := repository.SmartTargetingSelectionPhaseExecution
+	testPhase := repository.SmartTargetingSelectionPhaseTest
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "C"}, models.CampaignPlatformSMS, payamColors, execution) {
 		t.Fatal("score classes must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) != smartTargetingInputHash(first, []string{"A", "B"}, " SMS ", payamColors, false) {
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) != smartTargetingInputHash(first, []string{"A", "B"}, " SMS ", payamColors, execution) {
 		t.Fatal("equal targeting inputs must produce equal hashes")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformBale, nil, false) {
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformBale, nil, execution) {
 		t.Fatal("platform must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, true) {
-		t.Fatal("Bundle-exclusion eligibility must participate in the input hash")
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, testPhase) {
+		t.Fatal("selection phase must participate in the input hash")
 	}
-	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, false) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, nil, false) {
+	if smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, payamColors, execution) == smartTargetingInputHash(first, []string{"A", "B"}, models.CampaignPlatformSMS, nil, execution) {
 		t.Fatal("delivery-provider color eligibility must participate in the input hash")
 	}
 }
@@ -99,11 +101,12 @@ func TestSmartTargetingCapacityAudienceQueryUsesSnapshotEligibility(t *testing.T
 		Platform:                      models.CampaignPlatformSMS,
 		AllowedColors:                 pq.StringArray{"white", "pink"},
 		ApplyBundleAudienceExclusions: true,
+		Phase:                         string(models.CampaignPhaseTest),
 		SelectedTagIDs:                pq.Int64Array{2, 9},
 		SelectedScoreClasses:          pq.StringArray{"A", "C"},
 	}
 	query := smartTargetingCapacityAudienceQuery(calculation)
-	if query.BundleID != 3 || query.ExcludeActiveTestReservationCampaignID != 17 || !query.ApplyBundleAudienceExclusions || !reflect.DeepEqual(query.TagIDs, []int64{2, 9}) || !reflect.DeepEqual(query.ScoreClasses, []string{"A", "C"}) || !reflect.DeepEqual(query.AllowedColors, []string{"white", "pink"}) {
+	if query.BundleID != 3 || query.Phase != repository.SmartTargetingSelectionPhaseTest || query.ExcludeActiveTestReservationCampaignID != 17 || !reflect.DeepEqual(query.TagIDs, []int64{2, 9}) || !reflect.DeepEqual(query.ScoreClasses, []string{"A", "C"}) || !reflect.DeepEqual(query.AllowedColors, []string{"white", "pink"}) {
 		t.Fatalf("capacity audience query = %#v", query)
 	}
 }
@@ -113,12 +116,24 @@ func TestSmartTargetingCapacityAudienceQueryKeepsCandooUnrestricted(t *testing.T
 		CampaignID:           17,
 		BundleID:             3,
 		Platform:             models.CampaignPlatformSMS,
+		Phase:                string(models.CampaignPhaseExecution),
 		AllowedColors:        pq.StringArray{},
 		SelectedTagIDs:       pq.Int64Array{2, 9},
 		SelectedScoreClasses: pq.StringArray{"A", "C"},
 	})
 	if len(query.AllowedColors) != 0 {
 		t.Fatalf("Candoo capacity query colors = %v, want no restriction", query.AllowedColors)
+	}
+}
+
+func TestSmartTargetingCapacityAudienceQueryRejectsUnknownPhase(t *testing.T) {
+	query := smartTargetingCapacityAudienceQuery(&models.CampaignTargetingCapacityCalculation{
+		CampaignID: 17,
+		BundleID:   3,
+		Phase:      "unknown",
+	})
+	if !reflect.DeepEqual(query, repository.SmartTargetingAudienceQuery{}) {
+		t.Fatalf("unknown capacity phase produced query %#v, want an invalid empty query", query)
 	}
 }
 
@@ -144,18 +159,22 @@ func TestCurrentSmartTargetingCapacityRejectsUnavailableSelectedTags(t *testing.
 	}
 }
 
-func TestSmartTargetingCapacityAppliesBundleExclusionsOnlyToTestPhase(t *testing.T) {
+func TestSmartTargetingCapacityPhaseIsExplicit(t *testing.T) {
 	method := models.CampaignAudienceTargetingSmart
 	campaign := &models.Campaign{
 		Phase: models.CampaignPhaseTest,
 		Spec:  models.CampaignSpec{AudienceTargetingMethod: &method},
 	}
-	if !smartTargetingCapacityAppliesBundleExclusions(campaign) {
-		t.Fatal("Smart Targeting Test capacity must apply Bundle exclusions")
+	if smartTargetingCapacityPhase(campaign) != repository.SmartTargetingSelectionPhaseTest {
+		t.Fatal("Smart Targeting Test capacity must use Test phase")
 	}
 	campaign.Phase = models.CampaignPhaseExecution
-	if smartTargetingCapacityAppliesBundleExclusions(campaign) {
-		t.Fatal("Smart Targeting execution capacity must not apply Test-only Bundle exclusions")
+	if smartTargetingCapacityPhase(campaign) != repository.SmartTargetingSelectionPhaseExecution {
+		t.Fatal("Smart Targeting execution capacity must use execution phase")
+	}
+	campaign.Phase = "unknown"
+	if smartTargetingCapacityPhase(campaign) != "" {
+		t.Fatal("unknown Smart Targeting phase must not infer execution semantics")
 	}
 }
 
@@ -300,6 +319,22 @@ func TestSmartTargetingBundleAllocationFingerprintTracksActiveTestReservationsWi
 
 	if _, _, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, []repository.BundleActiveTestReservation{{CampaignID: 23, SelectionID: 41}}); err == nil {
 		t.Fatal("allocation fingerprint accepted an active Test reservation without members")
+	}
+}
+
+func TestSmartTargetingBundleAllocationDoesNotCountDeductConcreteReservationOwner(t *testing.T) {
+	audience := uint64(600)
+	allocations := []repository.BundleCampaignAllocation{
+		{CampaignID: 23, NumAudience: &audience, Status: models.CampaignStatusApproved, Materialized: false},
+	}
+	deduction, _, err := smartTargetingBundleAllocationStateFromRowsAndActiveTestReservations(3, allocations, []repository.BundleActiveTestReservation{
+		{CampaignID: 23, SelectionID: 41, AudienceCount: 600},
+	})
+	if err != nil {
+		t.Fatalf("allocation state returned error: %v", err)
+	}
+	if deduction != 0 {
+		t.Fatalf("concretely reserved campaign deduction = %d, want 0", deduction)
 	}
 }
 
