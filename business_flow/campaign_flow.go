@@ -551,6 +551,19 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 		return nil, NewBusinessError("CAMPAIGN_COST_CALCULATION_FAILED", "Failed to calculate campaign cost", err)
 	}
 
+	// Candidate discovery can scan and rank a large Bundle population. Do it
+	// before the short money/reservation transaction; the transaction below
+	// re-checks the allocation fingerprint and every selected member before it
+	// persists anything.
+	var executionPlan *smartTargetingExecutionReservationPlan
+	if campaign.Spec.UsesSmartTargeting() && campaign.Phase == models.CampaignPhaseExecution {
+		executionPlan, err = s.discoverSmartTargetingExecutionReservation(ctx, &campaign, cost.NumTargetAudience)
+		if err != nil {
+			recordSmartTargetingExecutionReservationFinalizationFailure(err)
+			return nil, executionReservationBusinessError(err)
+		}
+	}
+
 	numPages := s.calculateParts(
 		campaign.Spec.Content,
 		campaign.Spec.AdLink,
@@ -594,12 +607,33 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 			if err := repository.LockBundleForUpdate(txCtx, *lockedCampaign.BundleID); err != nil {
 				return err
 			}
+			if err := repository.NewCampaignTargetingExecutionReservationRepository(s.db).InvalidateForCampaign(txCtx, lockedCampaign.ID); err != nil {
+				return err
+			}
 			if err := repository.NewCampaignTargetingTestSampleSelectionRepository(s.db).ReserveForCampaign(txCtx, lockedCampaign); err != nil {
 				if errors.Is(err, repository.ErrSmartTargetingTestSelectionUnavailable) || errors.Is(err, repository.ErrSmartTargetingTestSelectionConflict) {
 					return ErrSmartTargetingTestPreviewRequired
 				}
 				return err
 			}
+		}
+		if lockedCampaign.Spec.UsesSmartTargeting() && lockedCampaign.Phase == models.CampaignPhaseExecution {
+			if lockedCampaign.BundleID == nil || *lockedCampaign.BundleID == 0 {
+				return ErrBundleNotFound
+			}
+			if err := repository.LockBundleForUpdate(txCtx, *lockedCampaign.BundleID); err != nil {
+				return err
+			}
+			if err := repository.NewCampaignTargetingTestSampleSelectionRepository(s.db).ReleaseForCampaign(txCtx, lockedCampaign.ID); err != nil {
+				return err
+			}
+			if err := s.reserveSmartTargetingExecutionAudience(txCtx, lockedCampaign, executionPlan); err != nil {
+				return err
+			}
+			lockedCampaign.SmartTargetingExecutionReservationVersion = models.SmartTargetingExecutionReservationSchemaVersion
+		}
+		if lockedCampaign.Spec.UsesSmartTargeting() && lockedCampaign.Phase == models.CampaignPhaseTest {
+			lockedCampaign.SmartTargetingExecutionReservationVersion = 0
 		}
 		campaign = *lockedCampaign
 		campaign.Status = models.CampaignStatusWaitingForApproval
@@ -709,9 +743,18 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	})
 
 	if err != nil {
+		if errors.Is(err, repository.ErrSmartTargetingExecutionReservationInsufficientCapacity) ||
+			errors.Is(err, repository.ErrSmartTargetingExecutionReservationConflict) ||
+			errors.Is(err, repository.ErrSmartTargetingExecutionReservationConcurrency) ||
+			errors.Is(err, repository.ErrSmartTargetingExecutionReservationStale) ||
+			errors.Is(err, repository.ErrSmartTargetingExecutionReservationCorrupt) ||
+			errors.Is(err, repository.ErrSmartTargetingExecutionReservationMissing) ||
+			errors.Is(err, repository.ErrSmartTargetingExecutionReservationUnavailable) {
+			recordSmartTargetingExecutionReservationFinalizationFailure(err)
+		}
 		errMsg := fmt.Sprintf("Campaign update failed for campaign %d: %s", campaign.ID, err.Error())
 		_ = s.createAuditLog(ctx, &customer, models.AuditActionCampaignUpdateFailed, errMsg, false, &errMsg, metadata)
-		return nil, NewBusinessError("CAMPAIGN_UPDATE_FAILED", "Campaign update failed", err)
+		return nil, executionReservationBusinessError(err)
 	}
 
 	// Send admin notifications after the transaction commits so network
@@ -747,6 +790,154 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 // applyFinalizedCampaignCost stores the authoritative pricing result. Smart
 // Targeting Test campaigns do not accept a user-controlled budget: their
 // budget is exactly satisfied tags * sample size per tag * price per message.
+type smartTargetingExecutionReservationPlan struct {
+	header *models.CampaignTargetingExecutionReservationHeader
+	rows   []models.CampaignTargetingExecutionReservation
+}
+
+// discoverSmartTargetingExecutionReservation performs the potentially
+// expensive ranked candidate scan outside the Bundle lock. The plan is only a
+// proposal: reserveSmartTargetingExecutionAudience validates it again under
+// lock before it can consume audience capacity or funds.
+func (s *CampaignFlowImpl) discoverSmartTargetingExecutionReservation(ctx context.Context, campaign *models.Campaign, expected uint64) (*smartTargetingExecutionReservationPlan, error) {
+	if campaign == nil || !campaign.Spec.UsesSmartTargeting() || campaign.Phase != models.CampaignPhaseExecution || campaign.BundleID == nil || *campaign.BundleID == 0 || expected == 0 || expected > math.MaxInt64 {
+		return nil, repository.ErrSmartTargetingExecutionReservationUnavailable
+	}
+	selected, err := s.selectedTagRepo.ListSelected(ctx, campaign.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(selected) == 0 {
+		return nil, repository.ErrSmartTargetingExecutionReservationUnavailable
+	}
+	tagIDs := make([]int64, 0, len(selected))
+	for position, tag := range selected {
+		if tag == nil || tag.CampaignID != campaign.ID || tag.BundleID != *campaign.BundleID || tag.TagID == 0 || tag.SelectionOrder != position {
+			return nil, repository.ErrSmartTargetingExecutionReservationUnavailable
+		}
+		tagIDs = append(tagIDs, int64(tag.TagID))
+	}
+	classes, err := normalizeSmartTargetingScoreClasses(campaign.Spec.AudienceGrades)
+	if err != nil {
+		return nil, err
+	}
+	allowedColors, err := smartTargetingAllowedColorsForCampaign(ctx, s.lineNumberRepo, campaign)
+	if err != nil {
+		return nil, err
+	}
+	allocationFingerprint, err := smartTargetingBundleAllocationFingerprint(ctx, s.db, *campaign.BundleID, campaign.ID)
+	if err != nil {
+		return nil, err
+	}
+	audienceRows, err := repository.NewSmartTargetingAudienceRepository(s.db).SelectCandidates(ctx, repository.SmartTargetingAudienceQuery{
+		BundleID: *campaign.BundleID, Phase: repository.SmartTargetingSelectionPhaseExecution, ExcludeActiveExecutionReservationCampaignID: campaign.ID,
+		TagIDs: tagIDs, ScoreClasses: classes, AllowedColors: allowedColors,
+	}, int64(expected))
+	if err != nil {
+		return nil, err
+	}
+	if uint64(len(audienceRows)) != expected {
+		return nil, repository.ErrSmartTargetingExecutionReservationInsufficientCapacity
+	}
+	reservations := make([]models.CampaignTargetingExecutionReservation, 0, len(audienceRows))
+	for position, audience := range audienceRows {
+		if audience == nil || audience.ID <= 0 {
+			return nil, repository.ErrSmartTargetingExecutionReservationUnavailable
+		}
+		assignedTagID := firstMatchingSmartTargetingTag(audience.Tags, tagIDs)
+		if assignedTagID == 0 {
+			return nil, repository.ErrSmartTargetingExecutionReservationUnavailable
+		}
+		reservations = append(reservations, models.CampaignTargetingExecutionReservation{
+			CampaignID: campaign.ID, BundleID: *campaign.BundleID, AudienceID: int64(audience.ID),
+			AssignedTagID: assignedTagID, SelectionOrder: int64(position), AudienceScore: audience.NormalizedScore,
+		})
+	}
+	requestSnapshot, err := json.Marshal(repository.ExecutionReservationRequestSnapshot{
+		TagIDs: tagIDs, ScoreClasses: classes, AllowedColors: allowedColors, Platform: strings.ToLower(strings.TrimSpace(campaign.Spec.Platform)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	inputHash := smartTargetingInputHash(smartTargetingTagHash(campaign.ID, uint64ToUintSlice(tagIDs)), classes, campaign.Spec.Platform, allowedColors, repository.SmartTargetingSelectionPhaseExecution)
+	return &smartTargetingExecutionReservationPlan{header: &models.CampaignTargetingExecutionReservationHeader{
+		CampaignID: campaign.ID, BundleID: *campaign.BundleID, Phase: models.CampaignPhaseExecution,
+		ReservationVersion: models.SmartTargetingExecutionReservationSchemaVersion, RequestedAudienceCount: int64(expected),
+		CandidateGeneration:   models.SmartTargetingCapacityAlgorithmVersion,
+		SelectionInputVersion: models.SmartTargetingExecutionReservationSelectionInputVersion, SelectionInputHash: inputHash,
+		AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion,
+		AllocationFingerprint:        allocationFingerprint, RequestSnapshot: requestSnapshot,
+	}, rows: reservations}, nil
+}
+
+func (s *CampaignFlowImpl) reserveSmartTargetingExecutionAudience(ctx context.Context, campaign *models.Campaign, plan *smartTargetingExecutionReservationPlan) error {
+	if campaign == nil || plan == nil || plan.header == nil || campaign.BundleID == nil || *campaign.BundleID == 0 {
+		return repository.ErrSmartTargetingExecutionReservationUnavailable
+	}
+	repo := repository.NewCampaignTargetingExecutionReservationRepository(s.db)
+	if existing, err := repo.ActiveReservedForCampaign(ctx, campaign.ID, plan.header.RequestedAudienceCount); err == nil {
+		if existing.Header.SelectionInputHash != plan.header.SelectionInputHash {
+			return repository.ErrSmartTargetingExecutionReservationConcurrency
+		}
+		return nil
+	} else if !errors.Is(err, repository.ErrSmartTargetingExecutionReservationMissing) {
+		return err
+	}
+	currentFingerprint, err := smartTargetingBundleAllocationFingerprint(ctx, s.db, *campaign.BundleID, campaign.ID)
+	if err != nil {
+		return err
+	}
+	if currentFingerprint != plan.header.AllocationFingerprint {
+		return repository.ErrSmartTargetingExecutionReservationConcurrency
+	}
+	return repo.ReserveForCampaign(ctx, campaign, plan.header, plan.rows)
+}
+
+func uint64ToUintSlice(ids []int64) []uint {
+	result := make([]uint, 0, len(ids))
+	for _, id := range ids {
+		if id > 0 && uint64(id) <= uint64(^uint(0)) {
+			result = append(result, uint(id))
+		}
+	}
+	return result
+}
+
+func executionReservationBusinessError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationInsufficientCapacity):
+		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_INSUFFICIENT_CAPACITY", "The requested execution audience is no longer available", err)
+	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationConflict):
+		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_CONFLICT", "Execution audience is no longer available", err)
+	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationConcurrency):
+		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_CONCURRENT_CHANGE", "Execution audience changed while finalizing; retry with a fresh capacity calculation", err)
+	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationStale):
+		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_STALE", "Execution reservation is no longer valid", err)
+	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationCorrupt):
+		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_CORRUPT", "Execution reservation requires operator recovery", err)
+	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationMissing):
+		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_MISSING", "Required execution reservation is missing", err)
+	case errors.Is(err, repository.ErrSmartTargetingExecutionReservationUnavailable):
+		return NewBusinessError("SMART_TARGETING_EXECUTION_RESERVATION_UNAVAILABLE", "Execution reservation could not be created", err)
+	default:
+		return NewBusinessError("CAMPAIGN_UPDATE_FAILED", "Campaign update failed", err)
+	}
+}
+
+func firstMatchingSmartTargetingTag(audienceTags []int32, orderedTagIDs []int64) uint {
+	for _, tagID := range orderedTagIDs {
+		for _, audienceTagID := range audienceTags {
+			if int64(audienceTagID) == tagID {
+				return uint(tagID)
+			}
+		}
+	}
+	return 0
+}
+
 func applyFinalizedCampaignCost(campaign *models.Campaign, cost *dto.CalculateCampaignCostResponse) {
 	if campaign == nil || cost == nil {
 		return
@@ -1183,6 +1374,9 @@ func (s *CampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.CancelCa
 			return ErrCampaignNotWaitingForApproval
 		}
 		if err := repository.NewCampaignTargetingTestSampleSelectionRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
+			return err
+		}
+		if err := repository.NewCampaignTargetingExecutionReservationRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
 			return err
 		}
 
@@ -3566,6 +3760,9 @@ func (s *CampaignFlowImpl) expireCustomerCampaigns(ctx context.Context, customer
 				return err
 			}
 			if err := repository.NewCampaignTargetingTestSampleSelectionRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
+				return err
+			}
+			if err := repository.NewCampaignTargetingExecutionReservationRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
 				return err
 			}
 			return nil
