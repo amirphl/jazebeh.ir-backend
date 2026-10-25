@@ -10,24 +10,35 @@ import (
 	"gorm.io/gorm"
 )
 
+// SmartTargetingSelectionPhase is explicit rather than inferred from whether
+// one particular exclusion happens to be enabled. This keeps Test and
+// execution capacity semantics independently auditable as new query modes are
+// introduced.
+type SmartTargetingSelectionPhase string
+
+const (
+	SmartTargetingSelectionPhaseTest      SmartTargetingSelectionPhase = "test"
+	SmartTargetingSelectionPhaseExecution SmartTargetingSelectionPhase = "execution"
+)
+
 // SmartTargetingAudienceQuery describes the eligibility rules shared by exact
 // capacity, Test preview, and final selection. AllowedColors is empty for
 // platforms without a delivery-color restriction.
 type SmartTargetingAudienceQuery struct {
 	BundleID uint
+	Phase    SmartTargetingSelectionPhase
 	// ExcludeActiveTestReservationCampaignID keeps a campaign's own active
 	// Test reservation in its capacity population. A finalized Test campaign
 	// can refresh capacity before execution; its already-reserved sample is not
 	// prior use by another campaign and must not make its own capacity collapse.
 	// Zero retains the normal behavior of excluding every active reservation.
 	ExcludeActiveTestReservationCampaignID uint
-	// ApplyBundleAudienceExclusions enables the manually populated, bundle-
-	// scoped exclusion list for Smart Targeting Test capacity, preview, and
-	// final selection.
-	ApplyBundleAudienceExclusions bool
-	TagIDs                        []int64
-	ScoreClasses                  []string
-	AllowedColors                 []string
+	// ExcludeActiveExecutionReservationCampaignID has the same purpose for an
+	// execution campaign that has already frozen its concrete reservation.
+	ExcludeActiveExecutionReservationCampaignID uint
+	TagIDs                                      []int64
+	ScoreClasses                                []string
+	AllowedColors                               []string
 }
 
 type SmartTargetingAudienceRepository interface {
@@ -87,12 +98,19 @@ WITH tagged_population AS (
             AND reserved.state = 'active'
 			AND (?::bigint = 0 OR reserved.campaign_id <> ?)
       )
-      AND (?::boolean OR NOT EXISTS (
+      AND NOT EXISTS (
+          SELECT 1
+          FROM campaign_targeting_execution_reservations AS execution_reserved
+          WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = tagged.id
+            AND execution_reserved.state = 'active'
+			AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
+      )
+      AND NOT EXISTS (
           SELECT 1
           FROM bundle_audience_exclusions AS bundle_exclusion
           WHERE bundle_exclusion.bundle_id = ?
             AND bundle_exclusion.audience_id = tagged.id
-      ))
+      )
 )`
 
 // Execution selection needs delivery columns. Capacity and score-bound work
@@ -121,12 +139,19 @@ WITH tagged_population AS (
             AND reserved.state = 'active'
 			AND (?::bigint = 0 OR reserved.campaign_id <> ?)
       )
-      AND (?::boolean OR NOT EXISTS (
+      AND NOT EXISTS (
+          SELECT 1
+          FROM campaign_targeting_execution_reservations AS execution_reserved
+          WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = tagged.id
+            AND execution_reserved.state = 'active'
+			AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
+      )
+      AND NOT EXISTS (
           SELECT 1
           FROM bundle_audience_exclusions AS bundle_exclusion
           WHERE bundle_exclusion.bundle_id = ?
             AND bundle_exclusion.audience_id = tagged.id
-      ))
+      )
 )`
 
 const smartTargetingClassifiedPopulationCTE = `, percentile_bounds AS (
@@ -170,13 +195,20 @@ func smartTargetingPopulationArgs(query SmartTargetingAudienceQuery) []any {
 		query.BundleID,
 		query.ExcludeActiveTestReservationCampaignID,
 		query.ExcludeActiveTestReservationCampaignID,
-		!query.ApplyBundleAudienceExclusions,
+		query.BundleID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+		query.ExcludeActiveExecutionReservationCampaignID,
 		query.BundleID,
 	}
 }
 
+func (q SmartTargetingAudienceQuery) valid() bool {
+	return q.BundleID != 0 && len(q.TagIDs) != 0 && len(q.ScoreClasses) != 0 &&
+		(q.Phase == SmartTargetingSelectionPhaseTest || q.Phase == SmartTargetingSelectionPhaseExecution)
+}
+
 func (r *smartTargetingAudienceRepository) CalculateCapacity(ctx context.Context, query SmartTargetingAudienceQuery) (*SmartTargetingAudienceCapacity, error) {
-	if query.BundleID == 0 || len(query.TagIDs) == 0 || len(query.ScoreClasses) == 0 {
+	if !query.valid() {
 		return nil, fmt.Errorf("invalid smart-targeting audience count query")
 	}
 	var capacity SmartTargetingAudienceCapacity
@@ -198,7 +230,7 @@ FROM classified`
 }
 
 func (r *smartTargetingAudienceRepository) SelectCandidates(ctx context.Context, query SmartTargetingAudienceQuery, limit int64) ([]*models.AudienceProfile, error) {
-	if query.BundleID == 0 || len(query.TagIDs) == 0 || len(query.ScoreClasses) == 0 || limit <= 0 {
+	if !query.valid() || limit <= 0 {
 		return nil, fmt.Errorf("invalid smart-targeting audience selection query")
 	}
 	var rows []*models.AudienceProfile
@@ -228,7 +260,7 @@ LIMIT ?`
 // per sampling operation. The former per-tag query rebuilt and sorted this
 // union for every selected tag.
 func (r *smartTargetingAudienceRepository) CalculateScoreBounds(ctx context.Context, query SmartTargetingAudienceQuery) (*SmartTargetingScoreBounds, error) {
-	if query.BundleID == 0 || len(query.TagIDs) == 0 || len(query.ScoreClasses) == 0 {
+	if !query.valid() {
 		return nil, fmt.Errorf("invalid smart-targeting score-bound query")
 	}
 	if smartTargetingAllClasses(query.ScoreClasses) {
@@ -309,23 +341,30 @@ FROM (
 		AND (?::bigint = 0 OR reserved.campaign_id <> ?)
       )`
 	args = append(args, query.BundleID, query.ExcludeActiveTestReservationCampaignID, query.ExcludeActiveTestReservationCampaignID)
-	if query.ApplyBundleAudienceExclusions {
-		sql += `
+	sql += `
+	  AND NOT EXISTS (
+      SELECT 1
+      FROM campaign_targeting_execution_reservations AS execution_reserved
+      WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = ap.id
+        AND execution_reserved.state = 'active'
+		AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
+  )`
+	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	sql += `
       AND NOT EXISTS (
           SELECT 1
           FROM bundle_audience_exclusions AS bundle_exclusion
           WHERE bundle_exclusion.bundle_id = ?
             AND bundle_exclusion.audience_id = ap.id
       )`
-		args = append(args, query.BundleID)
-	}
+	args = append(args, query.BundleID)
 	sql += `
 ) AS calculated_bounds`
 	return sql, args
 }
 
 func smartTargetingPerTagSelectionQuery(query SmartTargetingAudienceQuery, bounds *SmartTargetingScoreBounds, tagID int64, excludeAudienceIDs []int64, limit int64, idsOnly bool) (string, []any, error) {
-	if query.BundleID == 0 || len(query.TagIDs) == 0 || len(query.ScoreClasses) == 0 || tagID <= 0 || limit <= 0 {
+	if !query.valid() || tagID <= 0 || limit <= 0 {
 		return "", nil, fmt.Errorf("invalid smart-targeting per-tag sample query")
 	}
 	selected := false
@@ -373,16 +412,23 @@ WHERE ap.tags @> ARRAY[?]::integer[]
 		AND (?::bigint = 0 OR reserved.campaign_id <> ?)
   )`
 	args = append(args, query.BundleID, query.ExcludeActiveTestReservationCampaignID, query.ExcludeActiveTestReservationCampaignID)
-	if query.ApplyBundleAudienceExclusions {
-		sql += `
+	sql += `
+  AND NOT EXISTS (
+      SELECT 1
+      FROM campaign_targeting_execution_reservations AS execution_reserved
+      WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = ap.id
+        AND execution_reserved.state = 'active'
+		AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
+  )`
+	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	sql += `
   AND NOT EXISTS (
       SELECT 1
       FROM bundle_audience_exclusions AS bundle_exclusion
       WHERE bundle_exclusion.bundle_id = ?
         AND bundle_exclusion.audience_id = ap.id
   )`
-		args = append(args, query.BundleID)
-	}
+	args = append(args, query.BundleID)
 	sql += `
   AND NOT EXISTS (
       SELECT 1
