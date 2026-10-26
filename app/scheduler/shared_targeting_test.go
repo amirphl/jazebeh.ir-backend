@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
+	"github.com/amirphl/Yamata-no-Orochi/config"
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/repository"
 	"github.com/lib/pq"
@@ -161,18 +162,46 @@ func TestRequireAllTagsActiveFailsClosed(t *testing.T) {
 	}
 }
 
-func TestRequireExactAudienceCountRejectsPartialSelection(t *testing.T) {
-	if err := requireExactAudienceCount(746, 50_000, 49_999); err == nil || !strings.Contains(err.Error(), "requires exactly 50000 audiences") {
-		t.Fatalf("partial audience selection must fail with requested and selected counts, got %v", err)
+func TestRequireExactAudienceCountAllowsRuntimeShortfall(t *testing.T) {
+	for _, selected := range []int{0, 49_999, 50_000} {
+		if err := requireExactAudienceCount(746, 50_000, selected); err != nil {
+			t.Fatalf("selected count %d unexpectedly failed: %v", selected, err)
+		}
 	}
-	if err := requireExactAudienceCount(746, 50_000, 50_000); err != nil {
-		t.Fatalf("exact audience selection unexpectedly failed: %v", err)
+	if err := requireExactAudienceCount(746, 50_000, 50_001); err == nil {
+		t.Fatal("selection exceeding the request must fail")
 	}
 	if err := requireAudienceMatch(745, pq.Int32Array{7}, 1); err != nil {
 		t.Fatalf("legacy non-bundle partial selection must remain valid: %v", err)
 	}
 	if err := requireAudienceMatch(745, pq.Int32Array{7}, 0); err == nil {
 		t.Fatal("legacy non-bundle empty selection must fail")
+	}
+}
+
+type audienceShortfallNotifier struct{ calls chan string }
+
+func (n *audienceShortfallNotifier) SendSMS(_ context.Context, _ string, message string, _ *int64) error {
+	n.calls <- message
+	return nil
+}
+
+func (n *audienceShortfallNotifier) SendSMSBulk(context.Context, []string, string, *int64) error {
+	return nil
+}
+
+func TestNotifyAudienceShortfallSendsRequestedAndEligibleCounts(t *testing.T) {
+	notifier := &audienceShortfallNotifier{calls: make(chan string, 2)}
+	notifyAudienceShortfall(log.New(io.Discard, "", 0), notifier, config.AdminConfig{Mobiles: []string{"989121234567", "989121234568"}}, "SMS", 91, 10_000, 8_000)
+	for range 2 {
+		select {
+		case message := <-notifier.calls:
+			if !strings.Contains(message, "requested 10000") || !strings.Contains(message, "only 8000 eligible") {
+				t.Fatalf("shortfall message = %q", message)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("expected shortfall notification")
+		}
 	}
 }
 
