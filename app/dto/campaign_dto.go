@@ -467,6 +467,9 @@ type BotGetCampaignResponse struct {
 
 	SmartTargetingTestSatisfiedTagIDs []uint `json:"smart_targeting_test_satisfied_tag_ids,omitempty"`
 	SmartTargetingTestSelectionID     *int64 `json:"smart_targeting_test_selection_id,omitempty"`
+	// Zero is an explicit pre-execution-reservation legacy marker. A positive
+	// version requires the scheduler to consume the frozen execution snapshot.
+	SmartTargetingExecutionReservationVersion *int `json:"smart_targeting_execution_reservation_version"`
 
 	AudienceGrades []string `json:"audience_grades"`
 
