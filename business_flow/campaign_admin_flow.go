@@ -997,6 +997,9 @@ func (s *AdminCampaignFlowImpl) RejectCampaign(ctx context.Context, req *dto.Adm
 		if err := repository.NewCampaignTargetingTestSampleSelectionRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
 			return err
 		}
+		if err := repository.NewCampaignTargetingExecutionReservationRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
+			return err
+		}
 		if err := s.campaignRepo.Update(txCtx, *campaign); err != nil {
 			return err
 		}
@@ -1330,6 +1333,9 @@ func (s *AdminCampaignFlowImpl) CancelCampaign(ctx context.Context, req *dto.Adm
 		campaign.Comment = &req.Comment
 		campaign.UpdatedAt = utils.ToPtr(utils.UTCNow())
 		if err := repository.NewCampaignTargetingTestSampleSelectionRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
+			return err
+		}
+		if err := repository.NewCampaignTargetingExecutionReservationRepository(s.db).ReleaseForCampaign(txCtx, campaign.ID); err != nil {
 			return err
 		}
 		if err := s.campaignRepo.Update(txCtx, *campaign); err != nil {
