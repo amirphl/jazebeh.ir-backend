@@ -162,6 +162,7 @@ func (s *BotCampaignFlowImpl) ListReadyCampaigns(ctx context.Context, platform *
 			SampleSizePerTag:                  c.SampleSizePerTag,
 			SmartTargetingTestSatisfiedTagIDs: smartTestSatisfiedTagIDs,
 			SmartTargetingTestSelectionID:     smartTestSelectionID,
+			SmartTargetingExecutionReservationVersion: utils.ToPtr(c.SmartTargetingExecutionReservationVersion),
 
 			BundleID: c.BundleID,
 			Phase:    campaignPhasePtr(c.Phase),
