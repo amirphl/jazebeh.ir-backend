@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
+	"github.com/amirphl/Yamata-no-Orochi/config"
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/repository"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
@@ -137,9 +138,9 @@ func shouldPushCurrentProcessedCampaignStatistics(pc *models.ProcessedCampaign, 
 	return ok && sent > 0
 }
 
-// releaseUnpreparedCampaignOnFailure returns a failed scheduler claim to the
-// durable approved queue only when no processed checkpoint was committed. The
-// repository predicate makes this safe to call after any later-stage error.
+// releaseUnpreparedCampaignOnFailure settles a failed claim. A checkpoint
+// without send intent is retired and requeued; a persisted send intent becomes
+// interrupted so an uncertain provider dispatch is never replayed.
 func releaseUnpreparedCampaignOnFailure(db *gorm.DB, logger *log.Logger, schedulerName string, campaignID uint, failure *error) {
 	if db == nil || failure == nil || *failure == nil {
 		return
@@ -153,19 +154,25 @@ func releaseUnpreparedCampaignOnFailure(db *gorm.DB, logger *log.Logger, schedul
 	}
 }
 
-func recoverStaleUnpreparedCampaigns(ctx context.Context, db *gorm.DB, logger *log.Logger, schedulerName string) {
+func recoverStaleCampaignRuns(ctx context.Context, db *gorm.DB, logger *log.Logger, schedulerName string) {
 	if db == nil {
 		return
 	}
-	count, err := repository.ReleaseStaleUnpreparedCampaigns(ctx, db, utils.UTCNow().Add(-campaignExecutionStaleAfter))
+	result, err := repository.RecoverStaleCampaignRuns(ctx, db, utils.UTCNow().Add(-campaignExecutionStaleAfter))
 	if err != nil {
 		if logger != nil {
-			logger.Printf("%s scheduler: recover stale unprepared campaigns failed: %v", schedulerName, err)
+			logger.Printf("%s scheduler: recover stale campaign runs failed: %v", schedulerName, err)
 		}
 		return
 	}
-	if count > 0 && logger != nil {
-		logger.Printf("%s scheduler: returned %d stale unprepared campaign claim(s) to approved", schedulerName, count)
+	if result.Requeued > 0 {
+		campaignExecutionRecoveryTotal.WithLabelValues(schedulerName, "requeued_undelivered").Add(float64(result.Requeued))
+	}
+	if result.Interrupted > 0 {
+		campaignExecutionRecoveryTotal.WithLabelValues(schedulerName, "interrupted_delivery_recorded").Add(float64(result.Interrupted))
+	}
+	if (result.Requeued > 0 || result.Interrupted > 0) && logger != nil {
+		logger.Printf("%s scheduler: recovered stale campaign runs: requeued_undelivered=%d interrupted_delivery_recorded=%d", schedulerName, result.Requeued, result.Interrupted)
 	}
 }
 
@@ -321,17 +328,17 @@ func requireAllTagsActive(campaignID uint, requestedIDs []uint, activeTags []*mo
 	return resolved, nil
 }
 
-// requireExactAudienceCount fails closed when targeting cannot satisfy the
-// campaign allocation. Campaign execution must never silently continue with a
-// partial audience set because billing, bundle capacity, and delivery state all
-// assume the approved audience count is exact.
+// requireExactAudienceCount validates an allocation cannot exceed its approved
+// audience count. Runtime eligibility can legitimately shrink after approval,
+// so a smaller (including empty) allocation is valid and is reported to admins
+// by the scheduler before execution continues.
 func requireExactAudienceCount(campaignID uint, requested int64, selected int) error {
 	if requested <= 0 {
 		return fmt.Errorf("campaign id=%d has invalid requested audience count %d", campaignID, requested)
 	}
-	if int64(selected) != requested {
+	if selected < 0 || int64(selected) > requested {
 		return fmt.Errorf(
-			"campaign id=%d requires exactly %d audiences, but %d eligible audiences were retrieved",
+			"campaign id=%d requested at most %d audiences, but %d eligible audiences were retrieved",
 			campaignID,
 			requested,
 			selected,
@@ -363,9 +370,6 @@ func loadReservedBundleAudience(ctx context.Context, repo repository.AudiencePro
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if len(rows) != len(reserved) {
-		return nil, nil, nil, fmt.Errorf("persisted bundle audience allocation is incomplete: expected=%d available=%d", len(reserved), len(rows))
-	}
 	byID := make(map[int64]*models.AudienceProfile, len(rows))
 	for _, row := range rows {
 		if row != nil {
@@ -378,13 +382,33 @@ func loadReservedBundleAudience(ctx context.Context, repo repository.AudiencePro
 	for _, audienceID := range reserved {
 		row := byID[audienceID]
 		if row == nil || row.PhoneNumber == nil || strings.TrimSpace(*row.PhoneNumber) == "" {
-			return nil, nil, nil, errors.New("persisted bundle audience profile has no usable phone number")
+			// A previously reserved profile can be deleted or lose its usable
+			// contact data between approval and execution. Leave it out of this
+			// run; the scheduler records and alerts on the resulting shortfall.
+			continue
 		}
 		phones = append(phones, strings.TrimSpace(*row.PhoneNumber))
 		ids = append(ids, int64(row.ID))
 		uids = append(uids, row.UID)
 	}
 	return phones, ids, uids, nil
+}
+
+// notifyAudienceShortfall is deliberately best-effort: alert delivery must
+// never prevent an otherwise valid partial campaign execution.
+func notifyAudienceShortfall(logger *log.Logger, notifier NotificationSender, adminCfg config.AdminConfig, platform string, campaignID uint, requested int64, eligible int) {
+	if requested <= 0 || int64(eligible) >= requested || notifier == nil {
+		return
+	}
+	message := fmt.Sprintf("WARNING: %s campaign id=%d requested %d audiences, but only %d eligible audiences were found; execution will continue.", platform, campaignID, requested, eligible)
+	for _, mobile := range adminCfg.ActiveMobiles() {
+		mobile := mobile
+		go func() {
+			if err := notifier.SendSMS(context.Background(), mobile, message, nil); err != nil && logger != nil {
+				logger.Printf("campaign audience-shortfall warning failed: campaign_id=%d mobile=%s err=%v", campaignID, mobile, err)
+			}
+		}()
+	}
 }
 
 // selectAndReserveStandardBundleCandidates serializes standard targeting for a
