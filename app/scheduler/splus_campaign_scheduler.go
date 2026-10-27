@@ -153,7 +153,7 @@ func (s *SplusCampaignScheduler) Start(parent context.Context) func() {
 }
 
 func (s *SplusCampaignScheduler) runOnce(ctx context.Context, parent context.Context) {
-	// recoverStaleUnpreparedCampaigns(ctx, s.db, s.logger, "Splus")
+	recoverStaleCampaignRuns(ctx, s.db, s.logger, "Splus")
 	jazzAccessToken, err := s.botClient.Login(ctx)
 	if err != nil {
 		s.logger.Printf("Splus scheduler: bot login failed: %v", err)
@@ -261,15 +261,19 @@ func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzA
 	if err != nil {
 		return fmt.Errorf("resolve Splus bot id for campaign id=%d: %w", c.ID, err)
 	}
-	if _, err := schedulerConfiguredAudienceCount(c); err != nil {
+	requestedAudienceCount, err := schedulerConfiguredAudienceCount(c)
+	if err != nil {
 		return err
 	}
 
 	if err := s.botClient.MoveCampaignToRunning(ctx, jazzAccessToken, c.ID); err != nil {
 		return fmt.Errorf("move campaign id=%d to running: %w", c.ID, err)
 	}
-	// defer releaseUnpreparedCampaignOnFailure(s.db, s.logger, "Splus", c.ID, &err)
+	defer releaseUnpreparedCampaignOnFailure(s.db, s.logger, "Splus", c.ID, &err)
 	s.logger.Printf("Splus scheduler: campaign id=%d moved to running", c.ID)
+	if err := repository.TouchRunningCampaign(ctx, s.db, c.ID); err != nil {
+		return fmt.Errorf("heartbeat running campaign id=%d: %w", c.ID, err)
+	}
 
 	// Fetch audience data OUTSIDE any DB transaction.
 	// AllocateShortLinks and DownloadTargetAudienceExcelFile are external HTTP calls that can
@@ -342,6 +346,7 @@ func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzA
 	if len(codes) != len(phones) {
 		return fmt.Errorf("audience codes mismatch for campaign id=%d: phones=%d codes=%d", c.ID, len(phones), len(codes))
 	}
+	notifyAudienceShortfall(s.logger, s.notifier, s.adminCfg, "Splus", c.ID, requestedAudienceCount, len(ids))
 	s.logger.Printf("Splus scheduler: campaign id=%d audience ready: phones=%d unmatched=%d", c.ID, len(phones), len(unmatchedUID))
 
 	campaignJSON, err := json.Marshal(c)
@@ -459,6 +464,9 @@ func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzA
 			return fmt.Errorf("save batch [%d,%d) for campaign id=%d: %w", start, end, c.ID, err)
 		}
 		s.logger.Printf("Splus scheduler: campaign id=%d batch [%d,%d) saved, sending to Splus", c.ID, start, end)
+		if err := repository.TouchRunningCampaign(ctx, s.db, c.ID); err != nil {
+			return fmt.Errorf("heartbeat before provider batch [%d,%d) campaign id=%d: %w", start, end, c.ID, err)
+		}
 
 		sendUpdates := make([]repository.SentSplusSendResultUpdate, 0, len(items))
 		for i := range items {
