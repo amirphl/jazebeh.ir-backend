@@ -21,6 +21,14 @@ import (
 
 const defaultBotAPIDomain = "https://jazebeh.ir"
 
+// defaultShortLinkAllocationTimeout is deliberately much longer than normal
+// bot calls: allocation persists a large batch and may synchronously publish
+// redirect mappings before returning codes to a scheduler.
+// This must outlive the API handler (50m) and proxy (55m), so a valid
+// response has time to reach the scheduler instead of becoming an ambiguous
+// client-side timeout.
+const defaultShortLinkAllocationTimeout = 60 * time.Minute
+
 type BotClient interface {
 	Login(ctx context.Context) (string, error)
 	ListReadyCampaigns(ctx context.Context, token string, platform string) ([]dto.BotGetCampaignResponse, error)
@@ -35,8 +43,9 @@ type BotClient interface {
 }
 
 type httpBotClient struct {
-	cfg    config.BotConfig
-	client *http.Client
+	cfg                  config.BotConfig
+	client               *http.Client
+	shortLinkAllocClient *http.Client
 }
 
 func newHTTPBotClient(cfg config.BotConfig) *httpBotClient {
@@ -45,11 +54,16 @@ func newHTTPBotClient(cfg config.BotConfig) *httpBotClient {
 		cfg.APIDomain = defaultBotAPIDomain
 	}
 
+	allocationTimeout := cfg.ShortLinkAllocationTimeout
+	if allocationTimeout <= 0 {
+		allocationTimeout = defaultShortLinkAllocationTimeout
+	}
 	return &httpBotClient{
 		cfg: cfg,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		shortLinkAllocClient: &http.Client{Timeout: allocationTimeout},
 	}
 }
 
@@ -249,7 +263,7 @@ func (c *httpBotClient) AllocateShortLinks(ctx context.Context, token string, re
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
-	resp, err := c.client.Do(httpReq)
+	resp, err := c.shortLinkAllocClient.Do(httpReq)
 	if err != nil {
 		return nil, err
 	}
