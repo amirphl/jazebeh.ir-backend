@@ -10,6 +10,7 @@ import (
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	"github.com/amirphl/Yamata-no-Orochi/models"
+	"github.com/amirphl/Yamata-no-Orochi/repository"
 	"github.com/lib/pq"
 )
 
@@ -70,7 +71,44 @@ func TestSmartTargetingTestSamplingTagIDsPreservePersistedOrder(t *testing.T) {
 	}
 }
 
-func TestValidateSchedulerSelectedAudienceCountRequiresPersistedSmartTestCount(t *testing.T) {
+func TestIsSmartTargetingExecutionCampaignAcceptsExplicitAndLegacyPhase(t *testing.T) {
+	execution := string(models.CampaignPhaseExecution)
+	test := string(models.CampaignPhaseTest)
+	for _, campaign := range []dto.BotGetCampaignResponse{
+		{TargetingMethod: models.CampaignAudienceTargetingSmart, Phase: &execution},
+		{TargetingMethod: models.CampaignAudienceTargetingSmart},
+	} {
+		if !isSmartTargetingExecutionCampaign(campaign) {
+			t.Fatalf("execution campaign %#v was not recognized", campaign)
+		}
+	}
+	if isSmartTargetingExecutionCampaign(dto.BotGetCampaignResponse{TargetingMethod: models.CampaignAudienceTargetingSmart, Phase: &test}) {
+		t.Fatal("Test campaign was recognized as execution")
+	}
+}
+
+func TestSmartTargetingExecutionLegacyFallbackRequiresExplicitZeroVersion(t *testing.T) {
+	execution := string(models.CampaignPhaseExecution)
+	zero, current, unknown := 0, models.SmartTargetingExecutionReservationSchemaVersion, models.SmartTargetingExecutionReservationSchemaVersion+1
+	base := dto.BotGetCampaignResponse{TargetingMethod: models.CampaignAudienceTargetingSmart, Phase: &execution}
+	if smartTargetingExecutionLegacyFallbackAllowed(base) {
+		t.Fatal("missing compatibility field must fail closed, not use legacy fallback")
+	}
+	base.SmartTargetingExecutionReservationVersion = &zero
+	if !smartTargetingExecutionLegacyFallbackAllowed(base) {
+		t.Fatal("explicit zero version must allow the pre-migration fallback")
+	}
+	base.SmartTargetingExecutionReservationVersion = &current
+	if smartTargetingExecutionLegacyFallbackAllowed(base) {
+		t.Fatal("current reservation version must not allow a replacement audience")
+	}
+	base.SmartTargetingExecutionReservationVersion = &unknown
+	if smartTargetingExecutionLegacyFallbackAllowed(base) {
+		t.Fatal("unknown reservation version must fail closed")
+	}
+}
+
+func TestValidateSchedulerSelectedAudienceCountAllowsSmartTestRuntimeShortfall(t *testing.T) {
 	phase := string(models.CampaignPhaseTest)
 	sampleSize := uint64(600)
 	campaign := dto.BotGetCampaignResponse{
@@ -79,12 +117,12 @@ func TestValidateSchedulerSelectedAudienceCountRequiresPersistedSmartTestCount(t
 		Phase:            &phase,
 		SampleSizePerTag: &sampleSize,
 	}
-	for _, selected := range []int{1_200} {
+	for _, selected := range []int{0, 599, 600, 1_200} {
 		if err := validateSchedulerSelectedAudienceCount(campaign, 1_200, selected); err != nil {
-			t.Fatalf("persisted selected count %d was rejected: %v", selected, err)
+			t.Fatalf("runtime selected count %d was rejected: %v", selected, err)
 		}
 	}
-	for _, selected := range []int{0, 599, 600, 1_201, 1_800} {
+	for _, selected := range []int{1_201, 1_800} {
 		if err := validateSchedulerSelectedAudienceCount(campaign, 1_200, selected); err == nil {
 			t.Fatalf("invalid selected count %d was accepted", selected)
 		}
@@ -113,7 +151,7 @@ func TestNormalizeSchedulerScoreClassesRejectsDuplicate(t *testing.T) {
 	}
 }
 
-func TestSmartTargetingSchedulerAudienceQueryEnablesBundleExclusionsOnlyForTest(t *testing.T) {
+func TestSmartTargetingSchedulerAudienceQueryUsesExplicitPhaseAndAlwaysExcludesBundleAudience(t *testing.T) {
 	testPhase := string(models.CampaignPhaseTest)
 	campaign := dto.BotGetCampaignResponse{
 		ID:              17,
@@ -122,15 +160,15 @@ func TestSmartTargetingSchedulerAudienceQueryEnablesBundleExclusionsOnlyForTest(
 		Platform:        string(models.CampaignPlatformSMS),
 	}
 	query := smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"}, []string{"white", "pink"})
-	if !query.ApplyBundleAudienceExclusions || query.BundleID != 3 || len(query.TagIDs) != 2 || len(query.AllowedColors) != 2 {
+	if query.Phase != repository.SmartTargetingSelectionPhaseTest || query.BundleID != 3 || len(query.TagIDs) != 2 || len(query.AllowedColors) != 2 {
 		t.Fatalf("Smart Test scheduler audience query = %#v, want Bundle-scoped SMS query", query)
 	}
 
 	executionPhase := string(models.CampaignPhaseExecution)
 	campaign.Phase = &executionPhase
 	query = smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"}, nil)
-	if query.ApplyBundleAudienceExclusions {
-		t.Fatalf("execution scheduler audience query applies Test-only settings: %#v", query)
+	if query.Phase != repository.SmartTargetingSelectionPhaseExecution {
+		t.Fatalf("execution scheduler audience query phase = %#v", query)
 	}
 	if len(query.AllowedColors) != 0 {
 		t.Fatalf("Candoo-compatible scheduler query color filter = %v, want none", query.AllowedColors)
@@ -169,7 +207,7 @@ func (r *capacitySchedulerTestRepo) LatestByInput(context.Context, uint, string)
 	return nil, nil
 }
 
-func (r *capacitySchedulerTestRepo) CurrentForExecution(context.Context, uint, uint, string, bool, []int64, []string, []string, int, time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
+func (r *capacitySchedulerTestRepo) CurrentForPhase(context.Context, uint, uint, string, repository.SmartTargetingSelectionPhase, []int64, []string, []string, int, time.Time) (*models.CampaignTargetingCapacityCalculation, error) {
 	return nil, nil
 }
 
