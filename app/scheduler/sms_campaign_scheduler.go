@@ -166,7 +166,7 @@ func (s *SMSCampaignScheduler) Start(parent context.Context) func() {
 }
 
 func (s *SMSCampaignScheduler) runOnce(ctx context.Context, parent context.Context) {
-	// recoverStaleUnpreparedCampaigns(ctx, s.db, s.logger, "SMS")
+	recoverStaleCampaignRuns(ctx, s.db, s.logger, "SMS")
 	jazzAccessToken, err := s.botClient.Login(ctx)
 	if err != nil {
 		s.logger.Printf("SMS scheduler: bot login failed: %v", err)
@@ -274,7 +274,8 @@ func (s *SMSCampaignScheduler) processSMSCampaign(ctx context.Context, jazzAcces
 	if c.LineNumber == nil {
 		return fmt.Errorf("resolve SMS sender for campaign id=%d: sender is nil", c.ID)
 	}
-	if _, err := schedulerConfiguredAudienceCount(c); err != nil {
+	requestedAudienceCount, err := schedulerConfiguredAudienceCount(c)
+	if err != nil {
 		return err
 	}
 	sender := *c.LineNumber
@@ -291,8 +292,11 @@ func (s *SMSCampaignScheduler) processSMSCampaign(ctx context.Context, jazzAcces
 	if err := s.botClient.MoveCampaignToRunning(ctx, jazzAccessToken, c.ID); err != nil {
 		return fmt.Errorf("move campaign id=%d to running: %w", c.ID, err)
 	}
-	// defer releaseUnpreparedCampaignOnFailure(s.db, s.logger, "SMS", c.ID, &err)
+	defer releaseUnpreparedCampaignOnFailure(s.db, s.logger, "SMS", c.ID, &err)
 	s.logger.Printf("SMS scheduler: campaign id=%d moved to running", c.ID)
+	if err := repository.TouchRunningCampaign(ctx, s.db, c.ID); err != nil {
+		return fmt.Errorf("heartbeat running campaign id=%d: %w", c.ID, err)
+	}
 
 	// Fetch audience data OUTSIDE any DB transaction.
 	// AllocateShortLinks and DownloadTargetAudienceExcelFile are external HTTP calls that can
@@ -367,6 +371,7 @@ func (s *SMSCampaignScheduler) processSMSCampaign(ctx context.Context, jazzAcces
 	if len(codes) != len(phones) {
 		return fmt.Errorf("audience codes mismatch for campaign id=%d: phones=%d codes=%d", c.ID, len(phones), len(codes))
 	}
+	notifyAudienceShortfall(s.logger, s.notifier, s.adminCfg, "SMS", c.ID, requestedAudienceCount, len(ids))
 	s.logger.Printf("SMS scheduler: campaign id=%d audience ready: phones=%d unmatched=%d", c.ID, len(phones), len(unmatchedUID))
 
 	campaignJSON, err := json.Marshal(c)
@@ -489,6 +494,9 @@ func (s *SMSCampaignScheduler) processSMSCampaign(ctx context.Context, jazzAcces
 			return fmt.Errorf("save batch [%d,%d) for campaign id=%d: %w", start, end, c.ID, err)
 		}
 		s.logger.Printf("SMS scheduler: campaign id=%d batch [%d,%d) saved, sending to SMS provider", c.ID, start, end)
+		if err := repository.TouchRunningCampaign(ctx, s.db, c.ID); err != nil {
+			return fmt.Errorf("heartbeat before provider batch [%d,%d) campaign id=%d: %w", start, end, c.ID, err)
+		}
 
 		batchResult, batchErr := provider.SendBatch(ctx, sender, items)
 		if batchErr != nil {
