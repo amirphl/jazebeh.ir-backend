@@ -8,9 +8,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/config"
 )
+
+func TestNewHTTPBotClientUsesDedicatedAllocationTimeout(t *testing.T) {
+	const allocationTimeout = 47 * time.Minute
+	client := newHTTPBotClient(config.BotConfig{ShortLinkAllocationTimeout: allocationTimeout})
+	if got := client.shortLinkAllocClient.Timeout; got != allocationTimeout {
+		t.Fatalf("allocation timeout = %s, want %s", got, allocationTimeout)
+	}
+	if got := client.client.Timeout; got != 30*time.Second {
+		t.Fatalf("ordinary bot timeout = %s, want 30s", got)
+	}
+}
 
 func TestDownloadCampaignMediaKeepsHeaderExtension(t *testing.T) {
 	t.Parallel()
