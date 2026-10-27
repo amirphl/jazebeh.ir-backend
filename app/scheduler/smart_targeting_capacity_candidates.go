@@ -14,9 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// selectAndReserveExactSmartTargetingCandidates selects execution campaigns
-// after a scheduler claim. Test campaigns materialize their already persisted
-// snapshot; only execution-phase campaigns select new candidate rows here.
+// selectAndReserveExactSmartTargetingCandidates materializes a persisted Smart
+// Targeting reservation after a scheduler claim.  Test and newly finalized
+// Execution campaigns never select replacement candidates here.  The legacy
+// execution fallback is retained only for campaigns approved before execution
+// reservations were introduced.
 func selectAndReserveExactSmartTargetingCandidates(
 	ctx context.Context,
 	db *gorm.DB,
@@ -34,6 +36,7 @@ func selectAndReserveExactSmartTargetingCandidates(
 	var uids []string
 	var selectionID uint
 	isTest := isSmartTargetingTestCampaign(campaign)
+	isExecution := isSmartTargetingExecutionCampaign(campaign)
 	err := repository.WithTransaction(ctx, db, func(txCtx context.Context) error {
 		txDB, ok := txCtx.Value(repository.TxContextKey).(*gorm.DB)
 		if !ok || txDB == nil {
@@ -49,14 +52,25 @@ func selectAndReserveExactSmartTargetingCandidates(
 			return err
 		}
 		if existing != nil {
+			if isExecution {
+				if campaign.SmartTargetingExecutionReservationVersion == nil {
+					return fmt.Errorf("campaign %d did not declare execution reservation compatibility: %w", campaign.ID, repository.ErrSmartTargetingExecutionReservationMissing)
+				}
+				if !smartTargetingExecutionLegacyFallbackAllowed(campaign) {
+					if *campaign.SmartTargetingExecutionReservationVersion != models.SmartTargetingExecutionReservationSchemaVersion {
+						return fmt.Errorf("campaign %d has unsupported execution reservation version %d: %w", campaign.ID, *campaign.SmartTargetingExecutionReservationVersion, repository.ErrSmartTargetingExecutionReservationCorrupt)
+					}
+					if err := repository.NewCampaignTargetingExecutionReservationRepository(txDB).ValidateMaterializedForCampaign(txCtx, campaign.ID, *campaign.BundleID, requested, []int64(existing.SelectedAudienceIDs)); err != nil {
+						return fmt.Errorf("validate materialized execution reservation for campaign %d: %w", campaign.ID, err)
+					}
+				}
+			}
 			phones, ids, uids, err = loadReservedBundleAudience(txCtx, repository.NewAudienceProfileRepository(txDB), []int64(existing.SelectedAudienceIDs))
 			if err != nil {
 				return err
 			}
-			if !isTest {
-				if err := requireExactAudienceCount(campaign.ID, requested, len(ids)); err != nil {
-					return err
-				}
+			if err := requireExactAudienceCount(campaign.ID, requested, len(ids)); err != nil {
+				return err
 			}
 			selectionID = existing.ID
 			return nil
@@ -106,6 +120,73 @@ func selectAndReserveExactSmartTargetingCandidates(
 			selectionID = selection.ID
 			return nil
 		}
+		if isExecution {
+			executionReservationRepo := repository.NewCampaignTargetingExecutionReservationRepository(txDB)
+			if campaign.SmartTargetingExecutionReservationVersion == nil {
+				return fmt.Errorf("campaign %d did not declare execution reservation compatibility: %w", campaign.ID, repository.ErrSmartTargetingExecutionReservationMissing)
+			}
+			if !smartTargetingExecutionLegacyFallbackAllowed(campaign) {
+				if *campaign.SmartTargetingExecutionReservationVersion != models.SmartTargetingExecutionReservationSchemaVersion {
+					return fmt.Errorf("campaign %d has unsupported execution reservation version %d: %w", campaign.ID, *campaign.SmartTargetingExecutionReservationVersion, repository.ErrSmartTargetingExecutionReservationCorrupt)
+				}
+				snapshot, err := executionReservationRepo.ActiveReservedForCampaign(txCtx, campaign.ID, requested)
+				if err != nil {
+					// A campaign marked as reservation-aware must never silently
+					// substitute a new audience. Surface the precise repository
+					// error to the worker/operator and leave the claim recoverable.
+					return fmt.Errorf("load required execution reservation for campaign %d: %w", campaign.ID, err)
+				}
+				reserved := snapshot.Members
+				persistedIDs := make([]int64, 0, len(reserved))
+				for position, reservation := range reserved {
+					if reservation.AudienceID <= 0 || reservation.AssignedTagID == 0 || reservation.SelectionOrder != int64(position) {
+						return fmt.Errorf("persisted Smart Targeting Execution audience reservation is invalid for campaign %d", campaign.ID)
+					}
+					persistedIDs = append(persistedIDs, reservation.AudienceID)
+				}
+				selection, err := bundleSelectionRepo.InsertForCampaign(txCtx, campaign.CustomerID, *campaign.BundleID, campaign.ID, correlationID, persistedIDs)
+				if err != nil {
+					return err
+				}
+				phones, ids, uids, err = loadReservedBundleAudience(txCtx, repository.NewAudienceProfileRepository(txDB), persistedIDs)
+				if err != nil {
+					return err
+				}
+				if err := requireExactAudienceCount(campaign.ID, requested, len(ids)); err != nil {
+					return err
+				}
+				attributions := make([]models.CampaignAudienceTagAttribution, 0, len(reserved))
+				for position, reservation := range reserved {
+					attributions = append(attributions, models.CampaignAudienceTagAttribution{
+						CampaignID: campaign.ID, BundleID: *campaign.BundleID, BundleAudienceSelectionID: selection.ID,
+						AudienceID: reservation.AudienceID, AssignedTagID: reservation.AssignedTagID, PhaseType: models.CampaignPhaseExecution,
+						SelectionMethod: "score_desc", SelectionOrder: int64(position), AudienceScore: reservation.AudienceScore,
+						CreatedAt: time.Now().UTC(),
+					})
+				}
+				if err := txDB.WithContext(txCtx).CreateInBatches(&attributions, 1000).Error; err != nil {
+					return err
+				}
+				if err := executionReservationRepo.Materialize(txCtx, campaign.ID, int64(len(reserved))); err != nil {
+					return err
+				}
+				selectionID = selection.ID
+				return nil
+			}
+			// Only an explicit zero version identifies a pre-migration campaign.
+			// Even that legacy path fails closed if any active execution rows exist:
+			// selecting a replacement would orphan those rows and double-consume
+			// Bundle capacity.
+			hasActiveRows, err := executionReservationRepo.HasActiveRowsForCampaign(txCtx, campaign.ID)
+			if err != nil {
+				return err
+			}
+			if hasActiveRows {
+				return fmt.Errorf("legacy-marked campaign %d has active execution reservation rows: %w", campaign.ID, repository.ErrSmartTargetingExecutionReservationCorrupt)
+			}
+			// This is the sole scheduler-time fresh-selection path, retained for
+			// campaigns finalized before the reservation migration.
+		}
 
 		classes, err := normalizeSchedulerScoreClasses(campaign.AudienceGrades)
 		if err != nil {
@@ -130,13 +211,16 @@ func selectAndReserveExactSmartTargetingCandidates(
 		sort.Slice(capacityTagIDs, func(i, j int) bool { return capacityTagIDs[i] < capacityTagIDs[j] })
 		calculationRepo := repository.NewCampaignTargetingCapacityRepository(txDB)
 		platform := strings.ToLower(strings.TrimSpace(campaign.Platform))
-		applyBundleAudienceExclusions := isSmartTargetingTestCampaign(campaign)
-		calculation, err := calculationRepo.CurrentForExecution(
+		selectionPhase := repository.SmartTargetingSelectionPhaseExecution
+		if isTest {
+			selectionPhase = repository.SmartTargetingSelectionPhaseTest
+		}
+		calculation, err := calculationRepo.CurrentForPhase(
 			txCtx,
 			campaign.ID,
 			*campaign.BundleID,
 			platform,
-			applyBundleAudienceExclusions,
+			selectionPhase,
 			capacityTagIDs,
 			classes,
 			allowedColors,
@@ -146,7 +230,7 @@ func selectAndReserveExactSmartTargetingCandidates(
 		if err != nil {
 			return err
 		}
-		if calculation == nil || (!isTest && calculation.UsableUniqueAudienceCount < requested) {
+		if calculation == nil {
 			return fmt.Errorf("current exact Smart Targeting capacity is unavailable for campaign %d", campaign.ID)
 		}
 
@@ -206,10 +290,8 @@ func selectAndReserveExactSmartTargetingCandidates(
 			assignedTags = assignFirstMatchingTags(rows, tagIDs)
 		}
 		phones, ids, uids = audienceProfileRows(rows)
-		if !isTest {
-			if err := requireExactAudienceCount(campaign.ID, requested, len(ids)); err != nil {
-				return err
-			}
+		if err := requireExactAudienceCount(campaign.ID, requested, len(ids)); err != nil {
+			return err
 		}
 		selection, err := bundleSelectionRepo.InsertForCampaign(txCtx, campaign.CustomerID, *campaign.BundleID, campaign.ID, correlationID, ids)
 		if err != nil {
@@ -252,6 +334,9 @@ func selectAndReserveExactSmartTargetingCandidates(
 		return nil
 	})
 	if err != nil {
+		if isExecution {
+			recordSmartTargetingExecutionReservationSchedulerFailure(err)
+		}
 		return nil, nil, nil, 0, err
 	}
 	return phones, ids, uids, selectionID, nil
@@ -282,15 +367,28 @@ func isSmartTargetingTestCampaign(campaign dto.BotGetCampaignResponse) bool {
 	return usesSmartAudienceTargeting(campaign) && campaign.Phase != nil && strings.EqualFold(strings.TrimSpace(*campaign.Phase), string(models.CampaignPhaseTest))
 }
 
+func isSmartTargetingExecutionCampaign(campaign dto.BotGetCampaignResponse) bool {
+	return usesSmartAudienceTargeting(campaign) && (campaign.Phase == nil || strings.EqualFold(strings.TrimSpace(*campaign.Phase), string(models.CampaignPhaseExecution)))
+}
+
+// smartTargetingExecutionLegacyFallbackAllowed intentionally requires an
+// explicit zero supplied by the Bot API. A missing field is not legacy: it is
+// an incompatible deployment and must fail closed rather than reselecting a
+// modern campaign's frozen audience.
+func smartTargetingExecutionLegacyFallbackAllowed(campaign dto.BotGetCampaignResponse) bool {
+	return isSmartTargetingExecutionCampaign(campaign) && campaign.SmartTargetingExecutionReservationVersion != nil && *campaign.SmartTargetingExecutionReservationVersion == 0
+}
+
 func smartTargetingSchedulerAudienceQuery(campaign dto.BotGetCampaignResponse, bundleID uint, tagIDs []int64, classes, allowedColors []string) repository.SmartTargetingAudienceQuery {
 	query := repository.SmartTargetingAudienceQuery{
 		BundleID:      bundleID,
+		Phase:         repository.SmartTargetingSelectionPhaseExecution,
 		TagIDs:        tagIDs,
 		ScoreClasses:  classes,
 		AllowedColors: allowedColors,
 	}
 	if isSmartTargetingTestCampaign(campaign) {
-		query.ApplyBundleAudienceExclusions = true
+		query.Phase = repository.SmartTargetingSelectionPhaseTest
 	}
 	return query
 }
@@ -402,16 +500,7 @@ func schedulerConfiguredAudienceCount(campaign dto.BotGetCampaignResponse) (int6
 }
 
 func validateSchedulerSelectedAudienceCount(campaign dto.BotGetCampaignResponse, intended int64, selected int) error {
-	if !isSmartTargetingTestCampaign(campaign) {
-		return requireExactAudienceCount(campaign.ID, intended, selected)
-	}
-	if campaign.SampleSizePerTag == nil || *campaign.SampleSizePerTag == 0 {
-		return fmt.Errorf("Smart Targeting Test campaign %d has invalid sample_size_per_tag", campaign.ID)
-	}
-	if int64(selected) != intended || uint64(selected)%*campaign.SampleSizePerTag != 0 {
-		return fmt.Errorf("Smart Targeting Test campaign %d prepared an invalid audience count: intended=%d selected=%d", campaign.ID, intended, selected)
-	}
-	return nil
+	return requireExactAudienceCount(campaign.ID, intended, selected)
 }
 
 func audienceProfileRows(rows []*models.AudienceProfile) ([]string, []int64, []string) {
