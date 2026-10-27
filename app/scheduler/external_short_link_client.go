@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/amirphl/Yamata-no-Orochi/config"
 	"github.com/amirphl/Yamata-no-Orochi/models"
@@ -35,10 +36,11 @@ type ExternalShortLinkAPI interface {
 }
 
 type HTTPExternalShortLinkClient struct {
-	baseURL          string
-	token            string
-	mappingBatchSize int
-	client           *http.Client
+	baseURL            string
+	token              string
+	mappingBatchSize   int
+	mappingParallelism int
+	client             *http.Client
 }
 
 func NewExternalShortLinkClient(cfg config.ExternalShortLinkConfig) (*HTTPExternalShortLinkClient, error) {
@@ -80,10 +82,11 @@ func NewExternalShortLinkClient(cfg config.ExternalShortLinkConfig) (*HTTPExtern
 	}
 	transport.TLSClientConfig = tlsConfig
 	return &HTTPExternalShortLinkClient{
-		baseURL:          baseURL,
-		token:            cfg.APIToken,
-		mappingBatchSize: cfg.MappingBatchSize,
-		client:           &http.Client{Timeout: cfg.RequestTimeout, Transport: transport},
+		baseURL:            baseURL,
+		token:              cfg.APIToken,
+		mappingBatchSize:   cfg.MappingBatchSize,
+		mappingParallelism: cfg.MappingParallelism,
+		client:             &http.Client{Timeout: cfg.RequestTimeout, Transport: transport},
 	}, nil
 }
 
@@ -180,34 +183,111 @@ func (c *HTTPExternalShortLinkClient) UploadMappings(ctx context.Context, links 
 	if batchSize <= 0 || batchSize > maxExternalMappingBatchSize {
 		batchSize = maxExternalMappingBatchSize
 	}
-	for start := 0; start < len(links); start += batchSize {
+	type uploadChunk struct {
+		start    int
+		end      int
+		expected int
+		encoded  []byte
+	}
+	buildChunk := func(start int) (uploadChunk, error) {
 		end := min(start+batchSize, len(links))
 		payload, encoded, err := externalMappingPayload(links[start:end])
 		if err != nil {
-			return fmt.Errorf("build external mapping chunk [%d,%d): %w", start, end, err)
+			return uploadChunk{}, fmt.Errorf("build external mapping chunk [%d,%d): %w", start, end, err)
 		}
 		for len(encoded) > maxExternalMappingBodyBytes && len(payload.Links) > 1 {
 			end = start + (end-start+1)/2
 			payload, encoded, err = externalMappingPayload(links[start:end])
 			if err != nil {
-				return fmt.Errorf("build external mapping chunk [%d,%d): %w", start, end, err)
+				return uploadChunk{}, fmt.Errorf("build external mapping chunk [%d,%d): %w", start, end, err)
 			}
 		}
 		if len(encoded) > maxExternalMappingBodyBytes {
-			return fmt.Errorf("external mapping at offset %d exceeds the %d-byte request limit", start, maxExternalMappingBodyBytes)
+			return uploadChunk{}, fmt.Errorf("external mapping at offset %d exceeds the %d-byte request limit", start, maxExternalMappingBodyBytes)
 		}
+		return uploadChunk{start: start, end: end, expected: len(payload.Links), encoded: encoded}, nil
+	}
+
+	upload := func(ctx context.Context, chunk uploadChunk) error {
 		var response struct {
 			Persisted int `json:"persisted"`
 		}
-		if err := c.requestPayload(ctx, http.MethodPost, "/api/v1/links/batch", encoded, &response); err != nil {
-			return fmt.Errorf("upload mapping chunk [%d,%d): %w", start, end, err)
+		if err := c.requestPayload(ctx, http.MethodPost, "/api/v1/links/batch", chunk.encoded, &response); err != nil {
+			return fmt.Errorf("upload mapping chunk [%d,%d): %w", chunk.start, chunk.end, err)
 		}
-		if response.Persisted != len(payload.Links) {
-			return fmt.Errorf("upload mapping chunk [%d,%d): acknowledged %d of %d mappings", start, end, response.Persisted, len(payload.Links))
+		if response.Persisted != chunk.expected {
+			return fmt.Errorf("upload mapping chunk [%d,%d): acknowledged %d of %d mappings", chunk.start, chunk.end, response.Persisted, chunk.expected)
 		}
-		batchSize = end - start
+		return nil
 	}
-	return nil
+
+	parallelism := c.mappingParallelism
+	if parallelism <= 1 || len(links) <= batchSize {
+		for start := 0; start < len(links); {
+			chunk, err := buildChunk(start)
+			if err != nil {
+				return err
+			}
+			if err := upload(ctx, chunk); err != nil {
+				return err
+			}
+			start = chunk.end
+		}
+		return nil
+	}
+	chunkCount := (len(links) + batchSize - 1) / batchSize
+	if parallelism > chunkCount {
+		parallelism = chunkCount
+	}
+
+	// The redirect service treats mapping batches as idempotent and has an
+	// eight-connection pool. A bounded fan-out dramatically shortens a large
+	// allocation without monopolizing that pool or reordering any local state.
+	uploadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan uploadChunk)
+	var (
+		workers  sync.WaitGroup
+		errOnce  sync.Once
+		firstErr error
+	)
+	for range parallelism {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for chunk := range jobs {
+				if err := upload(uploadCtx, chunk); err != nil {
+					errOnce.Do(func() {
+						firstErr = err
+						cancel()
+					})
+					return
+				}
+			}
+		}()
+	}
+	for start := 0; start < len(links); {
+		chunk, err := buildChunk(start)
+		if err != nil {
+			close(jobs)
+			workers.Wait()
+			return err
+		}
+		select {
+		case jobs <- chunk:
+			start = chunk.end
+		case <-uploadCtx.Done():
+			close(jobs)
+			workers.Wait()
+			if firstErr != nil {
+				return firstErr
+			}
+			return uploadCtx.Err()
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	return firstErr
 }
 
 func externalMappingPayload(links []*models.ShortLink) (externalMappingUpload, []byte, error) {
