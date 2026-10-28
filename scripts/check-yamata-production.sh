@@ -308,8 +308,8 @@ schema_checks="$("${DOCKER[@]}" exec yamata-postgres-beta sh -lc \
 	   FROM pg_index
 	   WHERE indexrelid=to_regclass('\''public.uk_sent_bale_messages_processed_tracking'\'')
 	 ), FALSE);
-	 # Legacy campaigns predate the current-checkpoint lifecycle. Enforce this
-	 # invariant only for campaigns created after the compatibility cutoff.
+	 -- Legacy campaigns predate the current-checkpoint lifecycle. Enforce this
+	 -- invariant only for campaigns created after the compatibility cutoff.
 	 SELECT NOT EXISTS (
 	   SELECT campaign_id FROM processed_campaigns
 	   WHERE campaign_id >= 1001
