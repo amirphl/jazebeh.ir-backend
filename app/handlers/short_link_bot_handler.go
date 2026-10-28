@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -13,8 +14,12 @@ import (
 )
 
 const (
-	shortLinkCreateTimeout   = 2 * time.Minute
-	shortLinkAllocateTimeout = 5 * time.Minute
+	shortLinkCreateTimeout = 2 * time.Minute
+	// A 200K-recipient allocation performs a bulk insert and, when enabled,
+	// waits for all redirect mappings to be acknowledged. Leave time for the
+	// reverse proxy to return a timeout response and for the scheduler client
+	// to receive it; equal deadlines make a completed allocation look failed.
+	shortLinkAllocateTimeout = 50 * time.Minute
 )
 
 // ShortLinkBotHandlerInterface defines contract for bot short link endpoints
@@ -121,6 +126,9 @@ func (h *ShortLinkBotHandler) AllocateShortLinks(c fiber.Ctx) error {
 	codes, err := h.flow.GenerateAndCreateShortLinks(ctx, &req)
 	if err != nil {
 		log.Println("Bot allocate short links failed", err)
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return h.ErrorResponse(c, fiber.StatusGatewayTimeout, "Short-link allocation timed out", "ALLOCATE_SHORT_LINKS_TIMEOUT", nil)
+		}
 		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to allocate short links", "ALLOCATE_SHORT_LINKS_FAILED", nil)
 	}
 	return h.SuccessResponse(c, fiber.StatusOK, "Short links allocated", dto.BotAllocateShortLinksResponse{Message: "Short links allocated", Codes: codes})
