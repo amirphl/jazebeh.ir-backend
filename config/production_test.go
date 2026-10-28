@@ -467,6 +467,7 @@ func TestValidateExternalShortLinkConfig(t *testing.T) {
 		MappingSyncInterval: time.Minute,
 		ClickSyncInterval:   5 * time.Minute,
 		MappingBatchSize:    500,
+		MappingParallelism:  4,
 		ClickPageSize:       1000,
 		MaxClickPagesPerRun: 100,
 	}
