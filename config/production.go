@@ -342,9 +342,10 @@ func normalizeMobileList(mobiles []string) []string {
 }
 
 type BotConfig struct {
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	APIDomain string `json:"api_domain"`
+	Username                   string        `json:"username"`
+	Password                   string        `json:"password"`
+	APIDomain                  string        `json:"api_domain"`
+	ShortLinkAllocationTimeout time.Duration `json:"short_link_allocation_timeout"`
 }
 
 type CryptoConfig struct {
@@ -469,6 +470,7 @@ type ExternalShortLinkConfig struct {
 	MappingSyncInterval time.Duration `json:"mapping_sync_interval"`
 	ClickSyncInterval   time.Duration `json:"click_sync_interval"`
 	MappingBatchSize    int           `json:"mapping_batch_size"`
+	MappingParallelism  int           `json:"mapping_parallelism"`
 	ClickPageSize       int           `json:"click_page_size"`
 	MaxClickPagesPerRun int           `json:"max_click_pages_per_run"`
 }
@@ -596,10 +598,12 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			SlowQueryTime:   getEnvDuration("DB_SLOW_QUERY_TIME", 1*time.Second),
 		},
 		Server: ServerConfig{
-			Host:              getEnvString("SERVER_HOST", "0.0.0.0"),
-			Port:              getEnvInt("SERVER_PORT", 8080),
-			ReadTimeout:       getEnvDuration("SERVER_READ_TIMEOUT", 5*time.Minute),
-			WriteTimeout:      getEnvDuration("SERVER_WRITE_TIMEOUT", 5*time.Minute),
+			Host: getEnvString("SERVER_HOST", "0.0.0.0"),
+			Port: getEnvInt("SERVER_PORT", 8080),
+			// A large allocation can contain hundreds of thousands of recipients.
+			// Keep the backend timeout beyond the handler and reverse-proxy budgets.
+			ReadTimeout:       getEnvDuration("SERVER_READ_TIMEOUT", 70*time.Minute),
+			WriteTimeout:      getEnvDuration("SERVER_WRITE_TIMEOUT", 70*time.Minute),
 			IdleTimeout:       getEnvDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
 			ShutdownTimeout:   getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
 			BodyLimit:         getEnvInt("SERVER_BODY_LIMIT", 100*1024*1024), // 100MB
@@ -797,9 +801,10 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			BaseURL: getEnvString("SPLUS_BASE_URL", "https://bui.splus.ir"),
 		},
 		Bot: BotConfig{
-			Username:  getEnvString("BOT_USERNAME", ""),
-			Password:  getEnvString("BOT_PASSWORD", ""),
-			APIDomain: getEnvString("BOT_API_DOMAIN", ""),
+			Username:                   getEnvString("BOT_USERNAME", ""),
+			Password:                   getEnvString("BOT_PASSWORD", ""),
+			APIDomain:                  getEnvString("BOT_API_DOMAIN", ""),
+			ShortLinkAllocationTimeout: getEnvDuration("BOT_SHORT_LINK_ALLOCATION_TIMEOUT", time.Hour),
 		},
 		Scheduler: loadSchedulerConfig(),
 		ExternalShortLink: ExternalShortLinkConfig{
@@ -810,10 +815,13 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			ClientKeyFile:       getEnvString("EXTERNAL_SHORTLINK_CLIENT_KEY_FILE", ""),
 			CAFile:              getEnvString("EXTERNAL_SHORTLINK_CA_FILE", ""),
 			AllowInsecureHTTP:   getEnvBool("EXTERNAL_SHORTLINK_ALLOW_INSECURE_HTTP", false),
-			RequestTimeout:      getEnvDuration("EXTERNAL_SHORTLINK_REQUEST_TIMEOUT", 30*time.Second),
+			// This is per redirect-service batch, not the whole allocation. It
+			// needs room for a saturated database pool while remaining bounded.
+			RequestTimeout:      getEnvDuration("EXTERNAL_SHORTLINK_REQUEST_TIMEOUT", 2*time.Minute),
 			MappingSyncInterval: getEnvDuration("EXTERNAL_SHORTLINK_MAPPING_SYNC_INTERVAL", time.Minute),
 			ClickSyncInterval:   getEnvDuration("EXTERNAL_SHORTLINK_CLICK_SYNC_INTERVAL", 5*time.Minute),
 			MappingBatchSize:    getEnvInt("EXTERNAL_SHORTLINK_MAPPING_BATCH_SIZE", 500),
+			MappingParallelism:  getEnvInt("EXTERNAL_SHORTLINK_MAPPING_PARALLELISM", 4),
 			ClickPageSize:       getEnvInt("EXTERNAL_SHORTLINK_CLICK_PAGE_SIZE", 1000),
 			MaxClickPagesPerRun: getEnvInt("EXTERNAL_SHORTLINK_MAX_CLICK_PAGES_PER_RUN", 1000),
 		},
@@ -1395,6 +1403,9 @@ func validateExternalShortLinkConfig(cfg ExternalShortLinkConfig) []string {
 	}
 	if cfg.MappingBatchSize <= 0 || cfg.MappingBatchSize > 500 {
 		errors = append(errors, "EXTERNAL_SHORTLINK_MAPPING_BATCH_SIZE must be between 1 and 500")
+	}
+	if cfg.MappingParallelism <= 0 || cfg.MappingParallelism > 8 {
+		errors = append(errors, "EXTERNAL_SHORTLINK_MAPPING_PARALLELISM must be between 1 and 8")
 	}
 	if cfg.ClickPageSize <= 0 || cfg.ClickPageSize > 2000 {
 		errors = append(errors, "EXTERNAL_SHORTLINK_CLICK_PAGE_SIZE must be between 1 and 2000")
