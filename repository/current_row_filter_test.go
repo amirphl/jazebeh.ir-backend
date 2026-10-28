@@ -88,3 +88,11 @@ func TestCurrentMarkersAreReadOnlySoDatabaseDefaultsApply(t *testing.T) {
 		}
 	}
 }
+
+func TestCampaignReadProjectionRetainsExecutionReservationVersion(t *testing.T) {
+	t.Parallel()
+
+	if !strings.Contains(statisticsWithoutTrackingResults, "campaigns.smart_targeting_execution_reservation_version") {
+		t.Fatalf("campaign read projection omits execution reservation version: %s", statisticsWithoutTrackingResults)
+	}
+}

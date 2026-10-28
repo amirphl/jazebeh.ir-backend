@@ -34,7 +34,13 @@ const statisticsWithoutTrackingResults = "campaigns.id, campaigns.uuid, campaign
 	"campaigns.bundle_id, campaigns.phase, campaigns.sample_size_per_tag, " +
 	"campaigns.smart_targeting_test_satisfied_tag_ids, campaigns.smart_targeting_test_sampling_input_hash, " +
 	"campaigns.smart_targeting_test_sampling_previewed_at, campaigns.smart_targeting_test_sampling_generation, " +
-	"campaigns.active_smart_targeting_test_selection_id"
+	"campaigns.active_smart_targeting_test_selection_id, " +
+	// Campaigns returned by this projection are subsequently updated by status
+	// transitions (for example, MoveCampaignToRunning). Keep every persisted
+	// scalar field that Update/Save can write here: omitting the reservation
+	// version makes GORM write its zero value and disconnect a valid frozen
+	// Smart Targeting execution reservation from its campaign.
+	"campaigns.smart_targeting_execution_reservation_version"
 
 // ByID retrieves an campaign by ID
 func (r *CampaignRepositoryImpl) ByID(ctx context.Context, id uint) (*models.Campaign, error) {

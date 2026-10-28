@@ -594,8 +594,10 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 10),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
 			ConnMaxIdleTime: getEnvDuration("DB_CONN_MAX_IDLE_TIME", 15*time.Minute),
-			SlowQueryLog:    getEnvBool("DB_SLOW_QUERY_LOG", true),
-			SlowQueryTime:   getEnvDuration("DB_SLOW_QUERY_TIME", 1*time.Second),
+			// Slow-query SQL output is noisy in container logs. It can be enabled
+			// explicitly when diagnosing database performance.
+			SlowQueryLog:  getEnvBool("DB_SLOW_QUERY_LOG", false),
+			SlowQueryTime: getEnvDuration("DB_SLOW_QUERY_TIME", 1*time.Second),
 		},
 		Server: ServerConfig{
 			Host: getEnvString("SERVER_HOST", "0.0.0.0"),
