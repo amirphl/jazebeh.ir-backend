@@ -247,9 +247,21 @@ sample before runtime, without making abandoned preview history permanent.
 
 For `phase: "execution"`, `sample_size_per_tag` has no effect. Requested
 audience count must not exceed the current exact usable capacity. Eligible
-audiences are prepared by `normalized_score DESC`, null scores last, with
-audience ID as the stable tie-breaker. That exact order is persisted and used
-for sending.
+audiences are discovered at campaign finalization by `normalized_score DESC`,
+null scores last, with audience ID as the stable tie-breaker. The expensive
+discovery scan happens before the Bundle critical section. The short final
+transaction rechecks the allocation fingerprint, Bundle exclusions,
+phone/tag/color eligibility, active reservations, and permanent allocations,
+then persists an immutable header plus the exact ordered, attributed members
+with the waiting-for-approval/funds transition.
+
+At scheduler time that reservation is materialized into the normal Bundle
+allocation ledger and used for best-effort sending; unreachable recipients are
+skipped and are never replaced with newly selected audiences. Rejecting,
+cancelling, or expiring an unmaterialized campaign releases it. The Bot API
+explicitly sends compatibility version `0` only for campaigns approved before
+the migration. Missing, unsupported, stale, partial, or corrupt modern
+reservations fail closed and never use legacy scheduler-time selection.
 
 For Test and Execution, preparation writes immutable
 campaign/audience/assigned-tag rows to
