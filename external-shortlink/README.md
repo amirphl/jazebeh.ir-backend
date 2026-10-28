@@ -31,9 +31,10 @@ capacity before making deployment changes.
 
 - **HTTP server:** Axum/Tokio. One multi-threaded Rust process listens only on
   `127.0.0.1:8081`; Nginx owns public TLS and client IP forwarding.
-- **Mappings:** PostgreSQL is the source of truth. A transaction-scoped lock
-  makes the immutable code-to-destination check race-safe, and mappings are
-  held in a bounded concurrent cache. A cache hit remains
+- **Mappings:** PostgreSQL is the source of truth. Its unique code index plus
+  a post-insert conflict check make immutable code-to-destination writes
+  race-safe without serializing unrelated batches, and mappings are held in a
+  bounded concurrent cache. A cache hit remains
   redirectable while PostgreSQL is unavailable.
 - **Click durability:** every click has a UUID idempotency key. Fast
   PostgreSQL writes fall back to a local SQLite WAL spool when they fail or
@@ -121,6 +122,7 @@ EXTERNAL_SHORTLINK_API_TOKEN=the_same_strong_token
 EXTERNAL_SHORTLINK_MAPPING_SYNC_INTERVAL=1m
 EXTERNAL_SHORTLINK_CLICK_SYNC_INTERVAL=5m
 EXTERNAL_SHORTLINK_MAPPING_BATCH_SIZE=500
+EXTERNAL_SHORTLINK_MAPPING_PARALLELISM=4
 EXTERNAL_SHORTLINK_CLICK_PAGE_SIZE=1000
 ```
 
