@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -90,6 +91,43 @@ func TestExternalShortLinkClientCapsRequestBatchesForRustService(t *testing.T) {
 	}
 	if got, want := fmt.Sprint(sizes), "[500 1]"; got != want {
 		t.Fatalf("upload sizes = %s, want %s", got, want)
+	}
+}
+
+func TestExternalShortLinkClientUploadsLargeBatchesWithBoundedParallelism(t *testing.T) {
+	var active, maximum atomic.Int32
+	client := &HTTPExternalShortLinkClient{
+		baseURL:            "https://links.example",
+		token:              "secret",
+		mappingBatchSize:   1,
+		mappingParallelism: 2,
+		client: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			current := active.Add(1)
+			for {
+				seen := maximum.Load()
+				if current <= seen || maximum.CompareAndSwap(seen, current) {
+					break
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+			active.Add(-1)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"persisted":1}`)),
+				Request:    request,
+			}, nil
+		})},
+	}
+	links := make([]*models.ShortLink, 4)
+	for index := range links {
+		links[index] = &models.ShortLink{UID: fmt.Sprintf("code-%d", index), LongLink: "https://example.com/destination"}
+	}
+	if err := client.UploadMappings(context.Background(), links); err != nil {
+		t.Fatalf("UploadMappings() error = %v", err)
+	}
+	if got := maximum.Load(); got != 2 {
+		t.Fatalf("maximum concurrent uploads = %d, want 2", got)
 	}
 }
 
