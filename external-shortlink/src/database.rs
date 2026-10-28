@@ -14,11 +14,6 @@ const LINK_COLUMNS: &str = "
     scenario_id, scenario_name, phone_number, is_test, source_created_at, source_updated_at
 ";
 
-// Mapping publication is infrequent, whereas a wrong destination is a permanent
-// correctness and security failure. A transaction-scoped global advisory lock
-// keeps the conflict check and insert atomic even when two publishers race.
-const MAPPING_UPLOAD_LOCK_KEY: i64 = 8_093_324_862_481_111;
-
 #[derive(Clone)]
 pub struct Database {
     pool: PgPool,
@@ -201,10 +196,6 @@ impl Database {
             .collect::<Vec<_>>();
 
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
-            .bind(MAPPING_UPLOAD_LOCK_KEY)
-            .fetch_all(&mut *transaction)
-            .await?;
         let conflicts = sqlx::query_scalar::<_, String>(
             "
             SELECT existing.code
@@ -249,9 +240,10 @@ impl Database {
         .bind(&source_updated_ats)
         .fetch_all(&mut *transaction)
         .await?;
-        // The advisory lock covers normal publishers. Re-check after the
-        // insert as a final guard against a manual or legacy writer that does
-        // not participate in that lock.
+        // Re-check after INSERT ... ON CONFLICT. PostgreSQL's unique index makes
+        // concurrent writers of the same code wait safely; this fresh statement
+        // then detects a competing immutable destination without serializing
+        // unrelated mapping batches behind a global advisory lock.
         let conflicts = sqlx::query_scalar::<_, String>(
             "
             SELECT existing.code
