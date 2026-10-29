@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -78,5 +79,17 @@ func TestExecutionReservationAvailabilityRequiresTheAssignedTag(t *testing.T) {
 		if !strings.Contains(query, required) {
 			t.Fatalf("execution reservation validation is missing %q:\n%s", required, executionReservationAvailabilityQuery)
 		}
+	}
+}
+
+func TestExecutionReservationScoreLocksUseAStableAudienceOrder(t *testing.T) {
+	// Keep overlapping reservations from different Bundles from taking profile
+	// row locks in different orders.
+	source, err := os.ReadFile("campaign_targeting_execution_reservation_repository.go")
+	if err != nil {
+		t.Fatalf("read reservation repository source: %v", err)
+	}
+	if !strings.Contains(string(source), "WHERE id = ANY(?::bigint[]) ORDER BY id FOR UPDATE") {
+		t.Fatal("execution reservation profile locks must be ordered by audience ID")
 	}
 }
