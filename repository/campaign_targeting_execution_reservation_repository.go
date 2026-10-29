@@ -206,7 +206,11 @@ func lockAndValidateExecutionReservationScores(ctx context.Context, db *gorm.DB,
 		Score *float64 `gorm:"column:normalized_score"`
 	}
 	var current []scoreRow
-	if err := db.WithContext(ctx).Raw(`SELECT id, normalized_score FROM audience_profiles WHERE id = ANY(?::bigint[]) FOR UPDATE`, pq.Int64Array(ids)).Scan(&current).Error; err != nil {
+	// Lock profiles in one global order. Bundle finalization already serializes
+	// writers within a Bundle, but two different Bundles can overlap on profile
+	// IDs; a deterministic order prevents their profile-row locks from forming
+	// a cycle.
+	if err := db.WithContext(ctx).Raw(`SELECT id, normalized_score FROM audience_profiles WHERE id = ANY(?::bigint[]) ORDER BY id FOR UPDATE`, pq.Int64Array(ids)).Scan(&current).Error; err != nil {
 		return err
 	}
 	if len(current) != len(reservations) {
