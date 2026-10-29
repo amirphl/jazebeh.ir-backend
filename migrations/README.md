@@ -245,6 +245,8 @@ every production change.
 | `0139` | Canonical public short-link metadata and explicit campaign test-click exclusion from reporting |
 | `0140` | Immutable Smart Targeting Test sample snapshots and releasable pre-execution audience reservations |
 | `0141` | Provider-aware Smart Targeting capacity eligibility snapshots |
+| `0142`–`0148` | Execution reservation persistence and hardening, Bundle claim guards, interrupted-capacity indexing, and idempotent external short-link allocation |
+| `0149` | Bundle-scoped advisory claim locks, replacing per-audience locks to prevent bulk reservation lock-table exhaustion and lock-order deadlocks |
 
 ## Current schema areas
 
