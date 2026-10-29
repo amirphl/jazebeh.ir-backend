@@ -5,6 +5,9 @@
 
 \echo 'Starting database rollback...'
 
+\echo 'Running 0149_reduce_bundle_claim_lock_contention_down.sql...'
+\i migrations/0149_reduce_bundle_claim_lock_contention_down.sql
+
 \echo 'Running 0148_add_short_link_allocation_idempotency_down.sql...'
 \i migrations/0148_add_short_link_allocation_idempotency_down.sql
 
