@@ -455,5 +455,8 @@
 \echo 'Running 0148_add_short_link_allocation_idempotency.sql...'
 \i migrations/0148_add_short_link_allocation_idempotency.sql
 
+\echo 'Running 0149_reduce_bundle_claim_lock_contention.sql...'
+\i migrations/0149_reduce_bundle_claim_lock_contention.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
