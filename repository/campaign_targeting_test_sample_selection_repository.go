@@ -179,7 +179,10 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReserveForCampaign(
 		memberIDs = append(memberIDs, member.AudienceID)
 	}
 	var lockedIDs []int64
-	if err := db.Raw(`SELECT id FROM audience_profiles WHERE id = ANY(?::bigint[]) FOR UPDATE`, pq.Int64Array(memberIDs)).Scan(&lockedIDs).Error; err != nil {
+	// Different Bundles may still contend for the same profiles. Acquire the
+	// rows in a stable order so concurrent test/execution finalizations cannot
+	// deadlock while validating otherwise independent Bundles.
+	if err := db.Raw(`SELECT id FROM audience_profiles WHERE id = ANY(?::bigint[]) ORDER BY id FOR UPDATE`, pq.Int64Array(memberIDs)).Scan(&lockedIDs).Error; err != nil {
 		return err
 	}
 	if len(lockedIDs) != len(memberIDs) {
