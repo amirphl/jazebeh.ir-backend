@@ -75,7 +75,7 @@ services:
     restart: unless-stopped
     # PostgreSQL parallel queries use POSIX dynamic shared memory. Docker's
     # 64 MiB default is too small for audience-selection workloads.
-    shm_size: ${POSTGRES_SHM_SIZE:-16gb}
+    shm_size: ${POSTGRES_SHM_SIZE:-24gb}
     environment:
       TZ: UTC
       POSTGRES_DB: ${DB_NAME}
