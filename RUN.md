@@ -379,6 +379,32 @@ docker compose --env-file .env.beta -f docker-compose.beta.yml up -d --force-rec
 docker compose --env-file .env.beta -f docker-compose.beta.yml up -d --force-recreate nginx-beta
 ```
 
+### Large Smart Targeting reservation capacity
+
+Prior versions took a transaction-scoped PostgreSQL advisory lock for every
+selected audience. Migration `0149` instead takes one lock per Bundle, which
+keeps the cross-table claim guard while avoiding lock-table exhaustion and
+opposite-order audience lock waits. `out of shared memory (SQLSTATE 53200)`
+from an older deployment means PostgreSQL's shared lock table is full; it does
+**not** mean that the host has run out of RAM. The production defaults provide
+a 24 GiB PostgreSQL `/dev/shm` mount, 12 GiB shared buffers, and
+`max_locks_per_transaction = 4096`.
+
+Deploy migration `0149` through the normal deployment process. For an existing
+database that was initialized with the former lock-table setting, also apply
+the new value before recreating PostgreSQL (this does not alter data):
+
+```bash
+docker exec yamata-postgres-beta psql -U "$DB_USER" -d "$DB_NAME" \
+  -c "ALTER SYSTEM SET max_locks_per_transaction = '4096';"
+docker compose --env-file .env.beta -f docker-compose.beta.yml up -d --force-recreate postgres-beta
+docker exec yamata-postgres-beta psql -U "$DB_USER" -d "$DB_NAME" \
+  -c "SHOW max_locks_per_transaction;"
+```
+
+Ensure `.env.beta` contains `POSTGRES_SHM_SIZE="24gb"` before recreating the
+container. Do not remove the PostgreSQL volume for this change.
+
 If you specifically need to remove the old container object first, stop and remove only that service container, then start it again through Compose with `.env.beta`:
 
 ```bash
