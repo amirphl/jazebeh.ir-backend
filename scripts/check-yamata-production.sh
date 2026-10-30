@@ -82,6 +82,21 @@ postgres_shm_bytes="$("${DOCKER[@]}" inspect -f '{{.HostConfig.ShmSize}}' yamata
 	die "yamata-postgres-beta /dev/shm is undersized (${postgres_shm_bytes} bytes; require at least ${MIN_POSTGRES_SHM_BYTES})"
 log "yamata-postgres-beta /dev/shm: $((postgres_shm_bytes / 1024 / 1024 / 1024)) GiB"
 
+# A large execution reservation holds an advisory transaction lock for every
+# selected audience.  This is a PostgreSQL shared lock-table capacity setting,
+# not a host-RAM or Docker /dev/shm exhaustion.  It is allocated only during a
+# PostgreSQL restart, so verify the *effective* setting rather than the mounted
+# configuration file.
+readonly MIN_POSTGRES_MAX_LOCKS_PER_TRANSACTION=4096
+postgres_max_locks="$("${DOCKER[@]}" exec yamata-postgres-beta \
+	psql -X -U "$(env_value yamata-postgres-beta POSTGRES_USER)" \
+	-d "$(env_value yamata-postgres-beta POSTGRES_DB)" -Atqc 'SHOW max_locks_per_transaction;')"
+[[ "$postgres_max_locks" =~ ^[0-9]+$ ]] ||
+	die "Could not determine PostgreSQL max_locks_per_transaction"
+((postgres_max_locks >= MIN_POSTGRES_MAX_LOCKS_PER_TRANSACTION)) ||
+	die "PostgreSQL max_locks_per_transaction is too low (${postgres_max_locks}; require at least ${MIN_POSTGRES_MAX_LOCKS_PER_TRANSACTION}); set it and restart postgres-beta"
+log "PostgreSQL max_locks_per_transaction: $postgres_max_locks"
+
 [[ "$(env_value yamata-app-beta CAMPAIGN_EXECUTION_ENABLED)" == false ]] ||
 	die "yamata-app-beta must have CAMPAIGN_EXECUTION_ENABLED=false"
 [[ "$(env_value yamata-campaign-scheduler-beta CAMPAIGN_EXECUTION_ENABLED)" == true ]] ||
