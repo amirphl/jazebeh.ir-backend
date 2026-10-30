@@ -28,7 +28,10 @@ ALTER SYSTEM SET pg_stat_statements.max = 10000;
 
 -- Configure connection pooling parameters
 ALTER SYSTEM SET max_prepared_transactions = 0;
-ALTER SYSTEM SET max_locks_per_transaction = 256;
+-- Keep this aligned with postgresql.conf. Migration 0149 makes execution
+-- reservations use a single Bundle advisory lock, but retain headroom for
+-- mixed-version deployments and other large transactions.
+ALTER SYSTEM SET max_locks_per_transaction = 4096;
 
 -- Set timezone
 SET timezone = 'UTC';
