@@ -184,6 +184,10 @@ if [[ "$MODE" == repair ]]; then
 	# below, so 0135 must be applied rather than silently skipped later.
 	apply_file "$PROJECT_DIR/migrations/0135_external_short_link_sync.sql"
 	apply_file "$PROJECT_DIR/migrations/0136_version_smart_targeting_capacity_eligibility.sql"
+	# 0149 replaces the trigger's unbounded per-audience advisory locks with
+	# one lock per Bundle. It is safe to reapply and is required before large
+	# reservation or allocation writes are allowed back into production.
+	apply_file "$PROJECT_DIR/migrations/0149_reduce_bundle_claim_lock_contention.sql"
 else
 	log "Verification mode: no migrations will be applied"
 fi
@@ -366,6 +370,26 @@ fi
 	);")" == t ]] ||
 	die "Migration 0136 is incomplete: capacity calculation version default is not 3"
 [[ "$(psql_scalar "
+	SELECT COALESCE(
+		POSITION(
+			'pg_advisory_xact_lock(845172, NEW.bundle_id)' IN
+			pg_get_functiondef('public.guard_bundle_audience_claim()'::regprocedure)
+		) > 0,
+		FALSE
+	);")" == t ]] ||
+	die "Migration 0149 is missing: bundle audience claims still use per-audience advisory locks"
+[[ "$(psql_scalar "
+	SELECT COUNT(*) = 3
+	FROM pg_trigger
+	WHERE NOT tgisinternal
+	  AND tgfoid = 'public.guard_bundle_audience_claim()'::regprocedure
+	  AND tgname IN (
+		'trg_guard_test_bundle_audience_claim',
+		'trg_guard_execution_bundle_audience_claim',
+		'trg_guard_materialized_bundle_audience_claim'
+	);")" == t ]] ||
+	die "Migration 0149 is incomplete: bundle claim triggers are missing"
+[[ "$(psql_scalar "
 	SELECT COALESCE((
 		SELECT indisunique AND indisvalid AND indisready
 		FROM pg_index
@@ -452,7 +476,7 @@ fi
 	die "Migration 0132 is incomplete: generated aggregate Test CTR is missing"
 
 if [[ "$MODE" == repair ]]; then
-	advance_migration_tracker '0136_version_smart_targeting_capacity_eligibility.sql'
+	advance_migration_tracker '0149_reduce_bundle_claim_lock_contention.sql'
 	log "Required schema repaired and verified"
 else
 	log "Required schema verified"

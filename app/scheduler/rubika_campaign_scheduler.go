@@ -59,6 +59,7 @@ type RubikaCampaignScheduler struct {
 	schedulerName string
 
 	bundleAudienceCache *BundleAudienceCache
+	executionLimiter    *CampaignExecutionLimiter
 }
 
 type RubikaClient interface {
@@ -287,6 +288,7 @@ func NewRubikaCampaignScheduler(
 	botCfg config.BotConfig,
 	adminCfg config.AdminConfig,
 	messageSendMockEnabled bool,
+	executionLimiter *CampaignExecutionLimiter,
 ) *RubikaCampaignScheduler {
 	if interval <= 0 {
 		interval = time.Minute
@@ -314,6 +316,7 @@ func NewRubikaCampaignScheduler(
 		botClient:           newHTTPBotClient(botCfg),
 		rubikaClient:        maybeMockRubikaClient(newHTTPRubikaClient(rubikaCfg), messageSendMockEnabled),
 		bundleAudienceCache: NewBundleAudienceCache(repository.NewBundleAudienceSelectionRepository(db)),
+		executionLimiter:    executionLimiter,
 		schedulerName:       "rubika",
 	}
 
@@ -535,7 +538,11 @@ func (s *RubikaCampaignScheduler) processRubikaCampaign(ctx context.Context, tok
 		if c.BundleID == nil || *c.BundleID == 0 {
 			return fmt.Errorf("campaign id=%d has no bundle", c.ID)
 		}
+		if !s.executionLimiter.Acquire(ctx) {
+			return fmt.Errorf("campaign execution slot unavailable before fetching audience phones for campaign id=%d: %w", c.ID, ctx.Err())
+		}
 		audienceResult, err = s.fetchRubikaAudiencePhonesByBundle(ctx, c, token, correlationID)
+		s.executionLimiter.Release()
 		if err != nil {
 			return fmt.Errorf("fetch audience phones for campaign id=%d: %w", c.ID, err)
 		}

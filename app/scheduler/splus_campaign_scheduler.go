@@ -58,6 +58,7 @@ type SplusCampaignScheduler struct {
 	schedulerName string
 
 	bundleAudienceCache *BundleAudienceCache
+	executionLimiter    *CampaignExecutionLimiter
 }
 
 func NewSplusCampaignScheduler(
@@ -77,6 +78,7 @@ func NewSplusCampaignScheduler(
 	botCfg config.BotConfig,
 	adminCfg config.AdminConfig,
 	messageSendMockEnabled bool,
+	executionLimiter *CampaignExecutionLimiter,
 ) *SplusCampaignScheduler {
 	if interval <= 0 {
 		interval = time.Minute
@@ -104,6 +106,7 @@ func NewSplusCampaignScheduler(
 		botClient:           newHTTPBotClient(botCfg),
 		splusClient:         maybeMockSplusClient(newHTTPSplusClient(splusCfg), messageSendMockEnabled),
 		bundleAudienceCache: NewBundleAudienceCache(repository.NewBundleAudienceSelectionRepository(db)),
+		executionLimiter:    executionLimiter,
 		schedulerName:       "splus",
 	}
 
@@ -325,7 +328,11 @@ func (s *SplusCampaignScheduler) processSplusCampaign(ctx context.Context, jazzA
 		if c.BundleID == nil || *c.BundleID == 0 {
 			return fmt.Errorf("campaign id=%d has no bundle", c.ID)
 		}
+		if !s.executionLimiter.Acquire(ctx) {
+			return fmt.Errorf("campaign execution slot unavailable before fetching audience phones for campaign id=%d: %w", c.ID, ctx.Err())
+		}
 		audienceResult, err = s.fetchSplusAudiencePhonesByBundle(ctx, c, jazzAccessToken, correlationID)
+		s.executionLimiter.Release()
 		if err != nil {
 			return fmt.Errorf("fetch audience phones for campaign id=%d: %w", c.ID, err)
 		}

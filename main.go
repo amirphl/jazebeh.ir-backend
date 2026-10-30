@@ -834,6 +834,11 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	}
 
 	if cfg.Scheduler.CampaignExecutionEnabled {
+		// Bound bulk audience selection across SMS, Bale, Rubika and Splus.
+		// Individual schedulers retain Bundle-ordering, while this shared limiter
+		// prevents a ready-campaign burst from creating competing large DB writes.
+		campaignExecutionLimiter := scheduler.NewCampaignExecutionLimiter(cfg.Scheduler.CampaignExecutionMaxParallelRuns)
+
 		if cfg.Scheduler.PayamBalanceMonitorEnabled {
 			balanceClient, err := scheduler.NewPayamBalanceClientWithHTTPSProxy(cfg.PayamSMS, cfg.IRHTTPSProxy)
 			if err != nil {
@@ -871,6 +876,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			cfg.Bot,
 			cfg.Admin,
 			cfg.Scheduler.MessageSendMockEnabled,
+			campaignExecutionLimiter,
 		)
 		stopSMSScheduler := smsSched.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopSMSScheduler)
@@ -893,6 +899,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			cfg.Bot,
 			cfg.Admin,
 			cfg.Scheduler.MessageSendMockEnabled,
+			campaignExecutionLimiter,
 		)
 		stopBaleScheduler := baleSched.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopBaleScheduler)
@@ -915,6 +922,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			cfg.Bot,
 			cfg.Admin,
 			cfg.Scheduler.MessageSendMockEnabled,
+			campaignExecutionLimiter,
 		)
 		stopRubikaScheduler := rubikaSched.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopRubikaScheduler)
@@ -937,6 +945,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			cfg.Bot,
 			cfg.Admin,
 			cfg.Scheduler.MessageSendMockEnabled,
+			campaignExecutionLimiter,
 		)
 		stopSplusScheduler := splusSched.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopSplusScheduler)

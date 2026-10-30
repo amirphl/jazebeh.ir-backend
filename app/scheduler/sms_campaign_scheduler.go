@@ -56,6 +56,7 @@ type SMSCampaignScheduler struct {
 	schedulerName string
 
 	bundleAudienceCache *BundleAudienceCache
+	executionLimiter    *CampaignExecutionLimiter
 }
 
 // NotificationSender is a minimal interface extracted from NotificationService for SMS
@@ -83,6 +84,7 @@ func NewCampaignScheduler(
 	botCfg config.BotConfig,
 	adminCfg config.AdminConfig,
 	messageSendMockEnabled bool,
+	executionLimiter *CampaignExecutionLimiter,
 ) *SMSCampaignScheduler {
 	if interval <= 0 {
 		interval = time.Minute
@@ -116,6 +118,7 @@ func NewCampaignScheduler(
 		smsClient:           payamClient,
 		providers:           NewSMSProviderRegistry(newPayamSMSProvider(payamClient), candooProvider),
 		bundleAudienceCache: NewBundleAudienceCache(repository.NewBundleAudienceSelectionRepository(db)),
+		executionLimiter:    executionLimiter,
 		schedulerName:       "sms",
 	}
 
@@ -350,7 +353,11 @@ func (s *SMSCampaignScheduler) processSMSCampaign(ctx context.Context, jazzAcces
 		if c.BundleID == nil || *c.BundleID == 0 {
 			return fmt.Errorf("campaign id=%d has no bundle", c.ID)
 		}
+		if !s.executionLimiter.Acquire(ctx) {
+			return fmt.Errorf("campaign execution slot unavailable before fetching audience phones for campaign id=%d: %w", c.ID, ctx.Err())
+		}
 		audienceResult, err = s.fetchSMSAudiencePhonesByBundle(ctx, c, jazzAccessToken, correlationID, providerName)
+		s.executionLimiter.Release()
 		if err != nil {
 			return fmt.Errorf("fetch audience phones for campaign id=%d: %w", c.ID, err)
 		}

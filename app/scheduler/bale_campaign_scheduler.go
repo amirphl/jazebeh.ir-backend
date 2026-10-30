@@ -55,6 +55,7 @@ type BaleCampaignScheduler struct {
 	schedulerName string
 
 	bundleAudienceCache *BundleAudienceCache
+	executionLimiter    *CampaignExecutionLimiter
 }
 
 func NewBaleCampaignScheduler(
@@ -74,6 +75,7 @@ func NewBaleCampaignScheduler(
 	botCfg config.BotConfig,
 	adminCfg config.AdminConfig,
 	messageSendMockEnabled bool,
+	executionLimiter *CampaignExecutionLimiter,
 ) *BaleCampaignScheduler {
 	if interval <= 0 {
 		interval = time.Minute
@@ -101,6 +103,7 @@ func NewBaleCampaignScheduler(
 		botClient:           newHTTPBotClient(botCfg),
 		baleClient:          maybeMockBaleClient(newHTTPBaleClient(baleCfg), messageSendMockEnabled),
 		bundleAudienceCache: NewBundleAudienceCache(repository.NewBundleAudienceSelectionRepository(db)),
+		executionLimiter:    executionLimiter,
 		schedulerName:       "bale",
 	}
 
@@ -322,7 +325,11 @@ func (s *BaleCampaignScheduler) processBaleCampaign(ctx context.Context, jazzAcc
 		if c.BundleID == nil || *c.BundleID == 0 {
 			return fmt.Errorf("campaign id=%d has no bundle", c.ID)
 		}
+		if !s.executionLimiter.Acquire(ctx) {
+			return fmt.Errorf("campaign execution slot unavailable before fetching audience phones for campaign id=%d: %w", c.ID, ctx.Err())
+		}
 		audienceResult, err = s.fetchBaleAudiencePhonesByBundle(ctx, c, jazzAccessToken, correlationID)
+		s.executionLimiter.Release()
 		if err != nil {
 			return fmt.Errorf("fetch audience phones for campaign id=%d: %w", c.ID, err)
 		}

@@ -443,6 +443,7 @@ type SplusConfig struct {
 type SchedulerConfig struct {
 	CampaignExecutionEnabled                   bool          `json:"campaign_execution_enabled"`
 	CampaignExecutionInterval                  time.Duration `json:"campaign_execution_interval"`
+	CampaignExecutionMaxParallelRuns           int           `json:"campaign_execution_max_parallel_runs"`
 	MessageSendDelay                           time.Duration `json:"message_send_delay"`
 	MessageSendMockEnabled                     bool          `json:"message_send_mock_enabled"`
 	SmartTargetingCapacitySchedulerEnabled     bool          `json:"smart_targeting_capacity_scheduler_enabled"`
@@ -478,8 +479,12 @@ type ExternalShortLinkConfig struct {
 func loadSchedulerConfig() SchedulerConfig {
 	capacitySchedulerEnabled := getEnvBool("SMART_TARGETING_CAPACITY_SCHEDULER_ENABLED", false)
 	return SchedulerConfig{
-		CampaignExecutionEnabled:               getEnvBool("CAMPAIGN_EXECUTION_ENABLED", true),
-		CampaignExecutionInterval:              getEnvDuration("CAMPAIGN_EXECUTION_INTERVAL", 1*time.Minute),
+		CampaignExecutionEnabled:  getEnvBool("CAMPAIGN_EXECUTION_ENABLED", true),
+		CampaignExecutionInterval: getEnvDuration("CAMPAIGN_EXECUTION_INTERVAL", 1*time.Minute),
+		// All platform schedulers share this cap. Bulk audience selections take
+		// row/advisory locks, so an unbounded goroutine per ready Bundle causes
+		// lock waits and defeats the database connection-pool limit.
+		CampaignExecutionMaxParallelRuns:       getEnvInt("CAMPAIGN_EXECUTION_MAX_PARALLEL_RUNS", 2),
 		MessageSendDelay:                       getEnvDuration("CAMPAIGN_MESSAGE_SEND_DELAY", 23*time.Millisecond),
 		MessageSendMockEnabled:                 getEnvBool("CAMPAIGN_MESSAGE_SEND_MOCK_ENABLED", false),
 		SmartTargetingCapacitySchedulerEnabled: capacitySchedulerEnabled,

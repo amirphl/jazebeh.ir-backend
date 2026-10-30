@@ -169,11 +169,15 @@ func appBetaComposeEnvironmentKeys(compose []byte) (map[string]struct{}, error) 
 }
 
 func TestLoadSchedulerConfigReadsTagTestPerformanceSettings(t *testing.T) {
+	t.Setenv("CAMPAIGN_EXECUTION_MAX_PARALLEL_RUNS", "3")
 	t.Setenv("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", "true")
 	t.Setenv("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", "45s")
 	t.Setenv("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", "17")
 
 	cfg := loadSchedulerConfig()
+	if cfg.CampaignExecutionMaxParallelRuns != 3 {
+		t.Fatalf("CampaignExecutionMaxParallelRuns = %d, want 3", cfg.CampaignExecutionMaxParallelRuns)
+	}
 	if !cfg.TagTestPerformanceSchedulerEnabled {
 		t.Fatal("TagTestPerformanceSchedulerEnabled = false, want true")
 	}

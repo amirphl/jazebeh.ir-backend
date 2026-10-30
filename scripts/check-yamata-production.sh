@@ -74,7 +74,7 @@ fi
 # PostgreSQL parallel queries allocate POSIX dynamic shared-memory segments.
 # Reject Docker's 64 MiB default (and other undersized deployments) before a
 # large audience query discovers the problem in production.
-readonly MIN_POSTGRES_SHM_BYTES=$((2 * 1024 * 1024 * 1024))
+readonly MIN_POSTGRES_SHM_BYTES=$((32 * 1024 * 1024 * 1024))
 postgres_shm_bytes="$("${DOCKER[@]}" inspect -f '{{.HostConfig.ShmSize}}' yamata-postgres-beta)"
 [[ "$postgres_shm_bytes" =~ ^[0-9]+$ ]] ||
 	die "Could not determine yamata-postgres-beta shared-memory size"
@@ -82,12 +82,11 @@ postgres_shm_bytes="$("${DOCKER[@]}" inspect -f '{{.HostConfig.ShmSize}}' yamata
 	die "yamata-postgres-beta /dev/shm is undersized (${postgres_shm_bytes} bytes; require at least ${MIN_POSTGRES_SHM_BYTES})"
 log "yamata-postgres-beta /dev/shm: $((postgres_shm_bytes / 1024 / 1024 / 1024)) GiB"
 
-# A large execution reservation holds an advisory transaction lock for every
-# selected audience.  This is a PostgreSQL shared lock-table capacity setting,
-# not a host-RAM or Docker /dev/shm exhaustion.  It is allocated only during a
-# PostgreSQL restart, so verify the *effective* setting rather than the mounted
-# configuration file.
-readonly MIN_POSTGRES_MAX_LOCKS_PER_TRANSACTION=4096
+# 0149 makes execution reservations take one advisory lock per Bundle, not per
+# audience. This setting remains a safety margin for mixed-version rollouts and
+# other large transactions. It is a PostgreSQL shared lock-table capacity, not
+# host-RAM or Docker /dev/shm exhaustion, and is allocated at PostgreSQL start.
+readonly MIN_POSTGRES_MAX_LOCKS_PER_TRANSACTION=8192
 postgres_max_locks="$("${DOCKER[@]}" exec yamata-postgres-beta \
 	psql -X -U "$(env_value yamata-postgres-beta POSTGRES_USER)" \
 	-d "$(env_value yamata-postgres-beta POSTGRES_DB)" -Atqc 'SHOW max_locks_per_transaction;')"
@@ -96,6 +95,17 @@ postgres_max_locks="$("${DOCKER[@]}" exec yamata-postgres-beta \
 ((postgres_max_locks >= MIN_POSTGRES_MAX_LOCKS_PER_TRANSACTION)) ||
 	die "PostgreSQL max_locks_per_transaction is too low (${postgres_max_locks}; require at least ${MIN_POSTGRES_MAX_LOCKS_PER_TRANSACTION}); set it and restart postgres-beta"
 log "PostgreSQL max_locks_per_transaction: $postgres_max_locks"
+
+readonly MIN_POSTGRES_SHARED_BUFFERS_BYTES=$((16 * 1024 * 1024 * 1024))
+postgres_shared_buffers="$("${DOCKER[@]}" exec yamata-postgres-beta \
+	psql -X -U "$(env_value yamata-postgres-beta POSTGRES_USER)" \
+	-d "$(env_value yamata-postgres-beta POSTGRES_DB)" -Atqc \
+	"SELECT pg_size_bytes(current_setting('shared_buffers'));")"
+[[ "$postgres_shared_buffers" =~ ^[0-9]+$ ]] ||
+	die "Could not determine PostgreSQL shared_buffers"
+((postgres_shared_buffers >= MIN_POSTGRES_SHARED_BUFFERS_BYTES)) ||
+	die "PostgreSQL shared_buffers is undersized (${postgres_shared_buffers} bytes; require at least ${MIN_POSTGRES_SHARED_BUFFERS_BYTES}); update the PostgreSQL settings and restart postgres-beta"
+log "PostgreSQL shared_buffers: $((postgres_shared_buffers / 1024 / 1024 / 1024)) GiB"
 
 [[ "$(env_value yamata-app-beta CAMPAIGN_EXECUTION_ENABLED)" == false ]] ||
 	die "yamata-app-beta must have CAMPAIGN_EXECUTION_ENABLED=false"
