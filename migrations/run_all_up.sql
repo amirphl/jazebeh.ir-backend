@@ -458,5 +458,17 @@
 \echo 'Running 0149_reduce_bundle_claim_lock_contention.sql...'
 \i migrations/0149_reduce_bundle_claim_lock_contention.sql
 
+\echo 'Running 0150_index_scheduler_tag_usage_by_bundle.sql...'
+\i migrations/0150_index_scheduler_tag_usage_by_bundle.sql
+
+\echo 'Running 0151_create_campaign_refund_reconciliation_jobs.sql...'
+\i migrations/0151_create_campaign_refund_reconciliation_jobs.sql
+
+\echo 'Running 0152_harden_campaign_refund_reconciliation.sql...'
+\i migrations/0152_harden_campaign_refund_reconciliation.sql
+
+\echo 'Running 0153_enforce_campaign_refund_queue.sql...'
+\i migrations/0153_enforce_campaign_refund_queue.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
