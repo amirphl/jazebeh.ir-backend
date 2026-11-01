@@ -174,6 +174,27 @@ func applyCampaignTestPerformance(query *gorm.DB, campaignID, bundleID uint) *go
 				AND campaign_test_performance.phase_type = 'test'`, campaignID, bundleID)
 }
 
+// usedInBundleExpression is based on scheduler-time audience attributions,
+// rather than campaign_selected_tags. A selection alone is only a configured
+// intent and can be changed while a campaign is editable; an attribution is
+// the durable fact that the scheduler assigned an audience to the tag.
+//
+// The status allow-list is intentionally explicit. It admits campaigns that
+// have become operational (including interrupted campaigns, which can have
+// partial delivery) while keeping draft, approved-but-not-run, cancelled, and
+// rejected campaigns out. There is no phase predicate: Test and Execution
+// scheduler allocations both constitute use.
+const usedInBundleExpression = `EXISTS (
+    SELECT 1
+    FROM campaign_audience_tag_attributions AS attribution
+    JOIN campaigns AS attributed_campaign
+      ON attributed_campaign.id = attribution.campaign_id
+     AND attributed_campaign.bundle_id = attribution.bundle_id
+    WHERE attribution.bundle_id = ?
+      AND attribution.assigned_tag_id = available_tags.tag_id
+      AND attributed_campaign.status IN ('running', 'interrupted', 'executed', 'expired')
+) AS used_in_bundle`
+
 func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(ctx context.Context, bundleID, campaignID uint, search string, capacity *int64, sortBy, sortDirection string, limit, offset int) ([]*models.SmartTargetingTagRow, int64, error) {
 	order, err := smartTagOrder(sortBy, sortDirection)
 	if err != nil {
@@ -187,6 +208,23 @@ func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(ctx context.Context, b
 	}
 
 	rows := make([]*models.SmartTargetingTagRow, 0)
+	query := r.listAvailableRowsQuery(ctx, bundleID, campaignID, search, capacity, order)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+// listAvailableRowsQuery contains the projection shared by production reads
+// and SQL-shape tests. It intentionally does not add pagination so callers
+// can apply a limit and offset without changing the selected fields.
+func (r *CampaignSelectedTagRepositoryImpl) listAvailableRowsQuery(ctx context.Context, bundleID, campaignID uint, search string, capacity *int64, order string) *gorm.DB {
 	query := r.baseAvailableQuery(ctx, bundleID, search, capacity).
 		Select(`available_tags.tag_id,
                  available_tags.tag_name,
@@ -207,26 +245,18 @@ func (r *CampaignSelectedTagRepositoryImpl) ListAvailable(ctx context.Context, b
                  campaign_test_performance.sent_count,
                  campaign_test_performance.delivered_count,
                  campaign_test_performance.click_count,
-                 campaign_test_performance.test_campaign_ctr,
+				 campaign_test_performance.test_campaign_ctr,
 				 tag_overall_summary.overall_avg_ctr,
+				 `+usedInBundleExpression+`,
                  EXISTS (
                      SELECT 1 FROM campaign_selected_tags AS selected
                      WHERE selected.campaign_id = ?
                        AND selected.bundle_id = ?
-                       AND selected.tag_id = available_tags.tag_id
-				 ) AS selected`, campaignID, bundleID)
+	                       AND selected.tag_id = available_tags.tag_id
+				 ) AS selected`, bundleID, campaignID, bundleID)
 	query = applyCampaignTestPerformance(query, campaignID, bundleID).
 		Order(order)
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-	if offset > 0 {
-		query = query.Offset(offset)
-	}
-	if err := query.Scan(&rows).Error; err != nil {
-		return nil, 0, err
-	}
-	return rows, total, nil
+	return query
 }
 
 func (r *CampaignSelectedTagRepositoryImpl) ListAvailableTagIDs(ctx context.Context, bundleID uint, search, sortBy, sortDirection string, limit int) ([]uint, error) {
