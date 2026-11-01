@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -263,6 +264,19 @@ func (r *TransactionRepositoryImpl) ByFilter(ctx context.Context, filter models.
 		return nil, err
 	}
 	return transactions, nil
+}
+
+// HasCompletedCampaignPartialRefund checks the financial ledger unscoped. A
+// soft-deleted transaction still changed the wallet, so it must retain its
+// idempotency effect and block a second credit.
+func (r *TransactionRepositoryImpl) HasCompletedCampaignPartialRefund(ctx context.Context, customerID, campaignID uint) (bool, error) {
+	var count int64
+	err := r.getDB(ctx).Unscoped().Model(&models.Transaction{}).
+		Where("customer_id = ? AND type = ? AND status = ?", customerID, models.TransactionTypeRefund, models.TransactionStatusCompleted).
+		Where("metadata->>'source' = ? AND metadata->>'operation' = ?", "campaign_partial_refund", "partial_undelivered_messages_refund").
+		Where("metadata->>'campaign_id' = ?", strconv.FormatUint(uint64(campaignID), 10)).
+		Count(&count).Error
+	return count > 0, err
 }
 
 // SaveBatch inserts multiple transactions in a single transaction
