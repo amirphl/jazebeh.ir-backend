@@ -5,6 +5,18 @@
 
 \echo 'Starting database rollback...'
 
+\echo 'Running 0153_enforce_campaign_refund_queue_down.sql...'
+\i migrations/0153_enforce_campaign_refund_queue_down.sql
+
+\echo 'Running 0152_harden_campaign_refund_reconciliation_down.sql...'
+\i migrations/0152_harden_campaign_refund_reconciliation_down.sql
+
+\echo 'Running 0151_create_campaign_refund_reconciliation_jobs_down.sql...'
+\i migrations/0151_create_campaign_refund_reconciliation_jobs_down.sql
+
+\echo 'Running 0150_index_scheduler_tag_usage_by_bundle_down.sql...'
+\i migrations/0150_index_scheduler_tag_usage_by_bundle_down.sql
+
 \echo 'Running 0149_reduce_bundle_claim_lock_contention_down.sql...'
 \i migrations/0149_reduce_bundle_claim_lock_contention_down.sql
 
