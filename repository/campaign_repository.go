@@ -174,6 +174,16 @@ func (r *CampaignRepositoryImpl) UpdateStatistics(ctx context.Context, id uint, 
 		}).Error
 }
 
+// MergeStatistics updates only the supplied JSON keys. Financial reconciliation
+// uses this instead of saving a stale Campaign record, so late delivery-status
+// aggregation cannot be overwritten by a concurrent refund worker.
+func (r *CampaignRepositoryImpl) MergeStatistics(ctx context.Context, id uint, patch json.RawMessage) error {
+	return r.getDB(ctx).Exec(
+		`UPDATE campaigns SET statistics = COALESCE(statistics, '{}'::jsonb) || ?::jsonb, updated_at = ? WHERE id = ?`,
+		string(patch), utils.UTCNow(), id,
+	).Error
+}
+
 // AppendTrackingResults appends items to the trackingResults array inside statistics
 // without reading or rewriting the rest of the JSON, avoiding driver errors on large payloads.
 func (r *CampaignRepositoryImpl) AppendTrackingResults(ctx context.Context, id uint, items json.RawMessage) error {
