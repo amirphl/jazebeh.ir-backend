@@ -139,6 +139,7 @@ type CampaignRepository interface {
 	ByStatus(ctx context.Context, status models.CampaignStatus, limit, offset int) ([]*models.Campaign, error)
 	Update(ctx context.Context, campaign models.Campaign) error
 	UpdateStatistics(ctx context.Context, id uint, stats json.RawMessage) error
+	MergeStatistics(ctx context.Context, id uint, patch json.RawMessage) error
 	AppendTrackingResults(ctx context.Context, id uint, items json.RawMessage) error
 	UpdateStatus(ctx context.Context, id uint, status models.CampaignStatus) error
 	MarkHidden(ctx context.Context, customerID uint, campaignIDs []uint) (int64, error)
@@ -167,6 +168,7 @@ type WalletRepository interface {
 // TransactionRepository defines the interface for transaction data access
 type TransactionRepository interface {
 	Repository[models.Transaction, models.TransactionFilter]
+	HasCompletedCampaignPartialRefund(ctx context.Context, customerID, campaignID uint) (bool, error)
 	ByID(ctx context.Context, id uint) (*models.Transaction, error)
 	ByUUID(ctx context.Context, uuid string) (*models.Transaction, error)
 	UpdateMetadata(ctx context.Context, id uint, metadata []byte, updatedAt time.Time) error
