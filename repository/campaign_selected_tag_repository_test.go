@@ -172,6 +172,40 @@ func TestCampaignTestPerformanceJoinIsBundleScoped(t *testing.T) {
 	}
 }
 
+func TestListAvailableProjectsSchedulerRuntimeUsedInBundleFlag(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test dbname=test sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+	repo := &CampaignSelectedTagRepositoryImpl{db: db}
+
+	var rows []*models.SmartTargetingTagRow
+	statement := repo.listAvailableRowsQuery(t.Context(), 42, 77, "", nil, "available_tags.tag_id ASC").
+		Limit(20).
+		Find(&rows).Statement
+	if statement.Error != nil {
+		t.Fatalf("build available-tag query: %v", statement.Error)
+	}
+	sql := statement.SQL.String()
+	for _, fragment := range []string{
+		"campaign_audience_tag_attributions AS attribution",
+		"JOIN campaigns AS attributed_campaign",
+		"attributed_campaign.bundle_id = attribution.bundle_id",
+		"attribution.assigned_tag_id = available_tags.tag_id",
+		"attributed_campaign.status IN ('running', 'interrupted', 'executed', 'expired')",
+		"AS used_in_bundle",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("used-in-bundle projection does not contain %q:\n%s", fragment, sql)
+		}
+	}
+	if strings.Contains(sql, "attribution.phase_type") {
+		t.Fatalf("used-in-bundle projection must count both phases:\n%s", sql)
+	}
+}
+
 func TestBuildCampaignSelectedTagRowsPreservesRequestOrder(t *testing.T) {
 	now := time.Date(2026, time.August, 9, 12, 0, 0, 0, time.UTC)
 	measuredCTR := 0.08
