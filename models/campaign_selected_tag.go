@@ -47,7 +47,11 @@ type SmartTargetingTagRow struct {
 	ClickCount              *int64   `gorm:"column:click_count"`
 	TestCampaignCTR         *float64 `gorm:"column:test_campaign_ctr"`
 	OverallAvgCTR           *float64 `gorm:"column:overall_avg_ctr"`
-	Selected                bool     `gorm:"column:selected"`
+	// UsedInBundle is true only when the scheduler has persistently attributed
+	// at least one audience to this tag in an operational campaign for the
+	// same bundle. It deliberately does not treat an editable selection as use.
+	UsedInBundle bool `gorm:"column:used_in_bundle"`
+	Selected     bool `gorm:"column:selected"`
 }
 
 type CampaignSelectedTagSummary struct {
