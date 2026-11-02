@@ -53,6 +53,7 @@ type CampaignFlow interface {
 	GetCurrentSmartTargetingTestSampling(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
 	GetSmartTargetingTestSamplingByID(ctx context.Context, customerID uint, campaignUUID string, calculationID int64) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
 	ExecuteSmartTargetingTestSamplingCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) error
+	ReconcileUndeliveredCampaignRefund(ctx context.Context, campaignID uint, eligibilityDelay time.Duration) error
 }
 
 // CampaignFlowImpl implements the campaign business flow
@@ -1023,28 +1024,46 @@ func (s *CampaignFlowImpl) CloneCampaign(ctx context.Context, req *dto.CloneCamp
 		return nil, NewBusinessError("CUSTOMER_LOOKUP_FAILED", "Failed to lookup customer", err)
 	}
 
-	src, err := getCampaign(ctx, s.campaignRepo, req.UUID, req.CustomerID)
-	if err != nil {
-		return nil, NewBusinessError("CAMPAIGN_LOOKUP_FAILED", "Failed to lookup campaign", err)
-	}
-
-	ensureCampaignSpecDefaults(&src.Spec)
-	src.Spec.ScheduleAt = nil // Clear schedule to avoid cloning campaigns with past schedule times
-
-	clone := models.Campaign{
-		UUID:             uuid.New(),
-		CustomerID:       src.CustomerID,
-		Status:           models.CampaignStatusInitiated,
-		Spec:             src.Spec,
-		Comment:          nil,
-		Statistics:       json.RawMessage(`{}`),
-		NumAudience:      utils.ToPtr(uint64(0)),
-		BundleID:         src.BundleID,
-		Phase:            src.Phase,
-		SampleSizePerTag: src.SampleSizePerTag,
-	}
-
+	var src models.Campaign
+	var clone models.Campaign
 	err = repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+		// The source campaign lock is also the serialization point used by
+		// configuration and selected-tag updates. Reload it after acquiring the
+		// lock so the spec, Bundle, phase, and tag set below are one coherent
+		// snapshot rather than values read on either side of a concurrent edit.
+		source, err := getCampaign(txCtx, s.campaignRepo, req.UUID, req.CustomerID)
+		if err != nil {
+			return err
+		}
+		if err := repository.LockCampaignForUpdate(txCtx, source.ID); err != nil {
+			return err
+		}
+		lockedSource, err := s.campaignRepo.ByID(txCtx, source.ID)
+		if err != nil {
+			return err
+		}
+		if lockedSource == nil {
+			return ErrCampaignNotFound
+		}
+		if lockedSource.CustomerID != req.CustomerID {
+			return ErrCampaignAccessDenied
+		}
+		src = *lockedSource
+
+		ensureCampaignSpecDefaults(&src.Spec)
+		src.Spec.ScheduleAt = nil // Clear schedule to avoid cloning campaigns with past schedule times
+		clone = models.Campaign{
+			UUID:             uuid.New(),
+			CustomerID:       src.CustomerID,
+			Status:           models.CampaignStatusInitiated,
+			Spec:             src.Spec,
+			Comment:          nil,
+			Statistics:       json.RawMessage(`{}`),
+			NumAudience:      utils.ToPtr(uint64(0)),
+			BundleID:         src.BundleID,
+			Phase:            src.Phase,
+			SampleSizePerTag: src.SampleSizePerTag,
+		}
 		if err := s.campaignRepo.Save(txCtx, &clone); err != nil {
 			return err
 		}
@@ -2521,12 +2540,6 @@ func (s *CampaignFlowImpl) ListCampaigns(ctx context.Context, req *dto.ListCampa
 	// 	}
 	// }
 
-	if s.tryAcquireFlowLock(ctx, fmt.Sprintf("list_campaigns_reconcile_refund:%d", req.CustomerID), 20*time.Second) {
-		if err := s.reconcileUndeliveredCampaignRefunds(ctx, req.CustomerID); err != nil {
-			return nil, err
-		}
-	}
-
 	// Normalize pagination
 	page := max(1, req.Page)
 	limit := req.Limit
@@ -2640,10 +2653,8 @@ func (s *CampaignFlowImpl) ListCampaigns(ctx context.Context, req *dto.ListCampa
 		totalClicks := clicks
 		// computeClickRate returns nil when aggregatedTotalSent is 0 so callers can
 		// distinguish "campaign not yet executed" from "0% click-through rate".
-		// Note: reconcileUndeliveredCampaignRefunds (called above) only appends
-		// "undeliveredRefund*" keys to Statistics; it never overwrites
-		// aggregatedTotalSent, so the value read here is always the authoritative
-		// delivery count set by the campaign scheduler.
+		// Refund reconciliation may append "undeliveredRefund*" keys in the
+		// independent worker, but it never overwrites aggregatedTotalSent.
 		clickRate := computeClickRate(clicks, parseAggregatedTotalSentFromMap(statsMap))
 
 		enrichments, err := s.fetchCampaignDisplayEnrichments(ctx, c)
@@ -3774,333 +3785,288 @@ func (s *CampaignFlowImpl) expireCustomerCampaigns(ctx context.Context, customer
 	return nil
 }
 
-// reconcileUndeliveredCampaignRefunds runs a best-effort reconciliation pass to refund
-// executed campaigns that under-delivered relative to their intended audience.
-func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(ctx context.Context, customerID uint) error {
-	// NOTE: Idempotency
-
-	if customerID == 0 {
-		return nil
+// ReconcileUndeliveredCampaignRefund executes one durable reconciliation job.
+// It is intentionally not called by an API read path: a GET must never mutate
+// balances or make financial progress dependent on customer traffic.
+func (s *CampaignFlowImpl) ReconcileUndeliveredCampaignRefund(ctx context.Context, campaignID uint, eligibilityDelay time.Duration) error {
+	if campaignID == 0 {
+		return repository.ErrCampaignRefundReconciliationNoop
 	}
-	var auditCustomer *models.Customer
-	if customer, err := getCustomer(ctx, s.customerRepo, customerID); err == nil {
-		auditCustomer = &customer
+	if eligibilityDelay <= 0 {
+		eligibilityDelay = undeliveredRefundDelay
 	}
-
-	status := models.CampaignStatusExecuted
-	cutoff := utils.UTCNow().Add(-undeliveredRefundDelay)
-	rows, err := s.campaignRepo.ByFilter(ctx, models.CampaignFilter{
-		CustomerID:     &customerID,
-		Status:         &status,
-		ScheduleBefore: &cutoff,
-	}, "id DESC", 0, 0)
-	if err != nil {
-		return err
-	}
-
-	for _, c := range rows {
-		if c == nil {
-			continue
-		}
-		if hasProcessedUndeliveredRefund(c.Statistics) {
-			continue
-		}
-		if hasUndeliveredRefundError(c.Statistics) {
-			continue
-		}
-
-		err = repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
-			campaign, err := s.campaignRepo.ByID(txCtx, c.ID)
-			if err != nil {
-				return err
-			}
-			if campaign == nil {
-				return nil
-			}
-			if campaign.Status != models.CampaignStatusExecuted {
-				return nil
-			}
-			if campaign.Spec.ScheduleAt == nil || campaign.Spec.ScheduleAt.IsZero() {
-				return nil
-			}
-			if campaign.Spec.ScheduleAt.After(utils.UTCNow().Add(-undeliveredRefundDelay)) {
-				return nil
-			}
-			if campaign.NumAudience == nil || *campaign.NumAudience == 0 {
-				log.Printf("reconcileUndeliveredCampaignRefunds: campaign %d has nil or zero num_audience, skipping refund", campaign.ID)
-				return nil
-			}
-
-			// Serialize refund reconciliation per campaign to prevent duplicate refunds
-			// under concurrent list/get requests.
-			if tx, ok := txCtx.Value(repository.TxContextKey).(*gorm.DB); ok && tx != nil {
-				if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(campaign.ID)).Error; err != nil {
-					return err
-				}
-			}
-
-			if hasProcessedUndeliveredRefund(campaign.Statistics) {
-				return nil
-			}
-			if hasUndeliveredRefundError(campaign.Statistics) {
-				return nil
-			}
-
-			existing, err := s.transactionRepo.ByFilter(txCtx, models.TransactionFilter{
-				CustomerID: &campaign.CustomerID,
-				CampaignID: &campaign.ID,
-				Source:     utils.ToPtr("campaign_partial_refund"),
-				Operation:  utils.ToPtr("partial_undelivered_messages_refund"),
-				Type:       utils.ToPtr(models.TransactionTypeRefund),
-				Status:     utils.ToPtr(models.TransactionStatusCompleted),
-			}, "id DESC", 1, 0)
-			if err != nil {
-				return err
-			}
-			if len(existing) > 0 {
-				return nil
-			}
-
-			aggregatedTotalSent, ok := parseAggregatedTotalSent(campaign.Statistics)
-			if !ok {
-				return nil
-			}
-			// Smart Targeting Test keeps the finalized preview count in
-			// NumAudience. If scheduler-time best effort prepares fewer rows, the
-			// existing sent-count delta refunds that shortfall without a special
-			// Feature 4 refund path.
-			if aggregatedTotalSent >= *campaign.NumAudience {
-				return nil
-			}
-
-			missing := *campaign.NumAudience - aggregatedTotalSent
-			if missing == 0 {
-				return nil
-			}
-
-			var costPerMessage uint64
-			if costPerMessage, ok = s.resolveCampaignCostPerMessageFromMetadata(txCtx, campaign); !ok {
-				log.Printf("reconcileUndeliveredCampaignRefunds: cannot resolve cost per message for campaign %d, skipping refund reconciliation", campaign.ID)
-				return nil
-			}
-
-			if costPerMessage == 0 {
-				return nil
-			}
-			if missing > math.MaxUint64/costPerMessage {
-				return fmt.Errorf("refund amount overflow for campaign=%d", campaign.ID)
-			}
-			refundAmount := missing * costPerMessage
-			if refundAmount == 0 {
-				return nil
-			}
-
-			debitTxs, err := s.transactionRepo.ByFilter(txCtx, models.TransactionFilter{
-				CustomerID: &campaign.CustomerID,
-				CampaignID: &campaign.ID,
-				Source:     utils.ToPtr("admin_campaign_approve"),
-				Operation:  utils.ToPtr("approve_campaign_budget_consume"),
-				Type:       utils.ToPtr(models.TransactionTypeFee),
-				Status:     utils.ToPtr(models.TransactionStatusCompleted),
-			}, "id DESC", 1, 0)
-			if err != nil {
-				return err
-			}
-			if len(debitTxs) == 0 {
-				return ErrCampaignDebitTransactionNotFound
-			}
-			debitTx := debitTxs[0]
-
-			if debitTx.Amount < refundAmount {
-				return fmt.Errorf("refund amount %d exceeds campaign debit amount %d for campaign=%d", refundAmount, debitTx.Amount, campaign.ID)
-			}
-
-			customer, err := getCustomer(txCtx, s.customerRepo, campaign.CustomerID)
-			if err != nil {
-				return err
-			}
-			wallet, err := getWallet(txCtx, s.walletRepo, campaign.CustomerID)
-			if err != nil {
-				return err
-			}
-			if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
-				return err
-			}
-			latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
-			if err != nil {
-				return err
-			}
-			if latestBalance.SpentOnCampaign < refundAmount {
-				return ErrInsufficientFunds
-			}
-
-			// TODO:
-			// // Recover the original FreeBalance/CreditBalance split by looking up the
-			// // freeze transaction that shares the same CorrelationID as the debit tx.
-			// debitCorrID := debitTx.CorrelationID
-			// origFreezeTxs, err := s.transactionRepo.ByFilter(txCtx, models.TransactionFilter{
-			// 	CorrelationID: &debitCorrID,
-			// 	CustomerID:    &campaign.CustomerID,
-			// 	Type:          utils.ToPtr(models.TransactionTypeFreeze),
-			// 	Status:        utils.ToPtr(models.TransactionStatusCompleted),
-			// }, "id ASC", 1, 0)
-			// if err != nil {
-			// 	return err
-			// }
-			// var freeRefund, creditRefund uint64
-			// if len(origFreezeTxs) > 0 {
-			// 	freeRefund, creditRefund = computeFreezeRefundSplit(origFreezeTxs[0], refundAmount)
-			// } else {
-			// 	// No freeze tx found; conservatively return all to free balance.
-			// 	freeRefund = refundAmount
-			// }
-
-			meta := map[string]any{
-				"source":                "campaign_partial_refund",
-				"operation":             "partial_undelivered_messages_refund",
-				"campaign_id":           campaign.ID,
-				"scheduled_at":          campaign.Spec.ScheduleAt.UTC().Format(time.RFC3339),
-				"num_audience":          *campaign.NumAudience,
-				"aggregated_total_sent": aggregatedTotalSent,
-				"missing_messages":      missing,
-				"cost_per_message":      costPerMessage,
-				"refund_amount":         refundAmount,
-			}
-			metaBytes, _ := json.Marshal(meta)
-
-			// newFree := latestBalance.FreeBalance + freeRefund
-			// newCredit := latestBalance.CreditBalance + creditRefund
-			// newSpentOnCampaign := latestBalance.SpentOnCampaign - refundAmount
-
-			// newSnap := &models.BalanceSnapshot{
-			// 	UUID:               uuid.New(),
-			// 	CorrelationID:      debitTx.CorrelationID,
-			// 	WalletID:           wallet.ID,
-			// 	CustomerID:         customer.ID,
-			// 	FreeBalance:        newFree,
-			// 	FrozenBalance:      latestBalance.FrozenBalance,
-			// 	LockedBalance:      latestBalance.LockedBalance,
-			// 	CreditBalance:      newCredit,
-			// 	SpentOnCampaign:    newSpentOnCampaign,
-			// 	AgencyShareWithTax: latestBalance.AgencyShareWithTax,
-			// 	TotalBalance:       newFree + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign + latestBalance.AgencyShareWithTax,
-			// 	Reason:             "campaign_partial_refund_for_undelivered_messages",
-			// 	Description:        fmt.Sprintf("Refund undelivered messages for campaign %d", campaign.ID),
-			// 	Metadata:           metaBytes,
-			// }
-			newCredit := latestBalance.CreditBalance + refundAmount
-			newSpentOnCampaign := latestBalance.SpentOnCampaign - refundAmount
-
-			newSnap := &models.BalanceSnapshot{
-				UUID:               uuid.New(),
-				CorrelationID:      debitTx.CorrelationID,
-				WalletID:           wallet.ID,
-				CustomerID:         customer.ID,
-				FreeBalance:        latestBalance.FreeBalance,
-				FrozenBalance:      latestBalance.FrozenBalance,
-				LockedBalance:      latestBalance.LockedBalance,
-				CreditBalance:      newCredit,
-				SpentOnCampaign:    newSpentOnCampaign,
-				AgencyShareWithTax: latestBalance.AgencyShareWithTax,
-				TotalBalance:       latestBalance.FreeBalance + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign + latestBalance.AgencyShareWithTax,
-				Reason:             "campaign_partial_refund_for_undelivered_messages",
-				Description:        fmt.Sprintf("Refund undelivered messages for campaign %d", campaign.ID),
-				Metadata:           metaBytes,
-			}
-			if err := s.balanceSnapshotRepo.Save(txCtx, newSnap); err != nil {
-				return err
-			}
-
-			beforeMap, err := latestBalance.GetBalanceMap()
-			if err != nil {
-				return err
-			}
-			afterMap, err := newSnap.GetBalanceMap()
-			if err != nil {
-				return err
-			}
-
-			refundTx := &models.Transaction{
-				UUID:          uuid.New(),
-				CorrelationID: debitTx.CorrelationID,
-				Type:          models.TransactionTypeRefund,
-				Status:        models.TransactionStatusCompleted,
-				Amount:        refundAmount,
-				Currency:      utils.TomanCurrency,
-				WalletID:      wallet.ID,
-				CustomerID:    customer.ID,
-				BalanceBefore: beforeMap,
-				BalanceAfter:  afterMap,
-				Description:   fmt.Sprintf("Partial refund for undelivered messages in campaign %d", campaign.ID),
-				Metadata:      metaBytes,
-			}
-			if err := s.transactionRepo.Save(txCtx, refundTx); err != nil {
-				return err
-			}
-
-			statsMap := map[string]any{}
-			if len(campaign.Statistics) > 0 {
-				_ = json.Unmarshal(campaign.Statistics, &statsMap)
-			}
-			statsMap["undeliveredRefundProcessed"] = true
-			statsMap["undeliveredRefundProcessedAt"] = utils.UTCNow().Format(time.RFC3339)
-			statsMap["undeliveredRefundAmount"] = refundAmount
-			statsMap["undeliveredRefundMissingMessages"] = missing
-			statsMap["undeliveredRefundCostPerMessage"] = costPerMessage
-			statsMap["undeliveredRefundAggregatedTotalSent"] = aggregatedTotalSent
-			statsBytes, _ := json.Marshal(statsMap)
-
-			campaign.Statistics = statsBytes
-			campaign.UpdatedAt = utils.ToPtr(utils.UTCNow())
-			if err := s.campaignRepo.Update(txCtx, *campaign); err != nil {
-				return err
-			}
-
-			return nil
-		})
-		if err != nil {
-			errMsg := fmt.Sprintf("Undelivered refund reconciliation failed for campaign %d: %v", c.ID, err)
-			if auditCustomer != nil {
-				_ = s.createAuditLog(ctx, auditCustomer, models.AuditActionCampaignRefundReconcileFailed, errMsg, false, &errMsg, nil)
-			}
-			log.Printf("%s", errMsg)
-			// Mark the campaign so it is never retried again. The refund transaction
-			// was rolled back, so we persist the error flag in a separate (non-transactional) update.
-			if markErr := s.markCampaignRefundError(ctx, c.ID, err); markErr != nil {
-				log.Printf("reconcileUndeliveredCampaignRefunds: failed to mark refund error for campaign %d: %v", c.ID, markErr)
-			}
-			// Best-effort reconciliation: do not block listing/getting campaigns.
-			continue
-		}
-	}
-
-	return nil
-}
-
-// markCampaignRefundError writes an error flag into the campaign Statistics so
-// reconcileUndeliveredCampaignRefunds skips it on future invocations.
-// It runs outside any transaction because the failed refund transaction was already rolled back.
-func (s *CampaignFlowImpl) markCampaignRefundError(ctx context.Context, campaignID uint, refundErr error) error {
 	campaign, err := s.campaignRepo.ByID(ctx, campaignID)
 	if err != nil {
 		return err
 	}
 	if campaign == nil {
+		return repository.ErrCampaignRefundReconciliationNoop
+	}
+	return s.reconcileUndeliveredCampaignRefunds(ctx, campaign.CustomerID, campaignID, eligibilityDelay)
+}
+
+// reconcileUndeliveredCampaignRefunds is scoped to one durable work item.
+// This avoids the former unbounded per-customer listing scan and lets the
+// queue retry every unexpected error rather than suppressing it in Statistics.
+func (s *CampaignFlowImpl) reconcileUndeliveredCampaignRefunds(ctx context.Context, customerID, campaignID uint, eligibilityDelay time.Duration) error {
+	if customerID == 0 || campaignID == 0 {
+		return repository.ErrCampaignRefundReconciliationNoop
+	}
+	err := repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+		// The delivery-statistics update flow uses this same row lock. Hold it
+		// from reading the sent count through writing the refund evidence so
+		// reconciliation never charges against a concurrent partial report.
+		if err := repository.LockCampaignForUpdate(txCtx, campaignID); err != nil {
+			return err
+		}
+		campaign, err := s.campaignRepo.ByID(txCtx, campaignID)
+		if err != nil {
+			return err
+		}
+		if campaign == nil {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+		if campaign.CustomerID != customerID {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+		if campaign.Status != models.CampaignStatusExecuted {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+		if campaign.Spec.ScheduleAt == nil || campaign.Spec.ScheduleAt.IsZero() {
+			return campaignRefundManualReview(ErrScheduleTimeNotPresent)
+		}
+		if utils.UTCNow().Before(campaign.Spec.ScheduleAt.Add(eligibilityDelay)) {
+			return fmt.Errorf("campaign refund reconciliation is not eligible until %s", campaign.Spec.ScheduleAt.Add(eligibilityDelay).UTC().Format(time.RFC3339))
+		}
+		if campaign.NumAudience == nil {
+			return campaignRefundManualReview(errors.New("campaign audience count is missing"))
+		}
+		if *campaign.NumAudience == 0 {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+
+		// Serialize refund reconciliation per campaign to prevent duplicate refunds
+		// under concurrent list/get requests.
+		if tx, ok := txCtx.Value(repository.TxContextKey).(*gorm.DB); ok && tx != nil {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(campaign.ID)).Error; err != nil {
+				return err
+			}
+		}
+
+		exists, err := s.transactionRepo.HasCompletedCampaignPartialRefund(txCtx, campaign.CustomerID, campaign.ID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+		if hasProcessedUndeliveredRefund(campaign.Statistics) {
+			return campaignRefundManualReview(errors.New("refund statistics marker exists without completed refund transaction"))
+		}
+
+		aggregatedTotalSent, ok := parseAggregatedTotalSent(campaign.Statistics)
+		if !ok {
+			return ErrCampaignRefundDeliveryStatisticsMissing
+		}
+		// Smart Targeting Test keeps the finalized preview count in
+		// NumAudience. If scheduler-time best effort prepares fewer rows, the
+		// existing sent-count delta refunds that shortfall without a special
+		// Feature 4 refund path.
+		if aggregatedTotalSent >= *campaign.NumAudience {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+
+		missing := *campaign.NumAudience - aggregatedTotalSent
+		if missing == 0 {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+
+		var costPerMessage uint64
+		if costPerMessage, ok = s.resolveCampaignCostPerMessageFromMetadata(txCtx, campaign); !ok {
+			return campaignRefundManualReview(ErrCampaignRefundCostUnavailable)
+		}
+
+		if costPerMessage == 0 {
+			return campaignRefundManualReview(errors.New("campaign cost per message is zero"))
+		}
+		if missing > math.MaxUint64/costPerMessage {
+			return campaignRefundManualReview(fmt.Errorf("refund amount overflow for campaign=%d", campaign.ID))
+		}
+		refundAmount := missing * costPerMessage
+		if refundAmount == 0 {
+			return repository.ErrCampaignRefundReconciliationNoop
+		}
+
+		debitTxs, err := s.transactionRepo.ByFilter(txCtx, models.TransactionFilter{
+			CustomerID: &campaign.CustomerID,
+			CampaignID: &campaign.ID,
+			Source:     utils.ToPtr("admin_campaign_approve"),
+			Operation:  utils.ToPtr("approve_campaign_budget_consume"),
+			Type:       utils.ToPtr(models.TransactionTypeFee),
+			Status:     utils.ToPtr(models.TransactionStatusCompleted),
+		}, "id DESC", 1, 0)
+		if err != nil {
+			return err
+		}
+		if len(debitTxs) == 0 {
+			return campaignRefundManualReview(ErrCampaignDebitTransactionNotFound)
+		}
+		debitTx := debitTxs[0]
+
+		if debitTx.Amount < refundAmount {
+			return campaignRefundManualReview(fmt.Errorf("refund amount %d exceeds campaign debit amount %d for campaign=%d", refundAmount, debitTx.Amount, campaign.ID))
+		}
+
+		customer, err := getCustomer(txCtx, s.customerRepo, campaign.CustomerID)
+		if err != nil {
+			return err
+		}
+		wallet, err := getWallet(txCtx, s.walletRepo, campaign.CustomerID)
+		if err != nil {
+			return err
+		}
+		if err := repository.LockWalletForUpdate(txCtx, wallet.ID); err != nil {
+			return err
+		}
+		latestBalance, err := getLatestBalanceSnapshot(txCtx, s.walletRepo, wallet.ID)
+		if err != nil {
+			return err
+		}
+		if latestBalance.SpentOnCampaign < refundAmount {
+			return campaignRefundManualReview(ErrInsufficientFunds)
+		}
+
+		// TODO:
+		// // Recover the original FreeBalance/CreditBalance split by looking up the
+		// // freeze transaction that shares the same CorrelationID as the debit tx.
+		// debitCorrID := debitTx.CorrelationID
+		// origFreezeTxs, err := s.transactionRepo.ByFilter(txCtx, models.TransactionFilter{
+		// 	CorrelationID: &debitCorrID,
+		// 	CustomerID:    &campaign.CustomerID,
+		// 	Type:          utils.ToPtr(models.TransactionTypeFreeze),
+		// 	Status:        utils.ToPtr(models.TransactionStatusCompleted),
+		// }, "id ASC", 1, 0)
+		// if err != nil {
+		// 	return err
+		// }
+		// var freeRefund, creditRefund uint64
+		// if len(origFreezeTxs) > 0 {
+		// 	freeRefund, creditRefund = computeFreezeRefundSplit(origFreezeTxs[0], refundAmount)
+		// } else {
+		// 	// No freeze tx found; conservatively return all to free balance.
+		// 	freeRefund = refundAmount
+		// }
+
+		meta := map[string]any{
+			"source":                "campaign_partial_refund",
+			"operation":             "partial_undelivered_messages_refund",
+			"campaign_id":           campaign.ID,
+			"scheduled_at":          campaign.Spec.ScheduleAt.UTC().Format(time.RFC3339),
+			"num_audience":          *campaign.NumAudience,
+			"aggregated_total_sent": aggregatedTotalSent,
+			"missing_messages":      missing,
+			"cost_per_message":      costPerMessage,
+			"refund_amount":         refundAmount,
+		}
+		metaBytes, _ := json.Marshal(meta)
+
+		// newFree := latestBalance.FreeBalance + freeRefund
+		// newCredit := latestBalance.CreditBalance + creditRefund
+		// newSpentOnCampaign := latestBalance.SpentOnCampaign - refundAmount
+
+		// newSnap := &models.BalanceSnapshot{
+		// 	UUID:               uuid.New(),
+		// 	CorrelationID:      debitTx.CorrelationID,
+		// 	WalletID:           wallet.ID,
+		// 	CustomerID:         customer.ID,
+		// 	FreeBalance:        newFree,
+		// 	FrozenBalance:      latestBalance.FrozenBalance,
+		// 	LockedBalance:      latestBalance.LockedBalance,
+		// 	CreditBalance:      newCredit,
+		// 	SpentOnCampaign:    newSpentOnCampaign,
+		// 	AgencyShareWithTax: latestBalance.AgencyShareWithTax,
+		// 	TotalBalance:       newFree + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign + latestBalance.AgencyShareWithTax,
+		// 	Reason:             "campaign_partial_refund_for_undelivered_messages",
+		// 	Description:        fmt.Sprintf("Refund undelivered messages for campaign %d", campaign.ID),
+		// 	Metadata:           metaBytes,
+		// }
+		newCredit := latestBalance.CreditBalance + refundAmount
+		newSpentOnCampaign := latestBalance.SpentOnCampaign - refundAmount
+
+		newSnap := &models.BalanceSnapshot{
+			UUID:               uuid.New(),
+			CorrelationID:      debitTx.CorrelationID,
+			WalletID:           wallet.ID,
+			CustomerID:         customer.ID,
+			FreeBalance:        latestBalance.FreeBalance,
+			FrozenBalance:      latestBalance.FrozenBalance,
+			LockedBalance:      latestBalance.LockedBalance,
+			CreditBalance:      newCredit,
+			SpentOnCampaign:    newSpentOnCampaign,
+			AgencyShareWithTax: latestBalance.AgencyShareWithTax,
+			TotalBalance:       latestBalance.FreeBalance + latestBalance.FrozenBalance + latestBalance.LockedBalance + newCredit + newSpentOnCampaign + latestBalance.AgencyShareWithTax,
+			Reason:             "campaign_partial_refund_for_undelivered_messages",
+			Description:        fmt.Sprintf("Refund undelivered messages for campaign %d", campaign.ID),
+			Metadata:           metaBytes,
+		}
+		if err := s.balanceSnapshotRepo.Save(txCtx, newSnap); err != nil {
+			return err
+		}
+
+		beforeMap, err := latestBalance.GetBalanceMap()
+		if err != nil {
+			return err
+		}
+		afterMap, err := newSnap.GetBalanceMap()
+		if err != nil {
+			return err
+		}
+
+		refundTx := &models.Transaction{
+			UUID:          uuid.New(),
+			CorrelationID: debitTx.CorrelationID,
+			Type:          models.TransactionTypeRefund,
+			Status:        models.TransactionStatusCompleted,
+			Amount:        refundAmount,
+			Currency:      utils.TomanCurrency,
+			WalletID:      wallet.ID,
+			CustomerID:    customer.ID,
+			BalanceBefore: beforeMap,
+			BalanceAfter:  afterMap,
+			Description:   fmt.Sprintf("Partial refund for undelivered messages in campaign %d", campaign.ID),
+			Metadata:      metaBytes,
+		}
+		if err := s.transactionRepo.Save(txCtx, refundTx); err != nil {
+			return err
+		}
+
+		statsMap := map[string]any{}
+		if len(campaign.Statistics) > 0 {
+			_ = json.Unmarshal(campaign.Statistics, &statsMap)
+		}
+		statsMap["undeliveredRefundProcessed"] = true
+		statsMap["undeliveredRefundProcessedAt"] = utils.UTCNow().Format(time.RFC3339)
+		statsMap["undeliveredRefundAmount"] = refundAmount
+		statsMap["undeliveredRefundMissingMessages"] = missing
+		statsMap["undeliveredRefundCostPerMessage"] = costPerMessage
+		statsMap["undeliveredRefundAggregatedTotalSent"] = aggregatedTotalSent
+		statsBytes, _ := json.Marshal(statsMap)
+
+		if err := s.campaignRepo.MergeStatistics(txCtx, campaign.ID, statsBytes); err != nil {
+			return err
+		}
+
 		return nil
+	})
+	if err != nil {
+		errMsg := fmt.Sprintf("Undelivered refund reconciliation failed for campaign %d: %v", campaignID, err)
+		log.Printf("%s", errMsg)
 	}
+	return err
+}
 
-	statsMap := map[string]any{}
-	if len(campaign.Statistics) > 0 {
-		_ = json.Unmarshal(campaign.Statistics, &statsMap)
-	}
-	statsMap["undeliveredRefundError"] = true
-	statsMap["undeliveredRefundErrorAt"] = utils.UTCNow().Format(time.RFC3339)
-	statsMap["undeliveredRefundErrorMsg"] = refundErr.Error()
-	statsBytes, _ := json.Marshal(statsMap)
-
-	campaign.Statistics = statsBytes
-	campaign.UpdatedAt = utils.ToPtr(utils.UTCNow())
-	return s.campaignRepo.Update(ctx, *campaign)
+func campaignRefundManualReview(err error) error {
+	return fmt.Errorf("%w: %v", repository.ErrCampaignRefundReconciliationManualReview, err)
 }
 
 func (s *CampaignFlowImpl) tryAcquireFlowLock(ctx context.Context, suffix string, ttl time.Duration) bool {
@@ -4160,22 +4126,6 @@ func hasProcessedUndeliveredRefund(stats json.RawMessage) bool {
 		return false
 	}
 	raw, ok := statsMap["undeliveredRefundProcessed"]
-	if !ok {
-		return false
-	}
-	b, ok := raw.(bool)
-	return ok && b
-}
-
-func hasUndeliveredRefundError(stats json.RawMessage) bool {
-	if len(stats) == 0 {
-		return false
-	}
-	var statsMap map[string]any
-	if err := json.Unmarshal(stats, &statsMap); err != nil {
-		return false
-	}
-	raw, ok := statsMap["undeliveredRefundError"]
 	if !ok {
 		return false
 	}
