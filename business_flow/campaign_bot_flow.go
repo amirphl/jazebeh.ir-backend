@@ -351,6 +351,9 @@ func (s *BotCampaignFlowImpl) MoveCampaignToExecuted(ctx context.Context, campai
 		if err != nil {
 			return err
 		}
+		// The database trigger installed with the refund queue creates its durable
+		// job in this same transaction. Keeping this invariant in PostgreSQL also
+		// covers older application instances during a rolling deployment.
 		return nil
 	})
 
@@ -431,20 +434,26 @@ func (s *BotCampaignFlowImpl) UpdateCampaignStatistics(ctx context.Context, camp
 	if campaignID == 0 {
 		return nil, NewBusinessError("VALIDATION_ERROR", "campaign_id must be greater than 0", nil)
 	}
-	campaign, err := s.campaignRepo.ByID(ctx, campaignID)
-	if err != nil {
-		return nil, NewBusinessError("CAMPAIGN_FETCH_FAILED", "Failed to fetch campaign", err)
-	}
-	if campaign == nil {
-		return nil, ErrCampaignNotFound
-	}
-
 	data, err := json.Marshal(statistics)
 	if err != nil {
 		return nil, NewBusinessError("STATISTICS_MARSHAL_FAILED", "Failed to marshal statistics", err)
 	}
-
-	if err := s.campaignRepo.UpdateStatistics(ctx, campaignID, data); err != nil {
+	if err := repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
+		if err := repository.LockCampaignForUpdate(txCtx, campaignID); err != nil {
+			return err
+		}
+		campaign, err := s.campaignRepo.ByID(txCtx, campaignID)
+		if err != nil {
+			return err
+		}
+		if campaign == nil {
+			return ErrCampaignNotFound
+		}
+		// Delivery reporters supply a patch. Merging it retains immutable refund
+		// evidence written by the financial transaction and serializes the sent
+		// count used by reconciliation with this campaign-row lock.
+		return s.campaignRepo.MergeStatistics(txCtx, campaignID, data)
+	}); err != nil {
 		return nil, NewBusinessError("CAMPAIGN_STATISTICS_UPDATE_FAILED", "Failed to update campaign statistics", err)
 	}
 
