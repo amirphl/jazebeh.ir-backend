@@ -4,7 +4,6 @@ package businessflow
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -36,25 +35,24 @@ type AdminCampaignFlow interface {
 
 // AdminCampaignFlowImpl implements the campaign business flow
 type AdminCampaignFlowImpl struct {
-	campaignRepo            repository.CampaignRepository
-	customerRepo            repository.CustomerRepository
-	walletRepo              repository.WalletRepository
-	balanceSnapshotRepo     repository.BalanceSnapshotRepository
-	transactionRepo         repository.TransactionRepository
-	auditRepo               repository.AuditLogRepository
-	platformSettingsRepo    repository.PlatformSettingsRepository
-	platformBaseRepo        repository.PlatformBasePriceRepository
-	lineNumberRepo          repository.LineNumberRepository
-	segmentPriceRepo        repository.SegmentPriceFactorRepository
-	pagePriceRepo           repository.PagePriceRepository
-	selectedTagRepo         repository.CampaignSelectedTagRepository
-	capacityCalculationRepo repository.CampaignTargetingCapacityRepository
-	notifier                services.NotificationService
-	adminConfig             config.AdminConfig
-	messageConfig           config.MessageConfig
-	cacheConfig             config.CacheConfig
-	rc                      *redis.Client
-	db                      *gorm.DB
+	campaignRepo         repository.CampaignRepository
+	customerRepo         repository.CustomerRepository
+	walletRepo           repository.WalletRepository
+	balanceSnapshotRepo  repository.BalanceSnapshotRepository
+	transactionRepo      repository.TransactionRepository
+	auditRepo            repository.AuditLogRepository
+	platformSettingsRepo repository.PlatformSettingsRepository
+	platformBaseRepo     repository.PlatformBasePriceRepository
+	lineNumberRepo       repository.LineNumberRepository
+	segmentPriceRepo     repository.SegmentPriceFactorRepository
+	pagePriceRepo        repository.PagePriceRepository
+	selectedTagRepo      repository.CampaignSelectedTagRepository
+	notifier             services.NotificationService
+	adminConfig          config.AdminConfig
+	messageConfig        config.MessageConfig
+	cacheConfig          config.CacheConfig
+	rc                   *redis.Client
+	db                   *gorm.DB
 }
 
 const (
@@ -78,7 +76,6 @@ func NewAdminCampaignFlow(
 	segmentPriceRepo repository.SegmentPriceFactorRepository,
 	pagePriceRepo repository.PagePriceRepository,
 	selectedTagRepo repository.CampaignSelectedTagRepository,
-	capacityCalculationRepo repository.CampaignTargetingCapacityRepository,
 	db *gorm.DB,
 	rc *redis.Client,
 	notifier services.NotificationService,
@@ -87,25 +84,24 @@ func NewAdminCampaignFlow(
 	cacheConfig config.CacheConfig,
 ) AdminCampaignFlow {
 	return &AdminCampaignFlowImpl{
-		campaignRepo:            campaignRepo,
-		customerRepo:            customerRepo,
-		walletRepo:              walletRepo,
-		balanceSnapshotRepo:     balanceSnapshotRepo,
-		transactionRepo:         transactionRepo,
-		auditRepo:               auditRepo,
-		platformSettingsRepo:    platformSettingsRepo,
-		platformBaseRepo:        platformBaseRepo,
-		lineNumberRepo:          lineNumberRepo,
-		segmentPriceRepo:        segmentPriceRepo,
-		pagePriceRepo:           pagePriceRepo,
-		selectedTagRepo:         selectedTagRepo,
-		capacityCalculationRepo: capacityCalculationRepo,
-		notifier:                notifier,
-		adminConfig:             adminConfig,
-		messageConfig:           messageConfig,
-		cacheConfig:             cacheConfig,
-		rc:                      rc,
-		db:                      db,
+		campaignRepo:         campaignRepo,
+		customerRepo:         customerRepo,
+		walletRepo:           walletRepo,
+		balanceSnapshotRepo:  balanceSnapshotRepo,
+		transactionRepo:      transactionRepo,
+		auditRepo:            auditRepo,
+		platformSettingsRepo: platformSettingsRepo,
+		platformBaseRepo:     platformBaseRepo,
+		lineNumberRepo:       lineNumberRepo,
+		segmentPriceRepo:     segmentPriceRepo,
+		pagePriceRepo:        pagePriceRepo,
+		selectedTagRepo:      selectedTagRepo,
+		notifier:             notifier,
+		adminConfig:          adminConfig,
+		messageConfig:        messageConfig,
+		cacheConfig:          cacheConfig,
+		rc:                   rc,
+		db:                   db,
 	}
 }
 
@@ -533,14 +529,6 @@ func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.Ad
 			}
 		}
 		if campaign.Spec.UsesSmartTargeting() {
-			if s.capacityCalculationRepo == nil {
-				return ErrSmartTargetingExactCapacityRequired
-			}
-			exact, err := CurrentSmartTargetingCapacity(txCtx, s.db, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, campaign)
-			if err != nil {
-				return err
-			}
-			var requiredAudience uint64
 			if campaign.Phase == models.CampaignPhaseTest {
 				intent, intentErr := currentSmartTargetingTestSamplingIntent(txCtx, s.selectedTagRepo, s.lineNumberRepo, campaign, true)
 				if intentErr != nil {
@@ -554,15 +542,7 @@ func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.Ad
 				if selectionErr != nil || snapshot == nil || int64(len(snapshot.Members)) != int64(intent.effective) {
 					return ErrSmartTargetingTestPreviewRequired
 				}
-				requiredAudience = intent.effective
-				campaign.NumAudience = utils.ToPtr(requiredAudience)
-			} else if campaign.NumAudience != nil {
-				requiredAudience = *campaign.NumAudience
-			} else {
-				return ErrSmartTargetingExactCapacityRequired
-			}
-			if exact.UsableUniqueAudienceCount < 0 || requiredAudience > uint64(exact.UsableUniqueAudienceCount) {
-				return ErrSmartTargetingExactCapacityRequired
+				campaign.NumAudience = utils.ToPtr(intent.effective)
 			}
 		}
 		if err := s.validateApprovalPlatformSettings(txCtx, campaign); err != nil {
@@ -681,21 +661,9 @@ func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.Ad
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, ErrSmartTargetingExactCapacityRequired) && campaign != nil && s.capacityCalculationRepo != nil {
-			_, ensureErr := EnsureCurrentSmartTargetingCapacity(ctx, s.db, s.campaignRepo, s.selectedTagRepo, s.capacityCalculationRepo, s.lineNumberRepo, campaign)
-			if ensureErr != nil {
-				err = ensureErr
-			}
-		}
 		logAdminAction(ctx, s.auditRepo, models.AuditActionAdminCampaignApproved, "Admin approved campaign", false, nil, map[string]any{
 			"campaign_id": req.CampaignID,
 		}, err)
-		if errors.Is(err, ErrSmartTargetingCapacityPending) {
-			return nil, NewBusinessError("SMART_TARGETING_CAPACITY_PENDING", "Exact Smart Targeting capacity calculation was submitted; please wait and retry approval", err)
-		}
-		if errors.Is(err, ErrSmartTargetingExactCapacityRequired) {
-			return nil, NewBusinessError("SMART_TARGETING_EXACT_CAPACITY_REQUIRED", "A current exact Smart Targeting capacity calculation is required before approval", err)
-		}
 		return nil, NewBusinessError("ADMIN_APPROVE_CAMPAIGN_FAILED", "Failed to approve campaign", err)
 	}
 
