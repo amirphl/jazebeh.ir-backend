@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	smartTargetingCapacityTTL = 24 * time.Hour
+	smartTargetingCapacityTTL = 48 * time.Hour
 )
 
 var (
