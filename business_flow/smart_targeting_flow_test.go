@@ -233,6 +233,7 @@ func TestSmartTargetingTagItemMapsEveryField(t *testing.T) {
 		Reason:                &reason,
 		TestPhaseAvgCTR:       &testCTR,
 		OverallAvgCTR:         &overallCTR,
+		UsedInBundle:          true,
 		Selected:              true,
 	}
 
@@ -246,6 +247,7 @@ func TestSmartTargetingTagItemMapsEveryField(t *testing.T) {
 		got.RelationType != row.RelationType ||
 		got.TestPhaseAvgCTR != row.TestPhaseAvgCTR ||
 		got.OverallAvgCTR != row.OverallAvgCTR ||
+		got.UsedInBundle != row.UsedInBundle ||
 		got.Selected != row.Selected {
 		t.Fatalf("incomplete Smart Targeting tag mapping: %#v", got)
 	}
