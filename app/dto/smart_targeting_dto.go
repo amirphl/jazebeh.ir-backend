@@ -52,7 +52,11 @@ type SmartTargetingTagItem struct {
 	// OverallAvgCTR is global across attributable Test and Execution Campaigns
 	// and remains null when no attributed audience has been delivered.
 	OverallAvgCTR *float64 `json:"overall_avg_ctr"`
-	Selected      bool     `json:"selected"`
+	// UsedInBundle reports whether the scheduler has actually attributed this
+	// tag to at least one audience in a running, interrupted, executed, or
+	// expired campaign for this bundle. Both Test and Execution phases count.
+	UsedInBundle bool `json:"used_in_bundle"`
+	Selected     bool `json:"selected"`
 }
 
 // SmartTargetingSelectionSummary describes the complete selection, not only
