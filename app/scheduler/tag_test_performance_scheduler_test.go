@@ -116,6 +116,23 @@ func TestTagTestPerformanceSchedulerDoesNotRetryInvalidCampaign(t *testing.T) {
 	}
 }
 
+func TestTagTestPerformanceSchedulerDoesNotPersistFailureAfterShutdownCancellation(t *testing.T) {
+	startedAt := time.Now().UTC()
+	repo := &tagTestPerformanceSchedulerRepo{recomputeErr: context.Canceled}
+	scheduler := NewTagTestPerformanceScheduler(repo, log.New(io.Discard, "", 0), time.Hour, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	scheduler.recomputeOne(ctx, &models.CampaignTagTestReport{CampaignID: 14, StartedAt: &startedAt})
+
+	if len(repo.recomputed) != 1 || repo.recomputed[0] != 14 {
+		t.Fatalf("recomputed campaigns = %v, want [14]", repo.recomputed)
+	}
+	if len(repo.failed) != 0 {
+		t.Fatalf("shutdown-cancelled job was persisted as failed: %v", repo.failed)
+	}
+}
+
 func TestTagTestPerformanceRetryDelayCaps(t *testing.T) {
 	if got := tagTestPerformanceRetryDelay(1); got != time.Minute {
 		t.Fatalf("retry delay(1) = %s, want 1m", got)
