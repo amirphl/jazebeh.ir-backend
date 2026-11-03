@@ -24,13 +24,32 @@ type PayamSMSSMSService struct {
 	client      *http.Client
 	mu          sync.RWMutex
 	token       string
-	tokenAt     time.Time
+	tokenExpiry time.Time
 }
 
-const payamSMSTokenTTL = time.Hour
+const (
+	payamSMSTokenFallbackTTL = time.Hour
+	payamSMSTokenRefreshSkew = 30 * time.Second
+)
 
 type payamSMSTokenResponse struct {
 	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+type payamSMSHTTPStatusError struct {
+	operation  string
+	statusCode int
+	body       string
+}
+
+func (e *payamSMSHTTPStatusError) Error() string {
+	return fmt.Sprintf("PayamSMS %s http status %d: %s", e.operation, e.statusCode, strings.TrimSpace(e.body))
+}
+
+func isPayamSMSUnauthorizedError(err error) bool {
+	statusErr, ok := err.(*payamSMSHTTPStatusError)
+	return ok && statusErr.statusCode == http.StatusUnauthorized
 }
 
 type payamSMSBulkPayload struct {
@@ -99,11 +118,6 @@ func (s *PayamSMSSMSService) SendBulk(ctx context.Context, recipients []string, 
 		return nil
 	}
 
-	token, err := s.getToken(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get PayamSMS access token: %w", err)
-	}
-
 	payload := payamSMSBulkPayload{
 		Sender:   s.smsConfig.SourceNumber,
 		SMSItems: make([]payamSMSBulkItemBody, 0, len(recipients)),
@@ -121,6 +135,28 @@ func (s *PayamSMSSMSService) SendBulk(ctx context.Context, recipients []string, 
 		return fmt.Errorf("failed to marshal PayamSMS request: %w", err)
 	}
 
+	token, err := s.getToken(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get PayamSMS access token: %w", err)
+	}
+
+	err = s.sendBulkWithToken(ctx, token, requestBody)
+	if !isPayamSMSUnauthorizedError(err) {
+		return err
+	}
+
+	// PayamSMS can revoke a bearer token before its advertised expiry.  Clear
+	// only the rejected value, obtain a replacement with the root token, and
+	// retry the submission once. A 401 is an authentication failure, so this
+	// retry cannot duplicate an accepted submission.
+	token, refreshErr := s.refreshTokenAfterUnauthorized(ctx, token)
+	if refreshErr != nil {
+		return fmt.Errorf("failed to refresh PayamSMS access token after 401: %w", refreshErr)
+	}
+	return s.sendBulkWithToken(ctx, token, requestBody)
+}
+
+func (s *PayamSMSSMSService) sendBulkWithToken(ctx context.Context, token string, requestBody []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.payamsms.com/panel/webservice/sendMultipleWithSrc", bytes.NewReader(requestBody))
 	if err != nil {
 		return fmt.Errorf("failed to create PayamSMS request: %w", err)
@@ -136,7 +172,11 @@ func (s *PayamSMSSMSService) SendBulk(ctx context.Context, recipients []string, 
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("PayamSMS send http status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return &payamSMSHTTPStatusError{
+			operation:  "send",
+			statusCode: resp.StatusCode,
+			body:       string(body),
+		}
 	}
 
 	var results []payamSMSBulkResponseItem
@@ -159,7 +199,7 @@ func (s *PayamSMSSMSService) SendBulk(ctx context.Context, recipients []string, 
 
 func (s *PayamSMSSMSService) getToken(ctx context.Context) (string, error) {
 	s.mu.RLock()
-	if s.token != "" && time.Since(s.tokenAt) < payamSMSTokenTTL {
+	if s.hasUsableTokenLocked(utils.UTCNow()) {
 		token := s.token
 		s.mu.RUnlock()
 		return token, nil
@@ -169,9 +209,31 @@ func (s *PayamSMSSMSService) getToken(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.token != "" && time.Since(s.tokenAt) < payamSMSTokenTTL {
+	if s.hasUsableTokenLocked(utils.UTCNow()) {
 		return s.token, nil
 	}
+	return s.requestTokenLocked(ctx)
+}
+
+// refreshTokenAfterUnauthorized ensures concurrent requests that receive a
+// 401 share one replacement token instead of all hitting the token endpoint.
+func (s *PayamSMSSMSService) refreshTokenAfterUnauthorized(ctx context.Context, rejectedToken string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.hasUsableTokenLocked(utils.UTCNow()) && s.token != rejectedToken {
+		return s.token, nil
+	}
+	s.token = ""
+	s.tokenExpiry = time.Time{}
+	return s.requestTokenLocked(ctx)
+}
+
+func (s *PayamSMSSMSService) hasUsableTokenLocked(now time.Time) bool {
+	return s.token != "" && now.Before(s.tokenExpiry)
+}
+
+func (s *PayamSMSSMSService) requestTokenLocked(ctx context.Context) (string, error) {
 
 	tokenURL := strings.TrimSpace(s.payamConfig.TokenURL)
 	if tokenURL == "" {
@@ -224,8 +286,26 @@ func (s *PayamSMSSMSService) getToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("PayamSMS token response did not contain access_token, body: %s", trimmedBody)
 	}
 
+	ttl := payamSMSTokenFallbackTTL
+	if tokenResp.ExpiresIn > 0 {
+		ttl = time.Duration(tokenResp.ExpiresIn) * time.Second
+	}
+	refreshSkew := payamSMSTokenRefreshSkew
+	if tenth := ttl / 10; tenth < refreshSkew {
+		refreshSkew = tenth
+	}
+	if refreshSkew <= 0 {
+		refreshSkew = time.Nanosecond
+	}
 	s.token = tokenResp.AccessToken
-	s.tokenAt = utils.UTCNow()
+	// Ensure expiry is always safely in the future. If skew calculation results in
+	// a zero or negative expiry (e.g., from malformed API response), use full TTL.
+	expiry := utils.UTCNow().Add(ttl - refreshSkew)
+	if expiry.Before(utils.UTCNow().Add(100 * time.Millisecond)) {
+		// Token lifetime too short for safe refresh; use full TTL instead
+		expiry = utils.UTCNow().Add(ttl)
+	}
+	s.tokenExpiry = expiry
 
 	return s.token, nil
 }
