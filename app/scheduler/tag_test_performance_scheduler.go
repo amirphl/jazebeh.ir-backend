@@ -105,6 +105,14 @@ func (s *TagTestPerformanceScheduler) recomputeOne(ctx context.Context, report *
 	if err == nil || errors.Is(err, repository.ErrTagTestPerformanceLeaseLost) {
 		return
 	}
+	// The scheduler's parent context is cancelled during shutdown. Do not try
+	// to write a failure through that already-cancelled context: it cannot
+	// succeed and would incorrectly turn a shutdown-interrupted job into a
+	// calculation failure. Its lease will be recovered on the next run.
+	if ctx.Err() != nil {
+		s.logger.Printf("tag test performance scheduler: campaign %d interrupted: %v", report.CampaignID, ctx.Err())
+		return
+	}
 	s.logger.Printf("tag test performance scheduler: campaign %d recomputation failed: %v", report.CampaignID, err)
 	if errors.Is(err, repository.ErrTagTestPerformanceCampaignInvalid) {
 		s.failReport(ctx, report, "TAG_TEST_REPORT_CAMPAIGN_INVALID", false)
