@@ -189,6 +189,24 @@ func TestLoadSchedulerConfigReadsTagTestPerformanceSettings(t *testing.T) {
 	}
 }
 
+func TestLoadSchedulerConfigReadsCampaignRefundReconciliationSettings(t *testing.T) {
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED", "true")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL", "17s")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY", "73h")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT", "21s")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_LEASE_DURATION", "2m")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_DISCOVERY_BATCH_SIZE", "123")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_MAX_PARALLEL_RUNS", "2")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_MAX_ATTEMPTS", "5")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_RETRY_BASE", "3m")
+	t.Setenv("CAMPAIGN_REFUND_RECONCILIATION_RETRY_MAX", "19m")
+
+	cfg := loadSchedulerConfig()
+	if !cfg.CampaignRefundReconciliationSchedulerEnabled || cfg.CampaignRefundReconciliationPollInterval != 17*time.Second || cfg.CampaignRefundReconciliationEligibilityDelay != 73*time.Hour || cfg.CampaignRefundReconciliationJobTimeout != 21*time.Second || cfg.CampaignRefundReconciliationLeaseDuration != 2*time.Minute || cfg.CampaignRefundReconciliationDiscoveryBatchSize != 123 || cfg.CampaignRefundReconciliationMaxParallelRuns != 2 || cfg.CampaignRefundReconciliationMaxAttempts != 5 || cfg.CampaignRefundReconciliationRetryBase != 3*time.Minute || cfg.CampaignRefundReconciliationRetryMax != 19*time.Minute {
+		t.Fatalf("campaign refund scheduler config = %+v", cfg)
+	}
+}
+
 func TestLoadSchedulerConfigReadsPayamBalanceMonitorSettings(t *testing.T) {
 	t.Setenv("PAYAM_BALANCE_MONITOR_ENABLED", "false")
 	t.Setenv("PAYAM_BALANCE_MONITOR_INTERVAL", "17m")
