@@ -441,21 +441,31 @@ type SplusConfig struct {
 }
 
 type SchedulerConfig struct {
-	CampaignExecutionEnabled                   bool          `json:"campaign_execution_enabled"`
-	CampaignExecutionInterval                  time.Duration `json:"campaign_execution_interval"`
-	CampaignExecutionMaxParallelRuns           int           `json:"campaign_execution_max_parallel_runs"`
-	MessageSendDelay                           time.Duration `json:"message_send_delay"`
-	MessageSendMockEnabled                     bool          `json:"message_send_mock_enabled"`
-	SmartTargetingCapacitySchedulerEnabled     bool          `json:"smart_targeting_capacity_scheduler_enabled"`
-	SmartTargetingTestSamplingSchedulerEnabled bool          `json:"smart_targeting_test_sampling_scheduler_enabled"`
-	SmartTargetingTestSamplingMaxParallelRuns  int           `json:"smart_targeting_test_sampling_max_parallel_runs"`
-	TagTestPerformanceSchedulerEnabled         bool          `json:"tag_test_performance_scheduler_enabled"`
-	TagTestPerformanceSchedulerInterval        time.Duration `json:"tag_test_performance_scheduler_interval"`
-	TagTestPerformanceSchedulerBatchSize       int           `json:"tag_test_performance_scheduler_batch_size"`
-	PayamBalanceMonitorEnabled                 bool          `json:"payam_balance_monitor_enabled"`
-	PayamBalanceMonitorInterval                time.Duration `json:"payam_balance_monitor_interval"`
-	PayamBalanceMonitorThresholdTomans         int64         `json:"payam_balance_monitor_threshold_tomans"`
-	PayamBalanceMonitorMaxAlertInterval        time.Duration `json:"payam_balance_monitor_max_alert_interval"`
+	CampaignExecutionEnabled                       bool          `json:"campaign_execution_enabled"`
+	CampaignExecutionInterval                      time.Duration `json:"campaign_execution_interval"`
+	CampaignExecutionMaxParallelRuns               int           `json:"campaign_execution_max_parallel_runs"`
+	MessageSendDelay                               time.Duration `json:"message_send_delay"`
+	MessageSendMockEnabled                         bool          `json:"message_send_mock_enabled"`
+	SmartTargetingCapacitySchedulerEnabled         bool          `json:"smart_targeting_capacity_scheduler_enabled"`
+	SmartTargetingTestSamplingSchedulerEnabled     bool          `json:"smart_targeting_test_sampling_scheduler_enabled"`
+	SmartTargetingTestSamplingMaxParallelRuns      int           `json:"smart_targeting_test_sampling_max_parallel_runs"`
+	TagTestPerformanceSchedulerEnabled             bool          `json:"tag_test_performance_scheduler_enabled"`
+	TagTestPerformanceSchedulerInterval            time.Duration `json:"tag_test_performance_scheduler_interval"`
+	TagTestPerformanceSchedulerBatchSize           int           `json:"tag_test_performance_scheduler_batch_size"`
+	CampaignRefundReconciliationSchedulerEnabled   bool          `json:"campaign_refund_reconciliation_scheduler_enabled"`
+	CampaignRefundReconciliationPollInterval       time.Duration `json:"campaign_refund_reconciliation_poll_interval"`
+	CampaignRefundReconciliationEligibilityDelay   time.Duration `json:"campaign_refund_reconciliation_eligibility_delay"`
+	CampaignRefundReconciliationJobTimeout         time.Duration `json:"campaign_refund_reconciliation_job_timeout"`
+	CampaignRefundReconciliationLeaseDuration      time.Duration `json:"campaign_refund_reconciliation_lease_duration"`
+	CampaignRefundReconciliationDiscoveryBatchSize int           `json:"campaign_refund_reconciliation_discovery_batch_size"`
+	CampaignRefundReconciliationMaxParallelRuns    int           `json:"campaign_refund_reconciliation_max_parallel_runs"`
+	CampaignRefundReconciliationMaxAttempts        int           `json:"campaign_refund_reconciliation_max_attempts"`
+	CampaignRefundReconciliationRetryBase          time.Duration `json:"campaign_refund_reconciliation_retry_base"`
+	CampaignRefundReconciliationRetryMax           time.Duration `json:"campaign_refund_reconciliation_retry_max"`
+	PayamBalanceMonitorEnabled                     bool          `json:"payam_balance_monitor_enabled"`
+	PayamBalanceMonitorInterval                    time.Duration `json:"payam_balance_monitor_interval"`
+	PayamBalanceMonitorThresholdTomans             int64         `json:"payam_balance_monitor_threshold_tomans"`
+	PayamBalanceMonitorMaxAlertInterval            time.Duration `json:"payam_balance_monitor_max_alert_interval"`
 }
 
 // ExternalShortLinkConfig controls outbound mapping publication and inbound click synchronization.
@@ -493,14 +503,24 @@ func loadSchedulerConfig() SchedulerConfig {
 		SmartTargetingTestSamplingSchedulerEnabled: getEnvBool("SMART_TARGETING_TEST_SAMPLING_SCHEDULER_ENABLED", capacitySchedulerEnabled),
 		// Sampling can be expensive, so retain the original single-worker behavior
 		// unless an operator deliberately provisions more database capacity.
-		SmartTargetingTestSamplingMaxParallelRuns: getEnvInt("SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS", 1),
-		TagTestPerformanceSchedulerEnabled:        getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
-		TagTestPerformanceSchedulerInterval:       getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
-		TagTestPerformanceSchedulerBatchSize:      getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
-		PayamBalanceMonitorEnabled:                getEnvBool("PAYAM_BALANCE_MONITOR_ENABLED", true),
-		PayamBalanceMonitorInterval:               getEnvDuration("PAYAM_BALANCE_MONITOR_INTERVAL", 5*time.Minute),
-		PayamBalanceMonitorThresholdTomans:        getEnvInt64("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", 100_000_000),
-		PayamBalanceMonitorMaxAlertInterval:       getEnvDuration("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", time.Hour),
+		SmartTargetingTestSamplingMaxParallelRuns:      getEnvInt("SMART_TARGETING_TEST_SAMPLING_MAX_PARALLEL_RUNS", 1),
+		TagTestPerformanceSchedulerEnabled:             getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
+		TagTestPerformanceSchedulerInterval:            getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
+		TagTestPerformanceSchedulerBatchSize:           getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
+		CampaignRefundReconciliationSchedulerEnabled:   getEnvBool("CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED", false),
+		CampaignRefundReconciliationPollInterval:       getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL", time.Minute),
+		CampaignRefundReconciliationEligibilityDelay:   getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY", 72*time.Hour),
+		CampaignRefundReconciliationJobTimeout:         getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT", 30*time.Second),
+		CampaignRefundReconciliationLeaseDuration:      getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_LEASE_DURATION", 2*time.Minute),
+		CampaignRefundReconciliationDiscoveryBatchSize: getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_DISCOVERY_BATCH_SIZE", 250),
+		CampaignRefundReconciliationMaxParallelRuns:    getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_MAX_PARALLEL_RUNS", 1),
+		CampaignRefundReconciliationMaxAttempts:        getEnvInt("CAMPAIGN_REFUND_RECONCILIATION_MAX_ATTEMPTS", 8),
+		CampaignRefundReconciliationRetryBase:          getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_RETRY_BASE", time.Minute),
+		CampaignRefundReconciliationRetryMax:           getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_RETRY_MAX", time.Hour),
+		PayamBalanceMonitorEnabled:                     getEnvBool("PAYAM_BALANCE_MONITOR_ENABLED", true),
+		PayamBalanceMonitorInterval:                    getEnvDuration("PAYAM_BALANCE_MONITOR_INTERVAL", 5*time.Minute),
+		PayamBalanceMonitorThresholdTomans:             getEnvInt64("PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS", 100_000_000),
+		PayamBalanceMonitorMaxAlertInterval:            getEnvDuration("PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL", time.Hour),
 	}
 }
 
@@ -815,13 +835,13 @@ func LoadProductionConfig() (*ProductionConfig, error) {
 		},
 		Scheduler: loadSchedulerConfig(),
 		ExternalShortLink: ExternalShortLinkConfig{
-			Enabled:             getEnvBool("EXTERNAL_SHORTLINK_ENABLED", false),
-			BaseURL:             getEnvString("EXTERNAL_SHORTLINK_BASE_URL", ""),
-			APIToken:            getEnvString("EXTERNAL_SHORTLINK_API_TOKEN", ""),
-			ClientCertFile:      getEnvString("EXTERNAL_SHORTLINK_CLIENT_CERT_FILE", ""),
-			ClientKeyFile:       getEnvString("EXTERNAL_SHORTLINK_CLIENT_KEY_FILE", ""),
-			CAFile:              getEnvString("EXTERNAL_SHORTLINK_CA_FILE", ""),
-			AllowInsecureHTTP:   getEnvBool("EXTERNAL_SHORTLINK_ALLOW_INSECURE_HTTP", false),
+			Enabled:           getEnvBool("EXTERNAL_SHORTLINK_ENABLED", false),
+			BaseURL:           getEnvString("EXTERNAL_SHORTLINK_BASE_URL", ""),
+			APIToken:          getEnvString("EXTERNAL_SHORTLINK_API_TOKEN", ""),
+			ClientCertFile:    getEnvString("EXTERNAL_SHORTLINK_CLIENT_CERT_FILE", ""),
+			ClientKeyFile:     getEnvString("EXTERNAL_SHORTLINK_CLIENT_KEY_FILE", ""),
+			CAFile:            getEnvString("EXTERNAL_SHORTLINK_CA_FILE", ""),
+			AllowInsecureHTTP: getEnvBool("EXTERNAL_SHORTLINK_ALLOW_INSECURE_HTTP", false),
 			// This is per redirect-service batch, not the whole allocation. It
 			// needs room for a saturated database pool while remaining bounded.
 			RequestTimeout:      getEnvDuration("EXTERNAL_SHORTLINK_REQUEST_TIMEOUT", 2*time.Minute),
@@ -1266,6 +1286,32 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		}
 		if cfg.Scheduler.TagTestPerformanceSchedulerBatchSize <= 0 {
 			errors = append(errors, "TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE must be positive")
+		}
+	}
+	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
+		if cfg.Scheduler.CampaignRefundReconciliationPollInterval <= 0 {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL must be positive")
+		}
+		if cfg.Scheduler.CampaignRefundReconciliationEligibilityDelay <= 0 {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY must be positive")
+		}
+		if cfg.Scheduler.CampaignRefundReconciliationJobTimeout <= 0 {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT must be positive")
+		}
+		if cfg.Scheduler.CampaignRefundReconciliationLeaseDuration <= cfg.Scheduler.CampaignRefundReconciliationJobTimeout {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_LEASE_DURATION must be greater than CAMPAIGN_REFUND_RECONCILIATION_JOB_TIMEOUT")
+		}
+		if cfg.Scheduler.CampaignRefundReconciliationMaxParallelRuns <= 0 {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_MAX_PARALLEL_RUNS must be positive")
+		}
+		if cfg.Scheduler.CampaignRefundReconciliationDiscoveryBatchSize <= 0 {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_DISCOVERY_BATCH_SIZE must be positive")
+		}
+		if cfg.Scheduler.CampaignRefundReconciliationMaxAttempts <= 0 {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION_MAX_ATTEMPTS must be positive")
+		}
+		if cfg.Scheduler.CampaignRefundReconciliationRetryBase <= 0 || cfg.Scheduler.CampaignRefundReconciliationRetryMax < cfg.Scheduler.CampaignRefundReconciliationRetryBase {
+			errors = append(errors, "CAMPAIGN_REFUND_RECONCILIATION retry durations must be positive and max must be at least base")
 		}
 	}
 
