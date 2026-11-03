@@ -429,6 +429,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	shortLinkClickRepo := repository.NewShortLinkClickRepository(db)
 	externalShortLinkSyncRepo := repository.NewExternalShortLinkSyncRepository(db)
 	tagTestPerformanceRepo := repository.NewTagTestPerformanceRepository(db)
+	campaignRefundReconciliationRepo := repository.NewCampaignRefundReconciliationRepository(db)
 	segmentPriceFactorRepo := repository.NewSegmentPriceFactorRepository(db)
 	platformBasePriceRepo := repository.NewPlatformBasePriceRepository(db)
 	pagePriceRepo := repository.NewPagePriceRepository(db)
@@ -664,7 +665,6 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		segmentPriceFactorRepo,
 		pagePriceRepo,
 		campaignSelectedTagRepo,
-		capacityCalculationRepo,
 		db,
 		rc,
 		notificationService,
@@ -1000,6 +1000,26 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		)
 		stopTagTestPerformanceScheduler := tagTestPerformanceScheduler.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopTagTestPerformanceScheduler)
+	}
+
+	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
+		// Independent from campaign execution: refunds should never depend on a
+		// customer opening the API or on platform-delivery workers being enabled.
+		refundScheduler := scheduler.NewCampaignRefundReconciliationScheduler(
+			campaignFlow,
+			campaignRefundReconciliationRepo,
+			log.Default(),
+			cfg.Scheduler.CampaignRefundReconciliationPollInterval,
+			cfg.Scheduler.CampaignRefundReconciliationEligibilityDelay,
+			cfg.Scheduler.CampaignRefundReconciliationJobTimeout,
+			cfg.Scheduler.CampaignRefundReconciliationLeaseDuration,
+			cfg.Scheduler.CampaignRefundReconciliationDiscoveryBatchSize,
+			cfg.Scheduler.CampaignRefundReconciliationMaxParallelRuns,
+			cfg.Scheduler.CampaignRefundReconciliationMaxAttempts,
+			cfg.Scheduler.CampaignRefundReconciliationRetryBase,
+			cfg.Scheduler.CampaignRefundReconciliationRetryMax,
+		)
+		stopFuncs = append(stopFuncs, refundScheduler.Start(context.Background()))
 	}
 
 	// Create application struct from FiberRouter
