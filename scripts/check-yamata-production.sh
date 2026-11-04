@@ -125,6 +125,10 @@ log "PostgreSQL shared_buffers: $((postgres_shared_buffers / 1024 / 1024 / 1024)
 	die "Tag Test performance scheduling must be enabled in yamata-app-beta"
 [[ "$(env_value yamata-campaign-scheduler-beta TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED)" == false ]] ||
 	die "Tag Test performance scheduling must be disabled in the campaign scheduler"
+[[ "$(env_value yamata-app-beta CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED)" == false ]] ||
+	die "Refund reconciliation must be disabled in yamata-app-beta"
+[[ "$(env_value yamata-campaign-scheduler-beta CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED)" == true ]] ||
+	die "Refund reconciliation must be enabled in the campaign scheduler"
 [[ "$(env_value yamata-campaign-scheduler-beta BOT_API_DOMAIN)" == http://app-beta:8080 ]] ||
 	die "Scheduler BOT_API_DOMAIN must be http://app-beta:8080"
 [[ "$(env_value yamata-campaign-scheduler-beta SERVER_HOST)" == 127.0.0.1 ]] ||
