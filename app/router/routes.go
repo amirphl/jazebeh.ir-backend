@@ -910,8 +910,17 @@ func errorHandler(c fiber.Ctx, err error) error {
 		}
 	}
 
-	// Log the error
-	log.Printf("Error %d: %v", code, err)
+	// A 408 may be raised by fasthttp before it has parsed a complete HTTP
+	// request. In that case it is not associated with an API route (and the
+	// default GET / values are placeholders), so say that explicitly instead
+	// of emitting a misleading path. When the request is complete, retain the
+	// safe endpoint details needed to investigate it. Query values are not
+	// logged here because they may contain credentials.
+	if code == fiber.StatusRequestTimeout {
+		logRequestTimeout(c, err)
+	} else {
+		log.Printf("Error %d: %v", code, err)
+	}
 	observability.CaptureError(c, code, err, "fiber_error_handler")
 
 	// Get RequestID for tracing
@@ -929,6 +938,46 @@ func errorHandler(c fiber.Ctx, err error) error {
 			},
 		},
 	})
+}
+
+func logRequestTimeout(c fiber.Ctx, err error) {
+	requestComplete := c.Host() != "" || c.OriginalURL() != "/"
+	fields := map[string]any{
+		"level":            "warning",
+		"event":            "http_request_timeout",
+		"status":           fiber.StatusRequestTimeout,
+		"error":            err.Error(),
+		"request_complete": requestComplete,
+		"request_id":       requestid.FromContext(c),
+		"client_ip":        c.IP(),
+		"user_agent":       c.Get("User-Agent"),
+	}
+	if requestComplete {
+		scheme := c.Get("X-Forwarded-Proto")
+		if scheme == "" {
+			scheme = "http"
+		}
+		fields["method"] = c.Method()
+		fields["path"] = c.Path()
+		fields["host"] = c.Host()
+		if c.Host() == "" {
+			fields["url"] = c.Path()
+		} else {
+			fields["url"] = scheme + "://" + c.Host() + c.Path()
+		}
+	} else {
+		fields["method"] = "<unavailable>"
+		fields["path"] = "<unavailable>"
+		fields["host"] = "<unavailable>"
+		fields["url"] = "<unavailable>"
+	}
+
+	payload, marshalErr := json.Marshal(fields)
+	if marshalErr != nil {
+		log.Printf("Error %d: %v", fiber.StatusRequestTimeout, err)
+		return
+	}
+	log.Print(string(payload))
 }
 
 // Helper functions
