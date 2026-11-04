@@ -1548,6 +1548,11 @@ definitions:
         type: string
       short_link_domain:
         type: string
+      smart_targeting_execution_reservation_version:
+        description: |-
+          Zero is an explicit pre-execution-reservation legacy marker. A positive
+          version requires the scheduler to consume the frozen execution snapshot.
+        type: integer
       smart_targeting_test_satisfied_tag_ids:
         items:
           type: integer
@@ -3064,6 +3069,12 @@ definitions:
         type: integer
       total_test_sent_count:
         type: integer
+      used_in_bundle:
+        description: |-
+          UsedInBundle reports whether the scheduler has actually attributed this
+          tag to at least one audience in a running, interrupted, executed, or
+          expired campaign for this bundle. Both Test and Execution phases count.
+        type: boolean
     type: object
   dto.SmartTargetingTestSamplingCalculationResponse:
     properties:
@@ -6192,11 +6203,14 @@ paths:
   /api/v1/bundles/{id}/smart-targeting/tags:
     get:
       description: Returns a page of tags for an owned bundle before a campaign exists,
-        including materialized Bundle/tag Test totals and CTR plus global overall
-        CTR. When current score rows exist, their tag and score snapshots are authoritative;
-        otherwise the endpoint falls back to active live tags with null evaluation
-        fields. selected_tag_ids and the selection summary are empty; submit chosen
-        IDs with campaign creation.
+        including whether each tag was scheduler-used in an operational campaign of
+        the bundle, materialized Bundle/tag Test totals and CTR, plus global overall
+        CTR. A tag is scheduler-used only when an audience attribution exists for
+        a running, interrupted, executed, or expired campaign; both Test and Execution
+        phases count. When current score rows exist, their tag and score snapshots
+        are authoritative; otherwise the endpoint falls back to active live tags with
+        null evaluation fields. selected_tag_ids and the selection summary are empty;
+        submit chosen IDs with campaign creation.
       parameters:
       - description: Owned bundle ID
         in: path
@@ -7016,13 +7030,17 @@ paths:
   /api/v1/campaigns/{uuid}/smart-targeting/tags:
     get:
       description: Returns a page of tags for an owned campaign, each row's selected
-        state, materialized Bundle/tag Test CTR, global overall CTR, nullable per-Campaign
+        state, whether the tag was scheduler-used in an operational campaign of the
+        bundle, materialized Bundle/tag Test CTR, global overall CTR, nullable per-Campaign
         Test totals and CTR, the complete selected_tag_ids set across all pages, and
-        the complete selection capacity summary. Execution Campaigns default to Test
-        CTR descending, then persona-fit score descending, then database order. When
-        the bundle has current score rows, tag names, display titles, personas, capacities,
-        fit scores, and score explanations come from that completed evaluation snapshot.
-        Otherwise active live tags are returned and evaluation fields are null.
+        the complete selection capacity summary. A tag is scheduler-used only when
+        an audience attribution exists for a running, interrupted, executed, or expired
+        campaign; both Test and Execution phases count. Execution Campaigns default
+        to Test CTR descending, then persona-fit score descending, then database order.
+        When the bundle has current score rows, tag names, display titles, personas,
+        capacities, fit scores, and score explanations come from that completed evaluation
+        snapshot. Otherwise active live tags are returned and evaluation fields are
+        null.
       parameters:
       - description: Owned campaign UUID
         format: uuid
