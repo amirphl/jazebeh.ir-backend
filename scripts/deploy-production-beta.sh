@@ -47,8 +47,8 @@ load_yamata_env_file "$PROJECT_ROOT/.env.beta"
 	printf '[deploy-production] ERROR: TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED must be true in .env.beta\n' >&2
 	exit 1
 }
-[[ "${CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED:-false}" == false ]] || {
-	printf '[deploy-production] ERROR: CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED must be false in .env.beta; the isolated scheduler owns it\n' >&2
+[[ "${CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED:-false}" == true ]] || {
+	printf '[deploy-production] ERROR: CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED must be true in .env.beta; yamata-app-beta owns it with the other API schedulers\n' >&2
 	exit 1
 }
 [[ "${SMART_TAG_EVALUATION_ENABLED:-}" == true ]] || {

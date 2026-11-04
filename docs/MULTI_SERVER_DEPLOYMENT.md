@@ -128,7 +128,7 @@ Also verify that:
 
 - only ports 80/443 are published by the stack;
 - PostgreSQL, Redis, metrics, and Grafana are not exposed directly;
-- the API owns exact-capacity, Test-sampling, and smart-tag jobs;
+- the API owns exact-capacity, Test-sampling, smart-tag, and refund-reconciliation jobs;
 - the isolated scheduler alone owns campaign execution;
 - certificate monitoring works and an authorized renewal mechanism exists;
 - alerts, backups, retention, and restore drills identify the correct
