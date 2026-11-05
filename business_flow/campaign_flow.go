@@ -595,7 +595,7 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 			if err := s.requireCurrentSmartTargetingTestSampling(txCtx, lockedCampaign); err != nil {
 				return err
 			}
-			intent, err := currentSmartTargetingTestSamplingIntent(txCtx, s.selectedTagRepo, s.lineNumberRepo, lockedCampaign, true)
+			intent, err := s.currentOrFrozenSmartTargetingTestSamplingIntent(txCtx, lockedCampaign, true)
 			if err != nil {
 				return err
 			}
@@ -1862,7 +1862,7 @@ func (s *CampaignFlowImpl) CalculateCampaignCost(ctx context.Context, req *dto.C
 		if currentErr := s.requireCurrentSmartTargetingTestSampling(ctx, &campaign); currentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", currentErr)
 		}
-		intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, &campaign, true)
+		intent, intentErr := s.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, &campaign, true)
 		if intentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", intentErr)
 		}
@@ -1915,7 +1915,7 @@ func (s *CampaignFlowImpl) CalculateCampaignCostV2(ctx context.Context, req *dto
 		if currentErr := s.requireCurrentSmartTargetingTestSampling(ctx, &campaign); currentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", currentErr)
 		}
-		intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, &campaign, true)
+		intent, intentErr := s.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, &campaign, true)
 		if intentErr != nil {
 			return nil, NewBusinessError("SMART_TARGETING_TEST_PREVIEW_REQUIRED", "A current Smart Targeting Test sampling preview is required", intentErr)
 		}
@@ -3330,7 +3330,7 @@ func (s *CampaignFlowImpl) canFinalizeCampaign(ctx context.Context, campaign *mo
 			if err := s.requireCurrentSmartTargetingTestSampling(ctx, campaign); err != nil {
 				return err
 			}
-			if _, err := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, campaign, true); err != nil {
+			if _, err := s.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, campaign, true); err != nil {
 				return err
 			}
 		}
