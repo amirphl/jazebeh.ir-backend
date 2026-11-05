@@ -700,8 +700,9 @@ func (s *SMSCampaignScheduler) resolveScoreConstraint(ctx context.Context, c dto
 	return gradesToScoreConstraint(c.AudienceGrades, percentiles.P33, percentiles.P66), nil
 }
 
-// selectTagAudiences applies the delivery provider's color eligibility. Payam
-// recipients are selected white-first then pink; Candoo has no color filter.
+// selectTagAudiences applies the standard SMS delivery provider's color
+// eligibility. Payam recipients are selected white-first then pink; Candoo
+// standard delivery has no color filter.
 func (s *SMSCampaignScheduler) selectTagAudiences(
 	ctx context.Context,
 	campaignID uint,
@@ -813,7 +814,7 @@ func (s *SMSCampaignScheduler) fetchSMSAudiencePhonesByBundle(
 	var ids []int64
 	var uids []string
 	var selectionID uint
-	allowedColors := models.SmartTargetingAllowedColors(c.Platform, providerName)
+	allowedColors := audienceSelectionAllowedColors(c, providerName)
 	if usesSmartAudienceTargeting(c) {
 		phones, ids, uids, selectionID, err = selectAndReserveExactSmartTargetingCandidates(ctx, s.db, c, numAudiences, correlationID, allowedColors)
 	} else {
@@ -903,6 +904,15 @@ func (s *SMSCampaignScheduler) fetchSMSAudiencePhonesByBundle(
 		Codes:                     codes,
 		BundleAudienceSelectionID: utils.ToPtr(selectionID),
 	}, nil
+}
+
+// audienceSelectionAllowedColors keeps the Candoo Smart Targeting policy from
+// leaking into standard SMS audience selection.
+func audienceSelectionAllowedColors(c dto.BotGetCampaignResponse, providerName models.SMSProvider) []string {
+	if usesSmartAudienceTargeting(c) {
+		return models.SmartTargetingAllowedColors(c.Platform, providerName)
+	}
+	return models.SMSDeliveryAllowedColors(c.Platform, providerName)
 }
 
 func (s *SMSCampaignScheduler) buildSMSBody(c dto.BotGetCampaignResponse, code string, uid string) string {
