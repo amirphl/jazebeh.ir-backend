@@ -43,6 +43,18 @@ type BotCampaignFlowImpl struct {
 	rc                   *redis.Client
 }
 
+// currentOrFrozenSmartTargetingTestSamplingIntent shares the campaign flow's
+// immutable Test-selection validation with the bot readiness feed.
+func (s *BotCampaignFlowImpl) currentOrFrozenSmartTargetingTestSamplingIntent(ctx context.Context, campaign *models.Campaign, requireSatisfied bool) (*smartTargetingTestSamplingIntent, error) {
+	resolver := &CampaignFlowImpl{
+		db:                      s.db,
+		selectedTagRepo:         s.selectedTagRepo,
+		lineNumberRepo:          s.lineNumberRepo,
+		samplingCalculationRepo: repository.NewCampaignTargetingTestSamplingRepository(s.db),
+	}
+	return resolver.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, campaign, requireSatisfied)
+}
+
 func NewBotCampaignFlow(
 	campaignRepo repository.CampaignRepository,
 	multimediaRepo repository.MultimediaAssetRepository,
@@ -108,7 +120,7 @@ func (s *BotCampaignFlowImpl) ListReadyCampaigns(ctx context.Context, platform *
 		var smartTestSelectionID *int64
 		numAudiences := c.NumAudience
 		if c.Spec.UsesSmartTargeting() && c.Phase == models.CampaignPhaseTest {
-			intent, intentErr := currentSmartTargetingTestSamplingIntent(ctx, s.selectedTagRepo, s.lineNumberRepo, c, true)
+			intent, intentErr := s.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, c, true)
 			if intentErr != nil {
 				return nil, NewBusinessError("BOT_LIST_READY_CAMPAIGNS_FAILED", "Smart Targeting Test sampling intent is invalid", intentErr)
 			}
