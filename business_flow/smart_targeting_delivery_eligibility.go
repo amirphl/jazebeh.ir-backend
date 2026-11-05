@@ -10,8 +10,8 @@ import (
 
 // smartTargetingAllowedColorsForCampaign resolves the sender provider before
 // deriving audience eligibility. Missing or retired line configuration keeps
-// the historic PayamSMS-safe behavior; only a configured Candoo line removes
-// the color restriction.
+// the historic PayamSMS-safe behavior; a configured Candoo line uses the
+// black-only Smart Targeting policy.
 func smartTargetingAllowedColorsForCampaign(
 	ctx context.Context,
 	lineNumberRepo repository.LineNumberRepository,
