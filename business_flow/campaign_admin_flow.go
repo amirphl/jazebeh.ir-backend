@@ -55,6 +55,19 @@ type AdminCampaignFlowImpl struct {
 	db                   *gorm.DB
 }
 
+// currentOrFrozenSmartTargetingTestSamplingIntent shares the campaign flow's
+// immutable Test-selection validation with the approval flow without widening
+// the admin flow's dependency surface.
+func (s *AdminCampaignFlowImpl) currentOrFrozenSmartTargetingTestSamplingIntent(ctx context.Context, campaign *models.Campaign, requireSatisfied bool) (*smartTargetingTestSamplingIntent, error) {
+	resolver := &CampaignFlowImpl{
+		db:                      s.db,
+		selectedTagRepo:         s.selectedTagRepo,
+		lineNumberRepo:          s.lineNumberRepo,
+		samplingCalculationRepo: repository.NewCampaignTargetingTestSamplingRepository(s.db),
+	}
+	return resolver.currentOrFrozenSmartTargetingTestSamplingIntent(ctx, campaign, requireSatisfied)
+}
+
 const (
 	adminRescheduleMinLeadTime = 2 * time.Minute
 	adminCancelMinLeadTime     = 2 * time.Minute
@@ -530,7 +543,7 @@ func (s *AdminCampaignFlowImpl) ApproveCampaign(ctx context.Context, req *dto.Ad
 		}
 		if campaign.Spec.UsesSmartTargeting() {
 			if campaign.Phase == models.CampaignPhaseTest {
-				intent, intentErr := currentSmartTargetingTestSamplingIntent(txCtx, s.selectedTagRepo, s.lineNumberRepo, campaign, true)
+				intent, intentErr := s.currentOrFrozenSmartTargetingTestSamplingIntent(txCtx, campaign, true)
 				if intentErr != nil {
 					return intentErr
 				}
