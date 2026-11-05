@@ -166,12 +166,12 @@ func TestSmartTargetingSchedulerAudienceQueryUsesExplicitPhaseAndAlwaysExcludesB
 
 	executionPhase := string(models.CampaignPhaseExecution)
 	campaign.Phase = &executionPhase
-	query = smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"}, nil)
+	query = smartTargetingSchedulerAudienceQuery(campaign, 3, []int64{9, 2}, []string{"A", "C"}, []string{"black"})
 	if query.Phase != repository.SmartTargetingSelectionPhaseExecution {
 		t.Fatalf("execution scheduler audience query phase = %#v", query)
 	}
-	if len(query.AllowedColors) != 0 {
-		t.Fatalf("Candoo-compatible scheduler query color filter = %v, want none", query.AllowedColors)
+	if len(query.AllowedColors) != 1 || query.AllowedColors[0] != "black" {
+		t.Fatalf("Candoo-compatible scheduler query color filter = %v, want [black]", query.AllowedColors)
 	}
 }
 
