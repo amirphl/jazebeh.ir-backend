@@ -46,6 +46,20 @@ type stubSMSAudienceProfileRepo struct {
 	byUIDsFn           func(context.Context, []string) ([]*models.AudienceProfile, error)
 }
 
+func TestAudienceSelectionAllowedColorsSeparatesSmartCandooFromStandardCandoo(t *testing.T) {
+	smart := dto.BotGetCampaignResponse{Platform: models.CampaignPlatformSMS, TargetingMethod: models.CampaignAudienceTargetingSmart}
+	if colors := audienceSelectionAllowedColors(smart, models.SMSProviderCandoo); len(colors) != 1 || colors[0] != "black" {
+		t.Fatalf("Smart Targeting Candoo colors = %v, want [black]", colors)
+	}
+	standard := dto.BotGetCampaignResponse{Platform: models.CampaignPlatformSMS, TargetingMethod: models.CampaignAudienceTargetingStandard}
+	if colors := audienceSelectionAllowedColors(standard, models.SMSProviderCandoo); len(colors) != 0 {
+		t.Fatalf("standard Candoo colors = %v, want unrestricted", colors)
+	}
+	if colors := audienceSelectionAllowedColors(standard, models.SMSProviderPayamSMS); len(colors) != 2 || colors[0] != "white" || colors[1] != "pink" {
+		t.Fatalf("standard PayamSMS colors = %v, want [white pink]", colors)
+	}
+}
+
 func (s *stubSMSAudienceProfileRepo) ByFilter(context.Context, models.AudienceProfileFilter, string, int, int) ([]*models.AudienceProfile, error) {
 	return nil, nil
 }
