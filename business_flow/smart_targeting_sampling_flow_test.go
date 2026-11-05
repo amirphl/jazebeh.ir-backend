@@ -199,8 +199,8 @@ func TestSmartTargetingTestSamplingAudienceQueryRestrictsSMSColors(t *testing.T)
 		t.Fatal(err)
 	}
 	query = smartTargetingTestSamplingAudienceQuery(bundleID, []int64{9}, input)
-	if len(query.AllowedColors) != 0 {
-		t.Fatalf("Candoo SMS sampling allowed colors = %v, want no restriction", query.AllowedColors)
+	if len(query.AllowedColors) != 1 || query.AllowedColors[0] != "black" {
+		t.Fatalf("Candoo SMS sampling allowed colors = %v, want [black]", query.AllowedColors)
 	}
 
 	campaign.Spec.Platform = models.CampaignPlatformBale
