@@ -111,18 +111,18 @@ func TestSmartTargetingCapacityAudienceQueryUsesSnapshotEligibility(t *testing.T
 	}
 }
 
-func TestSmartTargetingCapacityAudienceQueryKeepsCandooUnrestricted(t *testing.T) {
+func TestSmartTargetingCapacityAudienceQueryUsesCandooBlackAudience(t *testing.T) {
 	query := smartTargetingCapacityAudienceQuery(&models.CampaignTargetingCapacityCalculation{
 		CampaignID:           17,
 		BundleID:             3,
 		Platform:             models.CampaignPlatformSMS,
 		Phase:                string(models.CampaignPhaseExecution),
-		AllowedColors:        pq.StringArray{},
+		AllowedColors:        pq.StringArray{"black"},
 		SelectedTagIDs:       pq.Int64Array{2, 9},
 		SelectedScoreClasses: pq.StringArray{"A", "C"},
 	})
-	if len(query.AllowedColors) != 0 {
-		t.Fatalf("Candoo capacity query colors = %v, want no restriction", query.AllowedColors)
+	if len(query.AllowedColors) != 1 || query.AllowedColors[0] != "black" {
+		t.Fatalf("Candoo capacity query colors = %v, want [black]", query.AllowedColors)
 	}
 }
 
