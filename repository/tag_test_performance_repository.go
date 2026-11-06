@@ -519,7 +519,7 @@ func deleteStaleCampaignTagPerformances(db *gorm.DB, campaignID uint) error {
 	return nil
 }
 
-const recomputeCampaignTagPerformanceSQL = `
+var recomputeCampaignTagPerformanceSQL = fmt.Sprintf(`
 WITH attributed AS (
     SELECT DISTINCT ON (attribution.campaign_id, attribution.audience_id)
         attribution.campaign_id,
@@ -634,16 +634,7 @@ clicked_attributed AS (
       ON click.campaign_id = attributed.campaign_id
      AND click.phone_number = attributed.phone_number
     WHERE click.uid IS NOT NULL
-      AND COALESCE(click.is_test, FALSE) = FALSE
-      AND COALESCE(click.ip, '') !~ '^(66\.249\.|74\.125\.)'
-      AND NOT (
-          COALESCE(click.user_agent, '') ~ 'Chrome'
-          AND COALESCE(click.user_agent, '') !~ '(Edg|OPR|Opera)'
-          AND (
-              COALESCE(click.user_agent, '') ~* 'X11; Linux|Linux'
-              AND COALESCE(click.user_agent, '') !~* 'Android|Windows NT|Mac OS X|Macintosh|iPhone|iPad|iPod'
-          )
-      )
+      AND %s
 ),
 tag_stats AS (
     SELECT
@@ -719,4 +710,4 @@ SET bundle_id = EXCLUDED.bundle_id,
     delivered_count = EXCLUDED.delivered_count,
     click_count = EXCLUDED.click_count,
     calculation_version = EXCLUDED.calculation_version,
-    updated_at = EXCLUDED.updated_at`
+    updated_at = EXCLUDED.updated_at`, nonAutomatedClickTrafficSQL("click"))
