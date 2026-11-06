@@ -340,18 +340,33 @@ func (r *CampaignRepositoryImpl) GetScheduledCampaigns(ctx context.Context, from
 	return r.ByFilter(ctx, filter, "schedule_at ASC", 0, 0)
 }
 
+const automatedClickUserAgentPattern = `bot|crawler|spider|facebookexternalhit|facebot|twitterbot|googlemessages|telegrambot|whatsapp|preview|linkpreview|curl|wget|python-requests|okhttp|postman|v2raytun`
+
+// nonAutomatedClickTrafficSQL implements the bot-filtering rules used for all
+// click-derived metrics. tableAlias may be empty or name the short-link-click
+// table in a join.
+func nonAutomatedClickTrafficSQL(tableAlias string) string {
+	prefix := ""
+	if tableAlias != "" {
+		prefix = tableAlias + "."
+	}
+
+	return fmt.Sprintf(`
+COALESCE(%[1]sis_test, FALSE) = FALSE
+AND COALESCE(%[1]sip, '') !~ '^(66\.249\.|74\.125\.)'
+AND COALESCE(%[1]suser_agent, '') !~* '%[2]s'
+AND NOT (
+    COALESCE(%[1]suser_agent, '') ~* 'Chrome'
+    AND COALESCE(%[1]suser_agent, '') !~* '(Edg|OPR|Opera)'
+    AND (
+        COALESCE(%[1]suser_agent, '') ~* 'X11; Linux|Linux'
+        AND COALESCE(%[1]suser_agent, '') !~* 'Android|Windows NT|Mac OS X|Macintosh|iPhone|iPad|iPod'
+    )
+)`, prefix, automatedClickUserAgentPattern)
+}
+
 func excludeAutomatedClickTraffic(db *gorm.DB) *gorm.DB {
-	return db.
-		Where("COALESCE(is_test, FALSE) = FALSE").
-		Where("COALESCE(ip, '') !~ ?", "^(66\\.249\\.|74\\.125\\.)").
-		Where(`NOT (
-			COALESCE(user_agent, '') ~ 'Chrome'
-			AND COALESCE(user_agent, '') !~ '(Edg|OPR|Opera)'
-			AND (
-				COALESCE(user_agent, '') ~* 'X11; Linux|Linux'
-				AND COALESCE(user_agent, '') !~* 'Android|Windows NT|Mac OS X|Macintosh|iPhone|iPad|iPod'
-			)
-		)`)
+	return db.Where(nonAutomatedClickTrafficSQL(""))
 }
 
 // // ClickCounts returns a map of campaign_id -> distinct short_link_click uids
@@ -464,22 +479,13 @@ func (r *CampaignRepositoryImpl) AggregateClickCountsByCustomerIDs(ctx context.C
 	db := r.getDB(ctx)
 	if err := db.Table("campaigns c").
 		Select("c.customer_id, COALESCE(SUM(campaign_clicks.clicks), 0) AS clicks").
-		Joins(`JOIN (
+		Joins(fmt.Sprintf(`JOIN (
 			SELECT campaign_id, COUNT(DISTINCT uid) AS clicks
 			FROM short_link_clicks
 			WHERE campaign_id IS NOT NULL
-			  AND COALESCE(is_test, FALSE) = FALSE
-			  AND COALESCE(ip, '') !~ '^(66\\.249\\.|74\\.125\\.)'
-			  AND NOT (
-				COALESCE(user_agent, '') ~ 'Chrome'
-				AND COALESCE(user_agent, '') !~ '(Edg|OPR|Opera)'
-				AND (
-					COALESCE(user_agent, '') ~* 'X11; Linux|Linux'
-					AND COALESCE(user_agent, '') !~* 'Android|Windows NT|Mac OS X|Macintosh|iPhone|iPad|iPod'
-				)
-			  )
+			  AND %s
 			GROUP BY campaign_id
-		) AS campaign_clicks ON campaign_clicks.campaign_id = c.id`).
+		) AS campaign_clicks ON campaign_clicks.campaign_id = c.id`, nonAutomatedClickTrafficSQL(""))).
 		Where("c.customer_id IN ?", customerIDs).
 		Group("c.customer_id").
 		Scan(&rows).Error; err != nil {
@@ -613,22 +619,13 @@ func (r *CampaignRepositoryImpl) withClickRateOrdering(query *gorm.DB, descendin
 		nulls = "NULLS LAST"
 	}
 
-	query = query.Joins(`LEFT JOIN (
+	query = query.Joins(fmt.Sprintf(`LEFT JOIN (
 		SELECT campaign_id, COUNT(DISTINCT uid) AS clicks
 		FROM short_link_clicks
 		WHERE campaign_id IS NOT NULL
-		  AND COALESCE(is_test, FALSE) = FALSE
-		  AND COALESCE(ip, '') !~ '^(66\.249\.|74\.125\.)'
-		  AND NOT (
-			COALESCE(user_agent, '') ~ 'Chrome'
-			AND COALESCE(user_agent, '') !~ '(Edg|OPR|Opera)'
-			AND (
-				COALESCE(user_agent, '') ~* 'X11; Linux|Linux'
-				AND COALESCE(user_agent, '') !~* 'Android|Windows NT|Mac OS X|Macintosh|iPhone|iPad|iPod'
-			)
-		  )
+		  AND %s
 		GROUP BY campaign_id
-	) AS campaign_click_rates ON campaign_click_rates.campaign_id = campaigns.id`)
+	) AS campaign_click_rates ON campaign_click_rates.campaign_id = campaigns.id`, nonAutomatedClickTrafficSQL("")))
 
 	clickRateExpr := `CASE
 		WHEN COALESCE(NULLIF(campaigns.statistics->>'aggregatedTotalSent', '')::double precision, 0) > 0
