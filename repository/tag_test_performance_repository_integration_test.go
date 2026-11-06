@@ -316,7 +316,7 @@ func seedTagTestPerformanceIntegration(t *testing.T, db *gorm.DB) {
             (1900000001, 'click-a1-1', 1900000001, '+989000000001', 'Mobile Safari', '1.1.1.1'),
             (1900000002, 'click-a1-2', 1900000001, '+989000000001', 'Mobile Safari', '1.1.1.1'),
             (1900000003, NULL, 1900000001, '+989000000002', 'Mobile Safari', '1.1.1.2'),
-			(1900000004, 'bot-a2', 1900000001, '+989000000002', 'Mobile Safari', '66.249.1.1'),
+			(1900000004, 'bot-a2', 1900000001, '+989000000002', 'curl/8.5.0', '1.1.1.3'),
 			(1900000005, 'click-exec-a1', 1900000003, '+989000000006', 'Mobile Safari', '1.1.1.6')`,
 		`INSERT INTO campaign_tag_test_reports (
             campaign_id, bundle_id, status, calculation_version, attempt_count,
