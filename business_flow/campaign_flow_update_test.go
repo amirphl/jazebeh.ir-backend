@@ -1,6 +1,7 @@
 package businessflow
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,8 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
+	"github.com/google/uuid"
+	"github.com/xuri/excelize/v2"
 )
 
 func TestApplyCampaignSpecUpdateDeletesOmittedReplaceFields(t *testing.T) {
@@ -189,6 +192,68 @@ func TestBuildCampaignReportRowsUsesAudienceJSONLMapping(t *testing.T) {
 	}
 	if rows[1] != (campaignReportRow{AudienceProfileUID: "audience-b", Status: "unknown", Clicked: "true"}) {
 		t.Fatalf("second row = %#v", rows[1])
+	}
+}
+
+func TestBuildCampaignAudienceClickReportRowsKeepsCampaignScope(t *testing.T) {
+	t.Parallel()
+
+	campaignUUID := uuid.MustParse("f0a26a17-610d-4a29-bbb9-1c1f01c57eb9")
+	rows := buildCampaignAudienceClickReportRows(
+		models.Campaign{ID: 42, UUID: campaignUUID},
+		[]string{"audience-b", "audience-a"},
+		map[string]string{"audience-a": "code-a", "audience-b": "code-b"},
+		[]string{"code-b"},
+	)
+
+	want := []campaignAudienceClickReportRow{
+		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-a", Status: "unknown", Clicked: "false"},
+		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-b", Status: "unknown", Clicked: "true"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("row count = %d, want %d", len(rows), len(want))
+	}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Fatalf("row %d = %#v, want %#v", i, rows[i], want[i])
+		}
+	}
+}
+
+func TestBuildCampaignAudienceClickReportExcelUsesSingleSafeWorksheet(t *testing.T) {
+	t.Parallel()
+
+	report, err := buildCampaignAudienceClickReportExcel([]campaignAudienceClickReportRow{{
+		CampaignID:         42,
+		CampaignUUID:       "f0a26a17-610d-4a29-bbb9-1c1f01c57eb9",
+		AudienceProfileUID: "=dangerous-formula",
+		Status:             "unknown",
+		Clicked:            "true",
+	}})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+
+	xl, err := excelize.OpenReader(bytes.NewReader(report))
+	if err != nil {
+		t.Fatalf("open report: %v", err)
+	}
+	defer func() { _ = xl.Close() }()
+	if sheets := xl.GetSheetList(); len(sheets) != 1 || sheets[0] != "Audience Click Report" {
+		t.Fatalf("sheets = %#v, want one Audience Click Report sheet", sheets)
+	}
+	got, err := xl.GetRows("Audience Click Report")
+	if err != nil {
+		t.Fatalf("read rows: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("workbook rows = %d, want 2", len(got))
+	}
+	if strings.Join(got[0], ",") != strings.Join(campaignAudienceClickReportHeaders, ",") {
+		t.Fatalf("headers = %#v, want %#v", got[0], campaignAudienceClickReportHeaders)
+	}
+	if got[1][0] != "42" || got[1][2] != "'=dangerous-formula" || got[1][4] != "true" {
+		t.Fatalf("data row = %#v", got[1])
 	}
 }
 
