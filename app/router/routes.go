@@ -285,6 +285,7 @@ func (r *FiberRouter) SetupRoutes() {
 	campaigns.Get("/audience-spec", r.campaignHandler.ListAudienceSpec)
 	campaigns.Get("/summary", r.campaignHandler.GetApprovedRunningSummary)
 	campaigns.Get("/initiated/last", r.campaignHandler.GetLastInitiatedCampaign)
+	campaigns.Post("/audience-click-report", r.campaignHandler.ExportCampaignAudienceClickReport)
 	campaigns.Get("/:id/export", r.campaignHandler.ExportCampaignReport)
 	campaigns.Get("/:uuid/click-report", r.campaignHandler.ExportCampaignClickReport)
 	campaigns.Post("/:id/cancel", r.campaignHandler.CancelCampaign)
