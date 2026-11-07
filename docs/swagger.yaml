@@ -2207,6 +2207,18 @@ definitions:
       uuid:
         type: string
     type: object
+  dto.ExportCampaignAudienceClickReportRequest:
+    properties:
+      campaign_ids:
+        items:
+          type: integer
+        maxItems: 100
+        minItems: 1
+        type: array
+        uniqueItems: true
+    required:
+    - campaign_ids
+    type: object
   dto.ForgotPasswordRequest:
     properties:
       identifier:
@@ -7275,6 +7287,50 @@ paths:
           schema:
             $ref: '#/definitions/dto.APIResponse'
       summary: Send Campaign Test Message
+      tags:
+      - Campaigns
+  /api/v1/campaigns/audience-click-report:
+    post:
+      consumes:
+      - application/json
+      description: Export one Excel worksheet containing audience UID and click results
+        for selected campaigns owned by the authenticated customer. Delivery status
+        is unavailable in the stored audience mapping and is reported as unknown.
+      parameters:
+      - description: Campaign IDs to export
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ExportCampaignAudienceClickReportRequest'
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: Excel file
+          schema:
+            type: string
+        "400":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "404":
+          description: Campaign or audience report not found
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "413":
+          description: Report exceeds a single worksheet limit
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/dto.APIResponse'
+      summary: Export Campaign Audience Click Report
       tags:
       - Campaigns
   /api/v1/campaigns/audience-spec:
