@@ -34,6 +34,7 @@ type CampaignHandlerInterface interface {
 	CloneCampaign(c fiber.Ctx) error
 	ExportCampaignReport(c fiber.Ctx) error
 	ExportCampaignClickReport(c fiber.Ctx) error
+	ExportCampaignAudienceClickReport(c fiber.Ctx) error
 	SendCampaignTestMessage(c fiber.Ctx) error
 	HideCampaigns(c fiber.Ctx) error
 	UnhideCampaigns(c fiber.Ctx) error
@@ -819,6 +820,59 @@ func (h *CampaignHandler) ExportCampaignClickReport(c fiber.Ctx) error {
 	filename := "campaign_click_report_" + campaignUUID + ".csv"
 	c.Set("Content-Type", "text/csv; charset=utf-8")
 	c.Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	return c.Send(data)
+}
+
+// ExportCampaignAudienceClickReport exports audience UID/click results from multiple
+// customer-owned campaigns into one Excel worksheet.
+// @Summary Export Campaign Audience Click Report
+// @Description Export one Excel worksheet containing audience UID and click results for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.
+// @Tags Campaigns
+// @Accept json
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Param request body dto.ExportCampaignAudienceClickReportRequest true "Campaign IDs to export"
+// @Success 200 {string} string "Excel file"
+// @Failure 400 {object} dto.APIResponse "Validation error"
+// @Failure 401 {object} dto.APIResponse "Unauthorized"
+// @Failure 404 {object} dto.APIResponse "Campaign or audience report not found"
+// @Failure 413 {object} dto.APIResponse "Report exceeds a single worksheet limit"
+// @Failure 500 {object} dto.APIResponse "Internal server error"
+// @Router /api/v1/campaigns/audience-click-report [post]
+func (h *CampaignHandler) ExportCampaignAudienceClickReport(c fiber.Ctx) error {
+	var req dto.ExportCampaignAudienceClickReportRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", "INVALID_REQUEST", nil)
+	}
+	if err := h.validator.Struct(&req); err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Validation failed", "VALIDATION_ERROR", nil)
+	}
+
+	metadata := businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent"))
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/audience-click-report", 2*time.Minute)
+	defer cancel()
+	data, err := h.campaignFlow.ExportCampaignAudienceClickReport(ctx, req.CampaignIDs, metadata)
+	if err != nil {
+		if be, ok := err.(*businessflow.BusinessError); ok {
+			switch be.Code {
+			case "CAMPAIGN_IDS_REQUIRED", "CAMPAIGN_IDS_LIMIT_EXCEEDED", "CAMPAIGN_ID_INVALID", "CAMPAIGN_IDS_DUPLICATE":
+				return h.ErrorResponse(c, fiber.StatusBadRequest, be.Message, be.Code, nil)
+			case "AUDIENCE_REPORT_NOT_AVAILABLE":
+				return h.ErrorResponse(c, fiber.StatusNotFound, be.Message, be.Code, nil)
+			case "CAMPAIGN_REPORT_TOO_LARGE":
+				return h.ErrorResponse(c, fiber.StatusRequestEntityTooLarge, be.Message, be.Code, nil)
+			case "MISSING_CUSTOMER_ID":
+				return h.ErrorResponse(c, fiber.StatusUnauthorized, be.Message, be.Code, nil)
+			}
+		}
+		if businessflow.IsCampaignNotFound(err) {
+			return h.ErrorResponse(c, fiber.StatusNotFound, "One or more campaigns not found", "CAMPAIGN_NOT_FOUND", nil)
+		}
+		log.Println("Export campaign audience click report failed", err)
+		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to export campaign audience click report", "CAMPAIGN_AUDIENCE_CLICK_REPORT_EXPORT_FAILED", nil)
+	}
+
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", "attachment; filename=\"campaign_audience_click_report.xlsx\"")
 	return c.Send(data)
 }
 
