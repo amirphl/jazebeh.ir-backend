@@ -546,4 +546,7 @@ type ShortLinkClickRepository interface {
 	// DistinctShortLinkUIDsByCampaignID returns the distinct short-link UIDs (codes) that
 	// received at least one click for the given campaign. Used for the campaign click report.
 	DistinctShortLinkUIDsByCampaignID(ctx context.Context, campaignID uint) ([]string, error)
+	// DistinctShortLinkUIDsByCampaignIDs returns distinct clicked short-link UIDs (codes),
+	// grouped by campaign. It avoids one query per selected campaign.
+	DistinctShortLinkUIDsByCampaignIDs(ctx context.Context, campaignIDs []uint) (map[uint][]string, error)
 }
