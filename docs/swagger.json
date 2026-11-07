@@ -4827,6 +4827,70 @@
                 }
             }
         },
+        "/api/v1/campaigns/audience-click-report": {
+            "post": {
+                "description": "Export one Excel worksheet containing audience UID and click results for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Export Campaign Audience Click Report",
+                "parameters": [
+                    {
+                        "description": "Campaign IDs to export",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ExportCampaignAudienceClickReportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Excel file",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Campaign or audience report not found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Report exceeds a single worksheet limit",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/campaigns/audience-spec": {
             "get": {
                 "produces": [
@@ -11845,6 +11909,23 @@
                 },
                 "uuid": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.ExportCampaignAudienceClickReportRequest": {
+            "type": "object",
+            "required": [
+                "campaign_ids"
+            ],
+            "properties": {
+                "campaign_ids": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
