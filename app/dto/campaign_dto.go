@@ -283,6 +283,13 @@ type UnhideCampaignsResponse struct {
 	UpdatedCount int64  `json:"updated_count"`
 }
 
+// ExportCampaignAudienceClickReportRequest selects the campaigns to include in
+// one audience-and-click Excel report. Campaign IDs are internal IDs and must
+// all belong to the authenticated customer.
+type ExportCampaignAudienceClickReportRequest struct {
+	CampaignIDs []uint `json:"campaign_ids" validate:"required,min=1,max=100,unique,dive,min=1"`
+}
+
 // AdminListCampaignsFilter holds filters for admin campaign listing
 type AdminListCampaignsFilter struct {
 	CampaignTitle *string    `json:"campaign_title,omitempty" validate:"omitempty,max=255"`
