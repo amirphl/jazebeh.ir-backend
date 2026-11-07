@@ -75,3 +75,29 @@ func (r *ShortLinkClickRepositoryImpl) DistinctShortLinkUIDsByCampaignID(ctx con
 		Pluck("uid", &uids).Error
 	return uids, err
 }
+
+func (r *ShortLinkClickRepositoryImpl) DistinctShortLinkUIDsByCampaignIDs(ctx context.Context, campaignIDs []uint) (map[uint][]string, error) {
+	result := make(map[uint][]string)
+	if len(campaignIDs) == 0 {
+		return result, nil
+	}
+
+	type row struct {
+		CampaignID uint   `gorm:"column:campaign_id"`
+		UID        string `gorm:"column:uid"`
+	}
+	var rows []row
+	db := excludeAutomatedClickTraffic(r.getDB(ctx))
+	if err := db.Model(&models.ShortLinkClick{}).
+		Select("campaign_id, uid").
+		Where("campaign_id IN ? AND uid IS NOT NULL AND uid != ''", campaignIDs).
+		Distinct().
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		result[row.CampaignID] = append(result[row.CampaignID], row.UID)
+	}
+	return result, nil
+}
