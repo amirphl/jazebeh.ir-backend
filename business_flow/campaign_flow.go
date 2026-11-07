@@ -48,6 +48,7 @@ type CampaignFlow interface {
 	CloneCampaign(ctx context.Context, req *dto.CloneCampaignRequest, metadata *ClientMetadata) (*dto.CloneCampaignResponse, error)
 	ExportCampaignReport(ctx context.Context, campaignID string) ([]byte, error)
 	ExportCampaignClickReport(ctx context.Context, campaignUUID string) ([]byte, error)
+	ExportCampaignAudienceClickReport(ctx context.Context, campaignIDs []uint, metadata *ClientMetadata) ([]byte, error)
 	SendCampaignTestMessage(ctx context.Context, req *dto.SendCampaignTestMessageRequest, metadata *ClientMetadata) (*dto.SendCampaignTestMessageResponse, error)
 	StartSmartTargetingTestSampling(ctx context.Context, req *dto.SmartTargetingTestSamplingPreviewRequest, metadata *ClientMetadata) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
 	GetCurrentSmartTargetingTestSampling(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
@@ -1502,11 +1503,29 @@ type campaignReportRow struct {
 	Clicked            string
 }
 
+type campaignAudienceClickReportRow struct {
+	CampaignID         uint
+	CampaignUUID       string
+	AudienceProfileUID string
+	Status             string
+	Clicked            string
+}
+
 var campaignReportHeaders = []string{
 	"Audience Profile UID",
 	"Status",
 	"Clicked",
 }
+
+var campaignAudienceClickReportHeaders = []string{
+	"Campaign ID",
+	"Campaign UUID",
+	"Audience Profile UID",
+	"Status",
+	"Clicked",
+}
+
+const maxCampaignAudienceClickReportRows = 10_000_000
 
 func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUID string) ([]byte, error) {
 	campaignUUID = strings.TrimSpace(campaignUUID)
@@ -1595,6 +1614,120 @@ func buildCampaignReportRows(allUIDs []string, uidToCode map[string]string, clic
 		})
 	}
 	return rows
+}
+
+func buildCampaignAudienceClickReportRows(campaign models.Campaign, allUIDs []string, uidToCode map[string]string, clickedCodes []string) []campaignAudienceClickReportRow {
+	clickedCodeSet := make(map[string]struct{}, len(clickedCodes))
+	for _, code := range clickedCodes {
+		clickedCodeSet[code] = struct{}{}
+	}
+
+	sortedUIDs := append([]string(nil), allUIDs...)
+	sort.Strings(sortedUIDs)
+	rows := make([]campaignAudienceClickReportRow, 0, len(sortedUIDs))
+	for _, audienceUID := range sortedUIDs {
+		_, clicked := clickedCodeSet[uidToCode[audienceUID]]
+		rows = append(rows, campaignAudienceClickReportRow{
+			CampaignID:         campaign.ID,
+			CampaignUUID:       campaign.UUID.String(),
+			AudienceProfileUID: audienceUID,
+			Status:             "unknown",
+			Clicked:            strconv.FormatBool(clicked),
+		})
+	}
+	return rows
+}
+
+// ExportCampaignAudienceClickReport exports the audience UID and click report for several
+// campaigns owned by the current customer into one worksheet. It deliberately uses the same
+// durable audience UID/code store as the single-campaign export, so Status remains unknown.
+func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context, campaignIDs []uint, metadata *ClientMetadata) ([]byte, error) {
+	if len(campaignIDs) == 0 {
+		return nil, NewBusinessError("CAMPAIGN_IDS_REQUIRED", "at least one campaign id is required", nil)
+	}
+	if len(campaignIDs) > 100 {
+		return nil, NewBusinessError("CAMPAIGN_IDS_LIMIT_EXCEEDED", "at most 100 campaign ids may be exported at once", nil)
+	}
+
+	customerID, ok := ctx.Value(utils.CustomerIDKey).(uint)
+	if !ok || customerID == 0 {
+		return nil, NewBusinessError("MISSING_CUSTOMER_ID", "customer id is required", ErrCustomerNotFound)
+	}
+
+	seen := make(map[uint]struct{}, len(campaignIDs))
+	for _, campaignID := range campaignIDs {
+		if campaignID == 0 {
+			return nil, NewBusinessError("CAMPAIGN_ID_INVALID", "campaign ids must be greater than zero", nil)
+		}
+		if _, exists := seen[campaignID]; exists {
+			return nil, NewBusinessError("CAMPAIGN_IDS_DUPLICATE", "campaign ids must be unique", nil)
+		}
+		seen[campaignID] = struct{}{}
+	}
+
+	customer, err := getCustomer(ctx, s.customerRepo, customerID)
+	if err != nil {
+		return nil, NewBusinessError("CUSTOMER_LOOKUP_FAILED", "failed to lookup customer", err)
+	}
+	auditFailure := func(message string, e error) {
+		errMsg := e.Error()
+		_ = s.createAuditLog(ctx, &customer, models.AuditActionCampaignAudienceClickReportExportFailed, message, false, &errMsg, metadata)
+	}
+
+	campaigns, err := s.campaignRepo.ByCustomerIDAndIDs(ctx, customerID, campaignIDs)
+	if err != nil {
+		auditFailure("Campaign audience click report export failed while loading campaigns", err)
+		return nil, NewBusinessError("CAMPAIGN_LOOKUP_FAILED", "failed to lookup campaigns", err)
+	}
+	if len(campaigns) != len(campaignIDs) {
+		err := ErrCampaignNotFound
+		auditFailure("Campaign audience click report export failed because one or more campaigns were unavailable", err)
+		return nil, NewBusinessError("CAMPAIGN_NOT_FOUND", "one or more campaigns were not found", err)
+	}
+
+	campaignByID := make(map[uint]*models.Campaign, len(campaigns))
+	for _, campaign := range campaigns {
+		campaignByID[campaign.ID] = campaign
+	}
+	clickedCodesByCampaignID, err := s.shortLinkClickRepo.DistinctShortLinkUIDsByCampaignIDs(ctx, campaignIDs)
+	if err != nil {
+		auditFailure("Campaign audience click report export failed while loading clicks", err)
+		return nil, NewBusinessError("CAMPAIGN_CLICK_LOOKUP_FAILED", "failed to load campaign clicks", err)
+	}
+
+	rows := make([]campaignAudienceClickReportRow, 0)
+	for _, campaignID := range campaignIDs {
+		campaign := campaignByID[campaignID]
+		allUIDs, uidToCode, err := readCampaignAudienceUIDs(campaign.ID)
+		if err != nil {
+			auditFailure(fmt.Sprintf("Campaign audience click report export failed for campaign %s", campaign.UUID.String()), err)
+			if os.IsNotExist(err) {
+				return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available for one or more campaigns (may have expired or not yet pushed)", nil)
+			}
+			return nil, NewBusinessError("CAMPAIGN_CLICK_MAPPING_READ_FAILED", "failed to read campaign click mapping", err)
+		}
+		if len(allUIDs) == 0 {
+			err := errors.New("audience report data is empty")
+			auditFailure(fmt.Sprintf("Campaign audience click report export failed for campaign %s", campaign.UUID.String()), err)
+			return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available for one or more campaigns (may have expired or not yet pushed)", nil)
+		}
+		if len(rows)+len(allUIDs) > maxCampaignAudienceClickReportRows {
+			err := fmt.Errorf("report contains more than %d rows", maxCampaignAudienceClickReportRows)
+			auditFailure("Campaign audience click report export exceeded the worksheet row limit", err)
+			return nil, NewBusinessError("CAMPAIGN_REPORT_TOO_LARGE", "campaign audience report is too large for a single Excel worksheet", err)
+		}
+		rows = append(rows, buildCampaignAudienceClickReportRows(*campaign, allUIDs, uidToCode, clickedCodesByCampaignID[campaign.ID])...)
+	}
+
+	reportBytes, err := buildCampaignAudienceClickReportExcel(rows)
+	if err != nil {
+		auditFailure("Campaign audience click report export failed while generating Excel", err)
+		return nil, NewBusinessError("CAMPAIGN_REPORT_EXPORT_FAILED", "failed to generate campaign audience report", err)
+	}
+
+	_ = s.createAuditLog(ctx, &customer, models.AuditActionCampaignAudienceClickReportExported,
+		fmt.Sprintf("Campaign audience click report exported for %d campaigns", len(campaignIDs)), true, nil, metadata)
+	return reportBytes, nil
 }
 
 // CalculateCampaignCapacity handles the campaign capacity calculation process
@@ -4666,7 +4799,7 @@ func buildCampaignReportExcel(rows []campaignReportRow) ([]byte, error) {
 	}
 
 	for i, row := range rows {
-		record := []string{row.AudienceProfileUID, row.Status, row.Clicked}
+		record := []string{excelSafeString(row.AudienceProfileUID), excelSafeString(row.Status), excelSafeString(row.Clicked)}
 		cellRef, err := excelize.CoordinatesToCellName(1, i+2)
 		if err != nil {
 			return nil, err
@@ -4686,6 +4819,60 @@ func buildCampaignReportExcel(rows []campaignReportRow) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func buildCampaignAudienceClickReportExcel(rows []campaignAudienceClickReportRow) ([]byte, error) {
+	xl := excelize.NewFile()
+	defer func() { _ = xl.Close() }()
+
+	sheetName := "Audience Click Report"
+	defaultSheet := xl.GetSheetName(0)
+	if defaultSheet != sheetName {
+		xl.SetSheetName(defaultSheet, sheetName)
+	}
+	if err := xl.SetSheetRow(sheetName, "A1", &campaignAudienceClickReportHeaders); err != nil {
+		return nil, err
+	}
+
+	for i, row := range rows {
+		record := []string{
+			strconv.FormatUint(uint64(row.CampaignID), 10),
+			excelSafeString(row.CampaignUUID),
+			excelSafeString(row.AudienceProfileUID),
+			excelSafeString(row.Status),
+			excelSafeString(row.Clicked),
+		}
+		cellRef, err := excelize.CoordinatesToCellName(1, i+2)
+		if err != nil {
+			return nil, err
+		}
+		if err := xl.SetSheetRow(sheetName, cellRef, &record); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := xl.SetColWidth(sheetName, "A", "E", 24); err != nil {
+		return nil, err
+	}
+	buf, err := xl.WriteToBuffer()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// excelSafeString prevents UID values supplied by external systems from being
+// evaluated as formulas when the downloaded workbook is opened.
+func excelSafeString(value string) string {
+	if value == "" {
+		return value
+	}
+	switch value[0] {
+	case '=', '+', '-', '@':
+		return "'" + value
+	default:
+		return value
+	}
 }
 
 // ExportCampaignClickReport builds a CSV with two columns - uid and clicked (true/false) -
