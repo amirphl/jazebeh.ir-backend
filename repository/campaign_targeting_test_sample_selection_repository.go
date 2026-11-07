@@ -22,8 +22,10 @@ SELECT COUNT(*)
 FROM campaign_targeting_test_sample_selection_members AS member
 JOIN campaign_targeting_test_sample_selections AS snapshot
   ON snapshot.id = member.selection_id
-JOIN campaign_targeting_capacity_calculations AS calculation
-  ON calculation.id = snapshot.calculation_id
+JOIN campaigns AS campaign
+  ON campaign.id = snapshot.campaign_id
+LEFT JOIN line_numbers AS line
+  ON line.line_number = BTRIM(campaign.spec->>'line_number')
 LEFT JOIN audience_profiles AS audience ON audience.id = member.audience_id
 LEFT JOIN bundle_audience_selection_members AS materialized
   ON materialized.bundle_id = ? AND materialized.audience_id = member.audience_id
@@ -38,7 +40,19 @@ LEFT JOIN bundle_audience_exclusions AS excluded
 WHERE member.selection_id = ?
 	  AND (audience.id IS NULL OR audience.phone_number IS NULL OR BTRIM(audience.phone_number) = ''
 	   OR NOT (audience.tags @> ARRAY[member.assigned_tag_id]::integer[])
-	   OR (cardinality(calculation.allowed_colors) > 0 AND (audience.color IS NULL OR audience.color <> ALL(calculation.allowed_colors)))
+	   -- Keep this guard aligned with models.SmartTargetingAllowedColors. A
+	   -- selection.calculation_id points to the Test-sampling table, not the
+	   -- capacity-calculation table; joining it to the latter can accidentally
+	   -- apply another campaign's provider/color policy when numeric IDs collide.
+	   OR (
+	       LOWER(BTRIM(COALESCE(campaign.spec->>'platform', ''))) = 'sms'
+	       AND (
+	           (line.provider = 'candoo' AND (audience.color IS NULL OR audience.color <> 'black'))
+	           OR
+	           (COALESCE(line.provider, 'payamsms') <> 'candoo'
+	             AND (audience.color IS NULL OR audience.color <> ALL(ARRAY['white', 'pink']::text[])))
+	       )
+	   )
 	   OR audience.normalized_score IS DISTINCT FROM member.audience_score
 	   OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR execution_reserved.id IS NOT NULL OR excluded.audience_id IS NOT NULL)`
 

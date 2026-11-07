@@ -40,14 +40,19 @@ func TestReserveTestSampleSelectionChecksCompositeKeyBundleExclusions(t *testing
 func TestReserveTestSampleSelectionRechecksCurrentTargetingEligibility(t *testing.T) {
 	query := strings.ToLower(testSampleSelectionAvailabilityQuery)
 	for _, fragment := range []string{
-		"campaign_targeting_capacity_calculations",
+		"join campaigns as campaign",
+		"left join line_numbers as line",
 		"audience.tags @> array[member.assigned_tag_id]::integer[]",
-		"calculation.allowed_colors",
+		"line.provider = 'candoo'",
+		"array['white', 'pink']::text[]",
 		"audience.normalized_score is distinct from member.audience_score",
 	} {
 		if !strings.Contains(query, fragment) {
 			t.Fatalf("reservation availability query is missing current targeting validation %q:\n%s", fragment, testSampleSelectionAvailabilityQuery)
 		}
+	}
+	if strings.Contains(query, "campaign_targeting_capacity_calculations") || strings.Contains(query, "calculation.allowed_colors") {
+		t.Fatalf("reservation availability query must not join a Test selection to an unrelated capacity calculation:\n%s", testSampleSelectionAvailabilityQuery)
 	}
 }
 
