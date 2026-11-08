@@ -470,5 +470,8 @@
 \echo 'Running 0153_enforce_campaign_refund_queue.sql...'
 \i migrations/0153_enforce_campaign_refund_queue.sql
 
+\echo 'Running 0154_optimize_campaign_click_reporting.sql...'
+\i migrations/0154_optimize_campaign_click_reporting.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
