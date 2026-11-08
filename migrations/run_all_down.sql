@@ -5,6 +5,9 @@
 
 \echo 'Starting database rollback...'
 
+\echo 'Running 0154_optimize_campaign_click_reporting_down.sql...'
+\i migrations/0154_optimize_campaign_click_reporting_down.sql
+
 \echo 'Running 0153_enforce_campaign_refund_queue_down.sql...'
 \i migrations/0153_enforce_campaign_refund_queue_down.sql
 
