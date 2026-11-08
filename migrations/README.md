@@ -4,10 +4,10 @@ This directory contains the ordered PostgreSQL schema history for Yamata no
 Orochi. The current schema head is:
 
 ```text
-0141_snapshot_smart_targeting_allowed_colors.sql
+0154_optimize_campaign_click_reporting.sql
 ```
 
-There are 143 numbered up files and 142 numbered down files. Both aggregate
+There are 157 numbered up files and 156 numbered down files. Both aggregate
 manifests currently include every matching file exactly once. The difference is
 `0050_remove_short_links_indexes.sql`, which has no checked-in down migration.
 
@@ -28,7 +28,7 @@ number—is the migration identity:
 - `0104_create_sent_rubika_messages`
 - `0104_create_splus_status_results`
 
-New changes should use the next unused ordinal (`0142` after the current head),
+New changes should use the next unused ordinal (`0155` after the current head),
 include a down file whenever rollback is safe, and update both aggregate
 manifests. Do not edit a migration that may already have been deployed; add a
 corrective migration so every environment retains the same append-only history.
