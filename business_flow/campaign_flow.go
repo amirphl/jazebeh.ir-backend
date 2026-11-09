@@ -369,7 +369,7 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	if err := s.prepareAudienceTargetingUpdate(ctx, req, &campaign); err != nil {
 		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
 	}
-	samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(ctx, s.lineNumberRepo, &campaign, req)
+	samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(ctx, s.selectedTagRepo, s.lineNumberRepo, &campaign, req)
 	if err != nil {
 		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
 	}
@@ -459,6 +459,20 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 		if samplingConfigurationChanged {
 			if err := s.clearCampaignSmartTargetingTestSamplingPreview(txCtx, campaign.ID); err != nil {
 				return err
+			}
+			// A configuration edit makes an in-flight sampling snapshot stale. Mark
+			// it superseded now so the scheduler does not later report the expected
+			// stale-preview validation error as a failed calculation.
+			if s.samplingCalculationRepo != nil {
+				active, err := s.samplingCalculationRepo.ActiveByCampaignID(txCtx, campaign.ID)
+				if err != nil {
+					return err
+				}
+				if active != nil {
+					if err := s.samplingCalculationRepo.Supersede(txCtx, active.ID, "SMART_TARGETING_TEST_SAMPLING_SUPERSEDED", "Campaign configuration changed before the sampling preview completed", time.Now().UTC()); err != nil && !errors.Is(err, repository.ErrCampaignTargetingTestSamplingStateConflict) {
+						return err
+					}
+				}
 			}
 		}
 		if campaign.Spec.UsesSmartTargeting() {
@@ -953,7 +967,7 @@ func applyFinalizedCampaignCost(campaign *models.Campaign, cost *dto.CalculateCa
 // smartTargetingTestSamplingConfigurationChanged compares effective values,
 // not merely field presence. Full-form clients commonly resubmit unchanged
 // values while finalizing; that must not discard a current sampling preview.
-func smartTargetingTestSamplingConfigurationChanged(ctx context.Context, lineNumberRepo repository.LineNumberRepository, campaign *models.Campaign, req *dto.UpdateCampaignRequest) (bool, error) {
+func smartTargetingTestSamplingConfigurationChanged(ctx context.Context, selectedTagRepo repository.CampaignSelectedTagRepository, lineNumberRepo repository.LineNumberRepository, campaign *models.Campaign, req *dto.UpdateCampaignRequest) (bool, error) {
 	if campaign == nil || req == nil {
 		return false, nil
 	}
@@ -979,6 +993,20 @@ func smartTargetingTestSamplingConfigurationChanged(ctx context.Context, lineNum
 	}
 	if req.SampleSizePerTag != nil && (campaign.SampleSizePerTag == nil || *req.SampleSizePerTag != *campaign.SampleSizePerTag) {
 		return true, nil
+	}
+	if req.SelectedTagIDs != nil {
+		selected, err := selectedTagRepo.ListSelected(ctx, campaign.ID)
+		if err != nil {
+			return false, err
+		}
+		if len(selected) != len(*req.SelectedTagIDs) {
+			return true, nil
+		}
+		for position, tagID := range *req.SelectedTagIDs {
+			if selected[position] == nil || selected[position].TagID != tagID || selected[position].SelectionOrder != position {
+				return true, nil
+			}
+		}
 	}
 	if req.AudienceGrades != nil {
 		currentClasses, err := normalizeSmartTargetingScoreClasses(campaign.Spec.AudienceGrades)
@@ -2088,7 +2116,7 @@ func (s *CampaignFlowImpl) computePricePerMessage(ctx context.Context, campaign 
 		return 0, NewBusinessError("CAMPAIGN_VALIDATION_FAILED", "Campaign validation failed", err)
 	}
 
-	if platform == models.CampaignPlatformSMS && campaign.Spec.LineNumber == nil {
+	if platform == models.CampaignPlatformSMS && (campaign.Spec.LineNumber == nil || strings.TrimSpace(*campaign.Spec.LineNumber) == "") {
 		return 0, NewBusinessError("LINE_NUMBER_REQUIRED", "Line number is required for SMS campaigns", ErrCampaignLineNumberRequired)
 	}
 
