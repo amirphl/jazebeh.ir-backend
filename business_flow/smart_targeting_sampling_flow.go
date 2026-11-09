@@ -443,6 +443,12 @@ func (s *CampaignFlowImpl) StartSmartTargetingTestSampling(ctx context.Context, 
 		if err := s.selectedTagRepo.Validate(txCtx, lockedCampaign.ID, *lockedCampaign.BundleID); err != nil {
 			return err
 		}
+		// The worker must never be used as the first validator for pricing. In
+		// particular, SMS campaigns without a line number used to create durable
+		// jobs that inevitably failed later in the scheduler.
+		if _, err := s.computePricePerMessage(txCtx, lockedCampaign); err != nil {
+			return err
+		}
 		now := time.Now().UTC()
 		active, err := s.samplingCalculationRepo.ActiveByCampaignID(txCtx, lockedCampaign.ID)
 		if err != nil {
@@ -525,6 +531,8 @@ func (s *CampaignFlowImpl) StartSmartTargetingTestSampling(ctx context.Context, 
 			return nil, NewBusinessError("SMART_TARGETING_TAGS_REQUIRED", "Select at least one tag before calculating the Test sample", err)
 		case errors.Is(err, ErrSmartTargetingTagInvalid), errors.Is(err, repository.ErrInvalidCampaignSelectedTags):
 			return nil, NewBusinessError("SMART_TARGETING_SELECTION_INVALID", "The selected Smart Targeting tags are no longer valid", err)
+		case errors.Is(err, ErrCampaignLineNumberRequired):
+			return nil, NewBusinessError("LINE_NUMBER_REQUIRED", "Line number is required for SMS campaigns", err)
 		case errors.Is(err, ErrCampaignUpdateNotAllowed):
 			return nil, NewBusinessError("CAMPAIGN_UPDATE_NOT_ALLOWED", "Sampling preview cannot change a finalized campaign", err)
 		default:
