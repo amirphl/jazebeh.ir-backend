@@ -9,7 +9,7 @@ func TestNonAutomatedClickTrafficSQLUsesAllBotSignals(t *testing.T) {
 	condition := nonAutomatedClickTrafficSQL("click")
 
 	for _, fragment := range []string{
-		"COALESCE(click.is_test, FALSE) = FALSE",
+		"click.is_test IS NOT TRUE",
 		"COALESCE(click.ip, '') !~ '^(66\\.249\\.|74\\.125\\.)'",
 		"COALESCE(click.user_agent, '') !~* '" + automatedClickUserAgentPattern + "'",
 		"COALESCE(click.user_agent, '') ~* 'Chrome'",
