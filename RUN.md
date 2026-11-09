@@ -387,8 +387,10 @@ keeps the cross-table claim guard while avoiding lock-table exhaustion and
 opposite-order audience lock waits. `out of shared memory (SQLSTATE 53200)`
 from an older deployment means PostgreSQL's shared lock table is full; it does
 **not** mean that the host has run out of RAM. The production defaults provide
-a 24 GiB PostgreSQL `/dev/shm` mount, 12 GiB shared buffers, and
-`max_locks_per_transaction = 4096`.
+a 48 GiB PostgreSQL `/dev/shm` capacity (not preallocated), 16 GiB shared
+buffers, and `max_locks_per_transaction = 8192`. The remaining host memory is
+deliberately available to the kernel page cache and the application containers;
+do not allocate all 64 GiB to PostgreSQL buffers.
 
 Deploy migration `0149` through the normal deployment process. For an existing
 database that was initialized with the former lock-table setting, also apply
@@ -396,14 +398,22 @@ the new value before recreating PostgreSQL (this does not alter data):
 
 ```bash
 docker exec yamata-postgres-beta psql -U "$DB_USER" -d "$DB_NAME" \
-  -c "ALTER SYSTEM SET max_locks_per_transaction = '4096';"
+  -c "ALTER SYSTEM SET max_locks_per_transaction = '8192';"
+docker exec yamata-postgres-beta psql -U "$DB_USER" -d "$DB_NAME" \
+  -c "ALTER SYSTEM SET shared_buffers = '16GB';"
 docker compose --env-file .env.beta -f docker-compose.beta.yml up -d --force-recreate postgres-beta
 docker exec yamata-postgres-beta psql -U "$DB_USER" -d "$DB_NAME" \
-  -c "SHOW max_locks_per_transaction;"
+  -c "SHOW max_locks_per_transaction; SHOW shared_buffers;"
 ```
 
-Ensure `.env.beta` contains `POSTGRES_SHM_SIZE="24gb"` before recreating the
+Ensure `.env.beta` contains `POSTGRES_SHM_SIZE="48gb"` and
+`CAMPAIGN_EXECUTION_MAX_PARALLEL_RUNS="2"` before recreating the
 container. Do not remove the PostgreSQL volume for this change.
+
+The execution cap is shared by SMS, Bale, Rubika, and Splus schedulers during
+the audience-selection/allocation phase. It prevents a ready-campaign burst
+from starting unbounded simultaneous allocations; raise it only after
+monitoring lock waits and database headroom.
 
 If you specifically need to remove the old container object first, stop and remove only that service container, then start it again through Compose with `.env.beta`:
 
