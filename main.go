@@ -242,9 +242,12 @@ func initializeDatabase(cfg config.DatabaseConfig) (*gorm.DB, error) {
 		logLevel = gormlogger.Warn
 	}
 	gormLog := gormlogger.New(log.New(log.Writer(), "", log.Flags()), gormlogger.Config{
-		SlowThreshold:             cfg.SlowQueryTime,
-		LogLevel:                  logLevel,
-		IgnoreRecordNotFoundError: false,
+		SlowThreshold: cfg.SlowQueryTime,
+		LogLevel:      logLevel,
+		// Several repositories intentionally use First to perform optional
+		// lookups and translate ErrRecordNotFound into a nil result. Logging those
+		// expected misses as errors obscures actionable database failures.
+		IgnoreRecordNotFoundError: true,
 		// Large UID/audience arrays must never be interpolated into logs. Besides
 		// producing enormous log lines, interpolation itself adds latency and can
 		// expose customer targeting data.
