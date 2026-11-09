@@ -401,32 +401,32 @@ func TestSmartTargetingTestSamplingConfigurationInvalidatesOnlyEffectiveChanges(
 		SampleSizePerTag:        &sampleSize,
 		AudienceGrades:          []string{"C", "A"},
 	}
-	changed, err := smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, unchanged)
+	changed, err := smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, unchanged)
 	if err != nil || changed {
 		t.Fatalf("unchanged effective sampling configuration = (%t, %v), want (false, nil)", changed, err)
 	}
 
 	changedSampleSize := uint64(601)
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{SampleSizePerTag: &changedSampleSize})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{SampleSizePerTag: &changedSampleSize})
 	if err != nil || !changed {
 		t.Fatalf("changed sample size = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	execution := string(models.CampaignPhaseExecution)
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{Phase: &execution})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{Phase: &execution})
 	if err != nil || !changed {
 		t.Fatalf("changed phase = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	campaign.Spec.Platform = models.CampaignPlatformBale
 	sms := models.CampaignPlatformSMS
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{Platform: &sms})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{Platform: &sms})
 	if err != nil || !changed {
 		t.Fatalf("enabled SMS color eligibility = (%t, %v), want (true, nil)", changed, err)
 	}
 
 	rubika := models.CampaignPlatformRubika
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, campaign, &dto.UpdateCampaignRequest{Platform: &rubika})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, nil, campaign, &dto.UpdateCampaignRequest{Platform: &rubika})
 	if err != nil || changed {
 		t.Fatalf("unchanged non-SMS color eligibility = (%t, %v), want (false, nil)", changed, err)
 	}
@@ -439,9 +439,35 @@ func TestSmartTargetingTestSamplingConfigurationInvalidatesOnlyEffectiveChanges(
 		candooLine: {LineNumber: candooLine, Provider: models.SMSProviderCandoo},
 		payamLine:  {LineNumber: payamLine, Provider: models.SMSProviderPayamSMS},
 	}}
-	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), lineRepo, campaign, &dto.UpdateCampaignRequest{LineNumber: &payamLine})
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), nil, lineRepo, campaign, &dto.UpdateCampaignRequest{LineNumber: &payamLine})
 	if err != nil || !changed {
 		t.Fatalf("Candoo-to-Payam color eligibility = (%t, %v), want (true, nil)", changed, err)
+	}
+}
+
+func TestSmartTargetingTestSamplingConfigurationInvalidatesTagSelectionChanges(t *testing.T) {
+	method := models.CampaignAudienceTargetingSmart
+	bundleID := uint(3)
+	sampleSize := uint64(600)
+	campaign := &models.Campaign{
+		ID: 17, BundleID: &bundleID, Phase: models.CampaignPhaseTest, SampleSizePerTag: &sampleSize,
+		Spec: models.CampaignSpec{AudienceTargetingMethod: &method},
+	}
+	selected := []uint{9, 2}
+	repo := &samplingSelectedTagRepositoryStub{selected: []*models.CampaignSelectedTag{
+		{CampaignID: campaign.ID, BundleID: bundleID, TagID: 9, SelectionOrder: 0},
+		{CampaignID: campaign.ID, BundleID: bundleID, TagID: 2, SelectionOrder: 1},
+	}}
+
+	changed, err := smartTargetingTestSamplingConfigurationChanged(t.Context(), repo, nil, campaign, &dto.UpdateCampaignRequest{SelectedTagIDs: &selected})
+	if err != nil || changed {
+		t.Fatalf("unchanged tag selection = (%t, %v), want (false, nil)", changed, err)
+	}
+
+	reordered := []uint{2, 9}
+	changed, err = smartTargetingTestSamplingConfigurationChanged(t.Context(), repo, nil, campaign, &dto.UpdateCampaignRequest{SelectedTagIDs: &reordered})
+	if err != nil || !changed {
+		t.Fatalf("reordered tag selection = (%t, %v), want (true, nil)", changed, err)
 	}
 }
 
