@@ -2,7 +2,7 @@
 
 # Launch the large audience CSV import as a transient systemd service.
 # Usage:
-#   run-yamata-audience-profiles-csv-import.sh CSV_FILE [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window
+#   run-yamata-audience-profiles-csv-import.sh CSV_FILE [PROJECT_DIR] [UNIT_NAME] [--allow-active-backend] --confirm-maintenance-window
 
 set -Eeuo pipefail
 
@@ -10,6 +10,7 @@ CSV_ARGUMENT="${1:-}"
 PROJECT_DIR="/srv/yamata"
 REQUESTED_UNIT=""
 CONFIRMATION=""
+ALLOW_ACTIVE_BACKEND=false
 project_dir_set=false
 
 die() {
@@ -20,7 +21,7 @@ die() {
 usage() {
     cat <<'EOF'
 Usage:
-  run-yamata-audience-profiles-csv-import.sh CSV_FILE [PROJECT_DIR] [UNIT_NAME] --confirm-maintenance-window
+  run-yamata-audience-profiles-csv-import.sh CSV_FILE [PROJECT_DIR] [UNIT_NAME] [--allow-active-backend] --confirm-maintenance-window
 EOF
 }
 
@@ -34,6 +35,9 @@ while (($# > 0)); do
     case "$1" in
         --confirm-maintenance-window)
             CONFIRMATION="$1"
+            ;;
+        --allow-active-backend)
+            ALLOW_ACTIVE_BACKEND=true
             ;;
         --help|-h)
             usage
@@ -88,13 +92,18 @@ else
 fi
 readonly SYSTEM
 
+helper_options=()
+if [[ "$ALLOW_ACTIVE_BACKEND" == true ]]; then
+    helper_options+=(--allow-active-backend)
+fi
+
 "${SYSTEM[@]}" systemd-run \
     --unit="$unit" \
     --description='Yamata audience CSV profile import' \
     --property=Type=exec \
     --property=Restart=no \
     --property=TimeoutStartSec=infinity \
-    "$HELPER" "$CSV_FILE" "$PROJECT_DIR" --confirm-maintenance-window
+    "$HELPER" "$CSV_FILE" "$PROJECT_DIR" "${helper_options[@]}" --confirm-maintenance-window
 
 printf '[audience-csv-import-launcher] Started %s.service\n' "$unit"
 printf '[audience-csv-import-launcher] Follow: sudo journalctl -u %s -f -o cat\n' "$unit"

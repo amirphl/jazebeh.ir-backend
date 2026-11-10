@@ -4,7 +4,7 @@
 # table, validate it, and atomically upsert audience_profiles.
 #
 # Usage:
-#   import-yamata-audience-profiles-csv.sh CSV_FILE [PROJECT_DIR] --confirm-maintenance-window
+#   import-yamata-audience-profiles-csv.sh CSV_FILE [PROJECT_DIR] [--allow-active-backend] --confirm-maintenance-window
 
 set -Eeuo pipefail
 umask 077
@@ -12,6 +12,7 @@ umask 077
 CSV_ARGUMENT="${1:-}"
 PROJECT_DIR="/srv/yamata"
 CONFIRMATION=""
+ALLOW_ACTIVE_BACKEND=false
 readonly POSTGRES_CONTAINER="yamata-postgres-beta"
 readonly APP_NAME="yamata-audience-csv-import"
 
@@ -27,10 +28,12 @@ die() {
 usage() {
     cat <<'EOF'
 Usage:
-  import-yamata-audience-profiles-csv.sh CSV_FILE [PROJECT_DIR] --confirm-maintenance-window
+  import-yamata-audience-profiles-csv.sh CSV_FILE [PROJECT_DIR] [--allow-active-backend] --confirm-maintenance-window
 
 The confirmation is required because this is a production write operation.
-The API and campaign scheduler must remain stopped for the entire run.
+The campaign scheduler must remain stopped for the entire run. By default the
+API must also be stopped; --allow-active-backend keeps it up, but profile
+writes will wait behind the import's target-table lock.
 EOF
 }
 
@@ -44,6 +47,9 @@ while (($# > 0)); do
     case "$1" in
         --confirm-maintenance-window)
             CONFIRMATION="$1"
+            ;;
+        --allow-active-backend)
+            ALLOW_ACTIVE_BACKEND=true
             ;;
         --help|-h)
             usage
@@ -99,12 +105,17 @@ readonly DOCKER
 [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$POSTGRES_CONTAINER" 2>/dev/null || true)" == true ]] ||
     die "PostgreSQL container is not running: $POSTGRES_CONTAINER"
 
-for writer_container in yamata-app-beta yamata-campaign-scheduler-beta; do
-    if "${DOCKER[@]}" inspect "$writer_container" >/dev/null 2>&1 &&
-        [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$writer_container")" == true ]]; then
-        die "Stop $writer_container before this import and keep it stopped until it completes"
-    fi
-done
+if "${DOCKER[@]}" inspect yamata-campaign-scheduler-beta >/dev/null 2>&1 &&
+    [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' yamata-campaign-scheduler-beta)" == true ]]; then
+    die 'Stop yamata-campaign-scheduler-beta before this import and keep it stopped until it completes'
+fi
+
+if "${DOCKER[@]}" inspect yamata-app-beta >/dev/null 2>&1 &&
+    [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' yamata-app-beta)" == true ]]; then
+    [[ "$ALLOW_ACTIVE_BACKEND" == true ]] ||
+        die 'Stop yamata-app-beta, or explicitly pass --allow-active-backend'
+    log 'WARNING: yamata-app-beta is active; audience-profile writers will wait behind the merge lock'
+fi
 
 DB_USER="$("${DOCKER[@]}" exec "$POSTGRES_CONTAINER" printenv POSTGRES_USER)"
 DB_NAME="$("${DOCKER[@]}" exec "$POSTGRES_CONTAINER" printenv POSTGRES_DB)"
