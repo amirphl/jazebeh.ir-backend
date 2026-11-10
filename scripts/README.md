@@ -10,6 +10,8 @@ The complete ordered procedure is in
 | `deploy-campaign-scheduler-beta.sh` | Recreates the private, restartable campaign-worker container from the running API environment |
 | `apply-yamata-required-migrations.sh` | Verifies required schema by default; `--repair` explicitly reapplies the restore/repair subset through 0149 |
 | `restore-yamata-audience-profiles.sh` | Atomically restores an `audience_profiles`-only PostgreSQL 17 plain dump |
+| `audience-profile-csv-import/run-yamata-audience-profiles-csv-import.sh` | Starts the validated, atomic large-CSV audience-profile upsert in a transient systemd unit |
+| `audience-profile-csv-import/monitor-yamata-audience-profiles-csv-import.sh` | Shows the import backend, COPY progress, blockers, and table-maintenance status |
 | `restore-yamata-scheduler-runtime-data.sh` | Atomically restores the exact scheduler table set, normalized selection members, audience/tag attribution, audience-spec sources, and sequence counters |
 | `run-yamata-data-restore.sh` | Starts either large restore in the background with systemd/journal progress |
 | `tune-yamata-restore.sh` | Enables/resets temporary PostgreSQL checkpoint tuning |
@@ -63,6 +65,20 @@ Key rules:
 - Stop `yamata-app-beta` and `yamata-campaign-scheduler-beta` during selective imports.
 - Restore audience profiles before scheduler runtime data.
 - Never run two imports concurrently.
+- For a large audience CSV upsert, stop `yamata-app-beta` and
+  `yamata-campaign-scheduler-beta`, take a verified backup, and start the
+  detached operation with:
+
+  ```bash
+  sudo ./scripts/audience-profile-csv-import/run-yamata-audience-profiles-csv-import.sh \
+    /srv/yamata/audience_profiles.csv /srv/yamata \
+    yamata-audience-csv-import --confirm-maintenance-window
+  ```
+
+  Follow it with `sudo journalctl -u yamata-audience-csv-import -f -o cat`.
+  The prefix and suffix SQL files are streamed by the importer through one
+  `psql` session so the 14GB host CSV never needs to be copied into the
+  PostgreSQL container.
 - Do not use `init-beta-database.sh` for the initial restored production database.
 - Use `apply-yamata-required-migrations.sh --repair` only for the documented
   restore/repair workflow with both application writers stopped. Routine
