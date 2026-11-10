@@ -35,8 +35,8 @@ corrective migration so every environment retains the same append-only history.
 
 ## Aggregate manifests
 
-[`run_all_up.sql`](run_all_up.sql) includes all 143 up files in filename order.
-[`run_all_down.sql`](run_all_down.sql) includes all 142 available down files
+[`run_all_up.sql`](run_all_up.sql) includes all 157 up files in filename order.
+[`run_all_down.sql`](run_all_down.sql) includes all 156 available down files
 once. Its order is the reverse filename order except for the existing
 `0034`/`0035` swap; treat the checked-in manifest order as canonical and review
 dependencies before changing it.

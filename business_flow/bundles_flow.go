@@ -452,7 +452,12 @@ func (f *BundleFlowImpl) injectBundleStatistics(ctx context.Context, customerID 
 		agg := aggregates[item.ID]
 		item.Statistics["aggregatedTotalRecords"] = agg.aggregatedTotalRecords
 		item.Statistics["aggregatedTotalSent"] = agg.aggregatedTotalSent
-		item.Statistics["aggregatedTotalClicks"] = agg.aggregatedTotalClicks
+		// Live click totals are intentionally not calculated while listing
+		// bundles. Calculating them here requires an unbounded aggregate over
+		// short_link_clicks for every historical campaign in the page and can
+		// exceed the request deadline. Leave an existing persisted value intact
+		// rather than replacing it with an inaccurate zero.
+		// item.Statistics["aggregatedTotalClicks"] = agg.aggregatedTotalClicks
 		item.Statistics["totalCampaignsPhaseTest"] = agg.totalCampaignsPhaseTest
 		item.Statistics["totalCampaignsPhaseExecution"] = agg.totalCampaignsPhaseExecution
 		item.Statistics["totalCampaigns"] = agg.totalCampaigns
@@ -467,17 +472,20 @@ func (f *BundleFlowImpl) aggregateBundleStatistics(ctx context.Context, campaign
 		return out, nil
 	}
 
-	campaignIDs := make([]uint, 0, len(campaigns))
-	for _, campaign := range campaigns {
-		if campaign != nil {
-			campaignIDs = append(campaignIDs, campaign.ID)
-		}
-	}
-
-	clickCounts, err := f.campaignRepo.AggregateClickCountsByCampaignIDs(ctx, campaignIDs)
-	if err != nil {
-		return nil, err
-	}
+	// Do not aggregate short_link_clicks during a bundle list/detail request.
+	// A bundle can contain an unbounded campaign history, so this otherwise
+	// produces a large COUNT(DISTINCT uid) query and blocks the endpoint.
+	//
+	// campaignIDs := make([]uint, 0, len(campaigns))
+	// for _, campaign := range campaigns {
+	// 	if campaign != nil {
+	// 		campaignIDs = append(campaignIDs, campaign.ID)
+	// 	}
+	// }
+	// clickCounts, err := f.campaignRepo.AggregateClickCountsByCampaignIDs(ctx, campaignIDs)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	for _, campaign := range campaigns {
 		if campaign == nil || campaign.BundleID == nil {
@@ -496,7 +504,9 @@ func (f *BundleFlowImpl) aggregateBundleStatistics(ctx context.Context, campaign
 		statsMap := unmarshalStatisticsMap(campaign.Statistics)
 		agg.aggregatedTotalRecords += parseUint64Stat(statsMap, "aggregatedTotalRecords")
 		agg.aggregatedTotalSent += parseUint64Stat(statsMap, "aggregatedTotalSent")
-		agg.aggregatedTotalClicks += clickCounts[campaign.ID]
+		// See the disabled live aggregation above. Keep persisted bundle click
+		// totals untouched until reporting is moved to a bounded/cached path.
+		// agg.aggregatedTotalClicks += clickCounts[campaign.ID]
 
 		out[*campaign.BundleID] = agg
 	}
