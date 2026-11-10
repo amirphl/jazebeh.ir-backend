@@ -81,6 +81,19 @@ Key rules:
   PostgreSQL container. The API and campaign scheduler must remain stopped
   until the import finishes; the merge deliberately blocks profile writes and
   `SELECT ... FOR UPDATE` operations on `audience_profiles`.
+- To replace the complete statistics snapshot and upsert supplied tags and
+  tag references, keep both writers stopped and run:
+
+  ```bash
+  sudo ./scripts/reference-data-csv-import/run-yamata-reference-data-csv-import.sh \
+    /srv/yamata/src_layer_all_stats.csv /srv/yamata/src_reference.csv \
+    /srv/yamata/tags.csv /srv/yamata --confirm-maintenance-window
+  ```
+
+  The operation validates CSV headers and tag/reference identities before one
+  atomic merge. `src_layer_all_stats` is replaced in full because its schema
+  has no stable key; `tags` and `src_reference` are upserted by `id`, and rows
+  absent from those two CSVs are preserved.
 - Do not use `init-beta-database.sh` for the initial restored production database.
 - Use `apply-yamata-required-migrations.sh --repair` only for the documented
   restore/repair workflow with both application writers stopped. Routine
