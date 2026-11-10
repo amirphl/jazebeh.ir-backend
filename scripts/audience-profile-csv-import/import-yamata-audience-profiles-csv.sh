@@ -33,7 +33,7 @@ Usage:
 The confirmation is required because this is a production write operation.
 The campaign scheduler must remain stopped for the entire run. By default the
 API must also be stopped; --allow-active-backend keeps it up, but profile
-writes will wait behind the import's target-table lock.
+writes and SELECT ... FOR UPDATE requests will wait behind the import lock.
 EOF
 }
 
@@ -114,7 +114,7 @@ if "${DOCKER[@]}" inspect yamata-app-beta >/dev/null 2>&1 &&
     [[ "$("${DOCKER[@]}" inspect -f '{{.State.Running}}' yamata-app-beta)" == true ]]; then
     [[ "$ALLOW_ACTIVE_BACKEND" == true ]] ||
         die 'Stop yamata-app-beta, or explicitly pass --allow-active-backend'
-    log 'WARNING: yamata-app-beta is active; audience-profile writers will wait behind the merge lock'
+    log 'WARNING: yamata-app-beta is active; profile writers and SELECT ... FOR UPDATE requests will wait behind the merge lock'
 fi
 
 DB_USER="$("${DOCKER[@]}" exec "$POSTGRES_CONTAINER" printenv POSTGRES_USER)"

@@ -82,9 +82,11 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = 0;
 
--- Permit readers but prevent profile inserts/updates/deletes for the merge.
--- The launcher also refuses to start while the app or scheduler is running.
-LOCK TABLE public.audience_profiles IN SHARE ROW EXCLUSIVE MODE;
+-- Permit ordinary readers while blocking profile writes and SELECT ... FOR
+-- UPDATE. EXCLUSIVE is deliberate: SHARE ROW EXCLUSIVE permits ROW SHARE
+-- locks, which can otherwise create a tuple-lock deadlock with a live API
+-- request that later upgrades to an UPDATE.
+LOCK TABLE public.audience_profiles IN EXCLUSIVE MODE;
 
 INSERT INTO public.audience_profiles AS target (
     id,

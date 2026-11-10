@@ -79,8 +79,9 @@ Key rules:
   The prefix and suffix SQL files are streamed by the importer through one
   `psql` session so the 14GB host CSV never needs to be copied into the
   PostgreSQL container. Add `--allow-active-backend` only when the API must
-  remain online: reads continue, while any API write to `audience_profiles`
-  waits behind the import lock. The campaign scheduler must remain stopped.
+  remain online: ordinary reads continue, while API writes and `SELECT ... FOR
+  UPDATE` operations on `audience_profiles` wait behind the import lock. The
+  campaign scheduler must remain stopped.
 - Do not use `init-beta-database.sh` for the initial restored production database.
 - Use `apply-yamata-required-migrations.sh --repair` only for the documented
   restore/repair workflow with both application writers stopped. Routine
