@@ -32,7 +32,7 @@ const (
 	trackingCounterHexLen = 16
 	trackingCounterBits   = 16 * 4
 
-	numJobsPerTick          = 500
+	numJobsPerTick          = 300
 	statusJobWorkerInterval = 30 * time.Second
 
 	// statusJobMaxRetry is the maximum number of times a status-check job is

@@ -835,7 +835,7 @@ func (h *CampaignHandler) ExportCampaignClickReport(c fiber.Ctx) error {
 // @Failure 400 {object} dto.APIResponse "Validation error"
 // @Failure 401 {object} dto.APIResponse "Unauthorized"
 // @Failure 404 {object} dto.APIResponse "Campaign or audience report not found"
-// @Failure 413 {object} dto.APIResponse "Report exceeds a single worksheet limit"
+// @Failure 413 {object} dto.APIResponse "Report exceeds the synchronous export limit"
 // @Failure 500 {object} dto.APIResponse "Internal server error"
 // @Router /api/v1/campaigns/audience-click-report [post]
 func (h *CampaignHandler) ExportCampaignAudienceClickReport(c fiber.Ctx) error {

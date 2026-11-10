@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,6 +21,8 @@ type campaignAudienceUIDRecord struct {
 }
 
 var campaignAudienceUIDLocks sync.Map
+
+var errCampaignAudienceUIDLimitExceeded = errors.New("campaign audience UID limit exceeded")
 
 func campaignAudienceUIDsDirPath() string {
 	return filepath.Join("data", "campaign_audience_uids")
@@ -79,6 +83,14 @@ func appendCampaignAudienceUIDs(campaignID uint, items []dto.BotAudienceUIDItem)
 }
 
 func readCampaignAudienceUIDs(campaignID uint) ([]string, map[string]string, error) {
+	return readCampaignAudienceUIDsBounded(campaignID, 0)
+}
+
+// readCampaignAudienceUIDsBounded reads at most maxUIDs distinct UIDs. A
+// non-positive limit preserves the unbounded behavior used by legacy exports.
+// The bound is enforced while scanning so an oversized file cannot make a
+// request allocate its complete UID map before it is rejected.
+func readCampaignAudienceUIDsBounded(campaignID uint, maxUIDs int) ([]string, map[string]string, error) {
 	if campaignID == 0 {
 		return nil, nil, fmt.Errorf("campaign id must be greater than 0")
 	}
@@ -100,8 +112,12 @@ func readCampaignAudienceUIDs(campaignID uint) ([]string, map[string]string, err
 		_ = f.Close()
 	}()
 
+	return collectCampaignAudienceUIDs(f, maxUIDs)
+}
+
+func collectCampaignAudienceUIDs(reader io.Reader, maxUIDs int) ([]string, map[string]string, error) {
 	uidToCode := make(map[string]string)
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -115,6 +131,9 @@ func readCampaignAudienceUIDs(campaignID uint) ([]string, map[string]string, err
 		}
 		if record.UID == "" {
 			continue
+		}
+		if _, exists := uidToCode[record.UID]; !exists && maxUIDs > 0 && len(uidToCode) >= maxUIDs {
+			return nil, nil, errCampaignAudienceUIDLimitExceeded
 		}
 		uidToCode[record.UID] = record.Code
 	}

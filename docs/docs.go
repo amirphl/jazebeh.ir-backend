@@ -4888,7 +4888,7 @@ const docTemplate = `{
                         }
                     },
                     "413": {
-                        "description": "Report exceeds a single worksheet limit",
+                        "description": "Report exceeds the synchronous export limit",
                         "schema": {
                             "$ref": "#/definitions/dto.APIResponse"
                         }

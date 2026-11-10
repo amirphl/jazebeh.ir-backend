@@ -369,10 +369,6 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	if err := s.prepareAudienceTargetingUpdate(ctx, req, &campaign); err != nil {
 		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
 	}
-	samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(ctx, s.selectedTagRepo, s.lineNumberRepo, &campaign, req)
-	if err != nil {
-		return nil, NewBusinessError("CAMPAIGN_UPDATE_VALIDATION_FAILED", "Campaign update validation failed", err)
-	}
 	finalPhase := campaign.Phase
 	if req.Phase != nil {
 		finalPhase = campaignPhaseOrDefault(req.Phase)
@@ -451,20 +447,39 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 	// Line number: validate exist in database and is available for the campaign schedule time (not reserved by another campaign)
 	// * Move line number and segment price factor queries to ensureCreateCampaignRefs function
 
-	// Phase 1: persist spec changes in a short transaction.
+	// Phase 1: persist spec changes in a short transaction. The campaign row is
+	// locked before comparing sampling inputs so a preview cannot be published
+	// for a tag set that this update subsequently replaces.
 	err = repository.WithTransaction(ctx, s.db, func(txCtx context.Context) error {
-		if err := s.updateCampaign(txCtx, req, &campaign); err != nil {
+		if err := repository.LockCampaignForUpdate(txCtx, campaign.ID); err != nil {
+			return err
+		}
+		lockedCampaign, err := s.campaignRepo.ByID(txCtx, campaign.ID)
+		if err != nil {
+			return err
+		}
+		if lockedCampaign == nil {
+			return ErrCampaignNotFound
+		}
+		if lockedCampaign.CustomerID != req.CustomerID {
+			return ErrCampaignAccessDenied
+		}
+		samplingConfigurationChanged, err := smartTargetingTestSamplingConfigurationChanged(txCtx, s.selectedTagRepo, s.lineNumberRepo, lockedCampaign, req)
+		if err != nil {
+			return err
+		}
+		if err := s.updateCampaign(txCtx, req, lockedCampaign); err != nil {
 			return err
 		}
 		if samplingConfigurationChanged {
-			if err := s.clearCampaignSmartTargetingTestSamplingPreview(txCtx, campaign.ID); err != nil {
+			if err := s.clearCampaignSmartTargetingTestSamplingPreview(txCtx, lockedCampaign.ID); err != nil {
 				return err
 			}
 			// A configuration edit makes an in-flight sampling snapshot stale. Mark
 			// it superseded now so the scheduler does not later report the expected
 			// stale-preview validation error as a failed calculation.
 			if s.samplingCalculationRepo != nil {
-				active, err := s.samplingCalculationRepo.ActiveByCampaignID(txCtx, campaign.ID)
+				active, err := s.samplingCalculationRepo.ActiveByCampaignID(txCtx, lockedCampaign.ID)
 				if err != nil {
 					return err
 				}
@@ -475,9 +490,9 @@ func (s *CampaignFlowImpl) UpdateCampaign(ctx context.Context, req *dto.UpdateCa
 				}
 			}
 		}
-		if campaign.Spec.UsesSmartTargeting() {
+		if lockedCampaign.Spec.UsesSmartTargeting() {
 			if req.SelectedTagIDs != nil {
-				return s.selectedTagRepo.Replace(txCtx, campaign.ID, *campaign.BundleID, customer.ID, *req.SelectedTagIDs)
+				return s.selectedTagRepo.Replace(txCtx, lockedCampaign.ID, *lockedCampaign.BundleID, customer.ID, *req.SelectedTagIDs)
 			}
 			return nil
 		}
@@ -1553,7 +1568,13 @@ var campaignAudienceClickReportHeaders = []string{
 	"Clicked",
 }
 
-const maxCampaignAudienceClickReportRows = 10_000_000
+const (
+	// Excel permits 1,048,576 rows per worksheet, including the header. Keep a
+	// lower API limit so this synchronous endpoint has bounded CPU, memory, and
+	// response-buffer usage even when a customer selects many campaigns.
+	maxExcelWorksheetDataRows          = 1_048_575
+	maxCampaignAudienceClickReportRows = 100_000
+)
 
 func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUID string) ([]byte, error) {
 	campaignUUID = strings.TrimSpace(campaignUUID)
@@ -1726,8 +1747,19 @@ func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context
 	rows := make([]campaignAudienceClickReportRow, 0)
 	for _, campaignID := range campaignIDs {
 		campaign := campaignByID[campaignID]
-		allUIDs, uidToCode, err := readCampaignAudienceUIDs(campaign.ID)
+		remainingRows := maxCampaignAudienceClickReportRows - len(rows)
+		if remainingRows <= 0 {
+			err := fmt.Errorf("report contains more than %d rows", maxCampaignAudienceClickReportRows)
+			auditFailure("Campaign audience click report export exceeded the supported row limit", err)
+			return nil, NewBusinessError("CAMPAIGN_REPORT_TOO_LARGE", "campaign audience report is too large for synchronous export", err)
+		}
+		allUIDs, uidToCode, err := readCampaignAudienceUIDsBounded(campaign.ID, remainingRows)
 		if err != nil {
+			if errors.Is(err, errCampaignAudienceUIDLimitExceeded) {
+				err := fmt.Errorf("report contains more than %d rows", maxCampaignAudienceClickReportRows)
+				auditFailure("Campaign audience click report export exceeded the supported row limit", err)
+				return nil, NewBusinessError("CAMPAIGN_REPORT_TOO_LARGE", "campaign audience report is too large for synchronous export", err)
+			}
 			auditFailure(fmt.Sprintf("Campaign audience click report export failed for campaign %s", campaign.UUID.String()), err)
 			if os.IsNotExist(err) {
 				return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available for one or more campaigns (may have expired or not yet pushed)", nil)
@@ -1739,10 +1771,10 @@ func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context
 			auditFailure(fmt.Sprintf("Campaign audience click report export failed for campaign %s", campaign.UUID.String()), err)
 			return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available for one or more campaigns (may have expired or not yet pushed)", nil)
 		}
-		if len(rows)+len(allUIDs) > maxCampaignAudienceClickReportRows {
+		if len(rows)+len(allUIDs) > maxCampaignAudienceClickReportRows || len(rows)+len(allUIDs) > maxExcelWorksheetDataRows {
 			err := fmt.Errorf("report contains more than %d rows", maxCampaignAudienceClickReportRows)
-			auditFailure("Campaign audience click report export exceeded the worksheet row limit", err)
-			return nil, NewBusinessError("CAMPAIGN_REPORT_TOO_LARGE", "campaign audience report is too large for a single Excel worksheet", err)
+			auditFailure("Campaign audience click report export exceeded the supported row limit", err)
+			return nil, NewBusinessError("CAMPAIGN_REPORT_TOO_LARGE", "campaign audience report is too large for synchronous export", err)
 		}
 		rows = append(rows, buildCampaignAudienceClickReportRows(*campaign, allUIDs, uidToCode, clickedCodesByCampaignID[campaign.ID])...)
 	}
@@ -4850,6 +4882,9 @@ func buildCampaignReportExcel(rows []campaignReportRow) ([]byte, error) {
 }
 
 func buildCampaignAudienceClickReportExcel(rows []campaignAudienceClickReportRow) ([]byte, error) {
+	if len(rows) > maxExcelWorksheetDataRows {
+		return nil, fmt.Errorf("report contains more than %d rows", maxExcelWorksheetDataRows)
+	}
 	xl := excelize.NewFile()
 	defer func() { _ = xl.Close() }()
 
@@ -4858,7 +4893,14 @@ func buildCampaignAudienceClickReportExcel(rows []campaignAudienceClickReportRow
 	if defaultSheet != sheetName {
 		xl.SetSheetName(defaultSheet, sheetName)
 	}
-	if err := xl.SetSheetRow(sheetName, "A1", &campaignAudienceClickReportHeaders); err != nil {
+	stream, err := xl.NewStreamWriter(sheetName)
+	if err != nil {
+		return nil, err
+	}
+	if err := stream.SetColWidth(1, 5, 24); err != nil {
+		return nil, err
+	}
+	if err := stream.SetRow("A1", []interface{}{"Campaign ID", "Campaign UUID", "Audience Profile UID", "Status", "Clicked"}); err != nil {
 		return nil, err
 	}
 
@@ -4870,16 +4912,11 @@ func buildCampaignAudienceClickReportExcel(rows []campaignAudienceClickReportRow
 			excelSafeString(row.Status),
 			excelSafeString(row.Clicked),
 		}
-		cellRef, err := excelize.CoordinatesToCellName(1, i+2)
-		if err != nil {
-			return nil, err
-		}
-		if err := xl.SetSheetRow(sheetName, cellRef, &record); err != nil {
+		if err := stream.SetRow(fmt.Sprintf("A%d", i+2), []interface{}{record[0], record[1], record[2], record[3], record[4]}); err != nil {
 			return nil, err
 		}
 	}
-
-	if err := xl.SetColWidth(sheetName, "A", "E", 24); err != nil {
+	if err := stream.Flush(); err != nil {
 		return nil, err
 	}
 	buf, err := xl.WriteToBuffer()
