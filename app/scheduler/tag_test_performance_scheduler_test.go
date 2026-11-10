@@ -21,6 +21,7 @@ type tagTestPerformanceSchedulerRepo struct {
 	discovered   int
 	claimed      int
 	recomputed   []uint
+	hasDeadline  bool
 	failed       []uint
 	failureCode  string
 	failureText  string
@@ -37,8 +38,9 @@ func (r *tagTestPerformanceSchedulerRepo) ClaimPending(context.Context, int, tim
 	return r.reports, r.claimErr
 }
 
-func (r *tagTestPerformanceSchedulerRepo) RecomputeCampaign(_ context.Context, campaignID uint, _, _ time.Time) error {
+func (r *tagTestPerformanceSchedulerRepo) RecomputeCampaign(ctx context.Context, campaignID uint, _, _ time.Time) error {
 	r.recomputed = append(r.recomputed, campaignID)
+	_, r.hasDeadline = ctx.Deadline()
 	return r.recomputeErr
 }
 
@@ -68,6 +70,9 @@ func TestTagTestPerformanceSchedulerDiscoversAndRecomputesClaimedCampaigns(t *te
 	}
 	if len(repo.failed) != 0 {
 		t.Fatalf("failed campaigns = %v, want none", repo.failed)
+	}
+	if !repo.hasDeadline {
+		t.Fatal("report recomputation did not receive a deadline")
 	}
 }
 

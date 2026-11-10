@@ -223,6 +223,7 @@ type attributableCampaign struct {
 	CampaignID uint                 `gorm:"column:campaign_id"`
 	BundleID   uint                 `gorm:"column:bundle_id"`
 	PhaseType  models.CampaignPhase `gorm:"column:phase_type"`
+	Platform   string               `gorm:"column:platform"`
 }
 
 // RecomputeCampaign reads the complete source history for one Campaign and
@@ -265,7 +266,10 @@ func (r *TagTestPerformanceRepositoryImpl) RecomputeCampaign(ctx context.Context
 
 		var campaign attributableCampaign
 		const campaignSQL = `
-SELECT campaign.id AS campaign_id, campaign.bundle_id, campaign.phase AS phase_type
+SELECT campaign.id AS campaign_id,
+       campaign.bundle_id,
+       campaign.phase AS phase_type,
+       LOWER(BTRIM(COALESCE(campaign.spec->>'platform', 'sms'))) AS platform
 FROM campaigns AS campaign
 WHERE campaign.id = ?
   AND campaign.bundle_id IS NOT NULL
@@ -291,7 +295,12 @@ WHERE campaign.id = ?
 			return fmt.Errorf("validate tag performance campaign: %w", err)
 		}
 		if campaign.CampaignID == 0 || campaign.BundleID == 0 ||
-			(campaign.PhaseType != models.CampaignPhaseTest && campaign.PhaseType != models.CampaignPhaseExecution) {
+			(campaign.PhaseType != models.CampaignPhaseTest && campaign.PhaseType != models.CampaignPhaseExecution) ||
+			!models.IsValidCampaignPlatform(campaign.Platform) {
+			return ErrTagTestPerformanceCampaignInvalid
+		}
+		performanceSQL, err := recomputeCampaignTagPerformanceSQLForPlatform(campaign.Platform)
+		if err != nil {
 			return ErrTagTestPerformanceCampaignInvalid
 		}
 
@@ -300,16 +309,9 @@ WHERE campaign.id = ?
 			return fmt.Errorf("read tag performance click cutoff: %w", err)
 		}
 
-		result := db.Exec(recomputeCampaignTagPerformanceSQL,
+		result := db.Exec(performanceSQL,
 			campaignID,
 			campaign.PhaseType,
-			campaignID,
-			campaignID,
-			campaignID,
-			campaignID,
-			campaignID,
-			campaignID,
-			campaignID,
 			campaignID,
 			models.TagTestPerformanceCalculationVersion,
 			at,
@@ -519,9 +521,104 @@ func deleteStaleCampaignTagPerformances(db *gorm.DB, campaignID uint) error {
 	return nil
 }
 
-var recomputeCampaignTagPerformanceSQL = fmt.Sprintf(`
+// tagTestPerformanceSourceSQL contains only constant query fragments. Keeping
+// each platform's delivery history isolated is important: a campaign has one
+// delivery platform, so scanning the other three large sent/status tables is
+// pure overhead and can starve the campaign-finalization path.
+type tagTestPerformanceSourceSQL struct {
+	sentRecipients      string
+	deliveredRecipients string
+}
+
+var tagTestPerformanceSources = map[string]tagTestPerformanceSourceSQL{
+	models.CampaignPlatformSMS: {
+		sentRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_sms AS sent ON sent.processed_campaign_id = processed.id
+    WHERE processed.campaign_id = ?`,
+		deliveredRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_sms AS sent ON sent.processed_campaign_id = processed.id
+    JOIN sms_status_results AS status
+      ON status.processed_campaign_id = sent.processed_campaign_id
+     AND status.tracking_id = sent.tracking_id
+    WHERE processed.campaign_id = ?
+      AND status.total_parts IS NOT NULL
+      AND status.total_delivered_parts IS NOT NULL
+      AND status.total_parts > 0
+      AND status.total_parts = status.total_delivered_parts`,
+	},
+	models.CampaignPlatformBale: {
+		sentRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_bale_messages AS sent ON sent.processed_campaign_id = processed.id
+    WHERE processed.campaign_id = ?`,
+		deliveredRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_bale_messages AS sent ON sent.processed_campaign_id = processed.id
+    JOIN bale_status_results AS status
+      ON status.processed_campaign_id = sent.processed_campaign_id
+     AND status.tracking_id = sent.tracking_id
+    WHERE processed.campaign_id = ?
+      AND status.total_parts IS NOT NULL
+      AND status.total_delivered_parts IS NOT NULL
+      AND status.total_parts > 0
+      AND status.total_parts = status.total_delivered_parts`,
+	},
+	models.CampaignPlatformSPlus: {
+		sentRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_splus_messages AS sent ON sent.processed_campaign_id = processed.id
+    WHERE processed.campaign_id = ?`,
+		deliveredRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_splus_messages AS sent ON sent.processed_campaign_id = processed.id
+    JOIN splus_status_results AS status
+      ON status.processed_campaign_id = sent.processed_campaign_id
+     AND status.tracking_id = sent.tracking_id
+    WHERE processed.campaign_id = ?
+      AND status.total_parts IS NOT NULL
+      AND status.total_delivered_parts IS NOT NULL
+      AND status.total_parts > 0
+      AND status.total_parts = status.total_delivered_parts`,
+	},
+	models.CampaignPlatformRubika: {
+		sentRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_rubika_messages AS sent ON sent.processed_campaign_id = processed.id
+    WHERE processed.campaign_id = ?`,
+		deliveredRecipients: `
+    SELECT processed.bundle_audience_selection_id, sent.phone_number
+    FROM processed_campaigns AS processed
+    JOIN sent_rubika_messages AS sent ON sent.processed_campaign_id = processed.id
+    JOIN rubika_status_results AS status
+      ON status.processed_campaign_id = sent.processed_campaign_id
+     AND status.tracking_id = sent.tracking_id
+    WHERE processed.campaign_id = ?
+      AND status.total_parts IS NOT NULL
+      AND status.total_delivered_parts IS NOT NULL
+      AND status.total_parts > 0
+      AND status.total_parts = status.total_delivered_parts`,
+	},
+}
+
+func recomputeCampaignTagPerformanceSQLForPlatform(platform string) (string, error) {
+	source, ok := tagTestPerformanceSources[platform]
+	if !ok {
+		return "", fmt.Errorf("unsupported campaign platform %q", platform)
+	}
+	return fmt.Sprintf(`
 WITH attributed AS (
-    SELECT DISTINCT ON (attribution.campaign_id, attribution.audience_id)
+    -- (campaign_id, audience_id) is unique, so this does not need a sort or
+    -- DISTINCT ON before joining the campaign's delivery history.
+    SELECT
         attribution.campaign_id,
         attribution.bundle_id,
         attribution.bundle_audience_selection_id,
@@ -537,81 +634,12 @@ WITH attributed AS (
       ON profile.id = attribution.audience_id
     WHERE attribution.campaign_id = ?
       AND attribution.phase_type = ?
-    ORDER BY attribution.campaign_id, attribution.audience_id, attribution.id ASC
 ),
 sent_recipients AS (
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_sms AS sent ON sent.processed_campaign_id = processed.id
-    WHERE processed.campaign_id = ?
-    UNION ALL
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_bale_messages AS sent ON sent.processed_campaign_id = processed.id
-    WHERE processed.campaign_id = ?
-    UNION ALL
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_splus_messages AS sent ON sent.processed_campaign_id = processed.id
-    WHERE processed.campaign_id = ?
-    UNION ALL
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_rubika_messages AS sent ON sent.processed_campaign_id = processed.id
-    WHERE processed.campaign_id = ?
+%s
 ),
 delivered_recipients AS (
-    -- SMS may contain multiple parts and is delivered only when every part is
-    -- delivered. Non-SMS status adapters normalize a delivered recipient to
-    -- one total part and one delivered part, so the same predicate preserves
-    -- each platform's existing Campaign-report semantics.
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_sms AS sent ON sent.processed_campaign_id = processed.id
-    JOIN sms_status_results AS status
-      ON status.processed_campaign_id = sent.processed_campaign_id
-     AND status.tracking_id = sent.tracking_id
-    WHERE processed.campaign_id = ?
-      AND status.total_parts IS NOT NULL
-      AND status.total_delivered_parts IS NOT NULL
-      AND status.total_parts > 0
-      AND status.total_parts = status.total_delivered_parts
-    UNION ALL
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_bale_messages AS sent ON sent.processed_campaign_id = processed.id
-    JOIN bale_status_results AS status
-      ON status.processed_campaign_id = sent.processed_campaign_id
-     AND status.tracking_id = sent.tracking_id
-    WHERE processed.campaign_id = ?
-      AND status.total_parts IS NOT NULL
-      AND status.total_delivered_parts IS NOT NULL
-      AND status.total_parts > 0
-      AND status.total_parts = status.total_delivered_parts
-    UNION ALL
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_splus_messages AS sent ON sent.processed_campaign_id = processed.id
-    JOIN splus_status_results AS status
-      ON status.processed_campaign_id = sent.processed_campaign_id
-     AND status.tracking_id = sent.tracking_id
-    WHERE processed.campaign_id = ?
-      AND status.total_parts IS NOT NULL
-      AND status.total_delivered_parts IS NOT NULL
-      AND status.total_parts > 0
-      AND status.total_parts = status.total_delivered_parts
-    UNION ALL
-    SELECT processed.bundle_audience_selection_id, sent.phone_number
-    FROM processed_campaigns AS processed
-    JOIN sent_rubika_messages AS sent ON sent.processed_campaign_id = processed.id
-    JOIN rubika_status_results AS status
-      ON status.processed_campaign_id = sent.processed_campaign_id
-     AND status.tracking_id = sent.tracking_id
-    WHERE processed.campaign_id = ?
-      AND status.total_parts IS NOT NULL
-      AND status.total_delivered_parts IS NOT NULL
-      AND status.total_parts > 0
-      AND status.total_parts = status.total_delivered_parts
+%s
 ),
 sent_attributed AS (
     SELECT DISTINCT attributed.audience_id
@@ -710,4 +738,10 @@ SET bundle_id = EXCLUDED.bundle_id,
     delivered_count = EXCLUDED.delivered_count,
     click_count = EXCLUDED.click_count,
     calculation_version = EXCLUDED.calculation_version,
-    updated_at = EXCLUDED.updated_at`, nonAutomatedClickTrafficSQL("click"))
+    updated_at = EXCLUDED.updated_at`, source.sentRecipients, source.deliveredRecipients, nonAutomatedClickTrafficSQL("click")), nil
+}
+
+// recomputeCampaignTagPerformanceSQL remains available to SQL-shape tests and
+// represents the most common platform. Runtime code selects its source query
+// from the campaign's persisted platform instead.
+var recomputeCampaignTagPerformanceSQL, _ = recomputeCampaignTagPerformanceSQLForPlatform(models.CampaignPlatformSMS)

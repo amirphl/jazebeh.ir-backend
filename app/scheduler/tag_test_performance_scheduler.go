@@ -12,8 +12,13 @@ import (
 
 const (
 	tagTestPerformanceLeaseDuration = 30 * time.Minute
-	tagTestPerformanceRetryBase     = time.Minute
-	tagTestPerformanceRetryMax      = time.Hour
+	// A report is an analytical refresh, never a reason to monopolize a
+	// database connection indefinitely or starve customer-facing finalization.
+	// It remains below the stale-lease window so a slow worker cannot be
+	// reclaimed while it is still legitimately executing.
+	tagTestPerformanceRecomputeTimeout = 2 * time.Minute
+	tagTestPerformanceRetryBase        = time.Minute
+	tagTestPerformanceRetryMax         = time.Hour
 )
 
 // TagTestPerformanceScheduler discovers attributable Smart Targeting Test and
@@ -101,7 +106,9 @@ func (s *TagTestPerformanceScheduler) recomputeOne(ctx context.Context, report *
 		}
 	}()
 
-	err := s.repo.RecomputeCampaign(ctx, report.CampaignID, *report.StartedAt, time.Now().UTC())
+	workCtx, cancel := context.WithTimeout(ctx, tagTestPerformanceRecomputeTimeout)
+	defer cancel()
+	err := s.repo.RecomputeCampaign(workCtx, report.CampaignID, *report.StartedAt, time.Now().UTC())
 	if err == nil || errors.Is(err, repository.ErrTagTestPerformanceLeaseLost) {
 		return
 	}

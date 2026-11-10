@@ -3,11 +3,14 @@ package repository
 import (
 	"strings"
 	"testing"
+
+	"github.com/amirphl/Yamata-no-Orochi/models"
 )
 
 func TestRecomputeCampaignTagPerformanceSQLUsesSingleAudienceAttribution(t *testing.T) {
 	for _, fragment := range []string{
-		"SELECT DISTINCT ON (attribution.campaign_id, attribution.audience_id)",
+		"-- (campaign_id, audience_id) is unique",
+		"SELECT\n        attribution.campaign_id",
 		"attribution.assigned_tag_id AS tag_id",
 		"attribution.phase_type",
 		"source_campaign.bundle_id = attribution.bundle_id",
@@ -27,6 +30,42 @@ func TestRecomputeCampaignTagPerformanceSQLUsesSingleAudienceAttribution(t *test
 	}
 	if strings.Contains(recomputeCampaignTagPerformanceSQL, "FOR UPDATE") {
 		t.Fatal("tag performance query must not lock click or short-link rows")
+	}
+	if strings.Contains(recomputeCampaignTagPerformanceSQL, "UNION ALL") {
+		t.Fatal("a platform-specific report query must not scan other delivery platforms")
+	}
+}
+
+func TestRecomputeCampaignTagPerformanceSQLUsesOnlyRequestedPlatform(t *testing.T) {
+	testCases := []struct {
+		platform string
+		included string
+		excluded string
+	}{
+		{models.CampaignPlatformSMS, "sent_sms", "sent_bale_messages"},
+		{models.CampaignPlatformBale, "sent_bale_messages", "sent_sms"},
+		{models.CampaignPlatformSPlus, "sent_splus_messages", "sent_rubika_messages"},
+		{models.CampaignPlatformRubika, "sent_rubika_messages", "sent_splus_messages"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.platform, func(t *testing.T) {
+			sql, err := recomputeCampaignTagPerformanceSQLForPlatform(tc.platform)
+			if err != nil {
+				t.Fatalf("build query: %v", err)
+			}
+			if !strings.Contains(sql, tc.included) {
+				t.Fatalf("query for %s does not include %s", tc.platform, tc.included)
+			}
+			if strings.Contains(sql, tc.excluded) {
+				t.Fatalf("query for %s unexpectedly includes %s", tc.platform, tc.excluded)
+			}
+			if got, want := strings.Count(sql, "?"), 7; got != want {
+				t.Fatalf("query bind count = %d, want %d", got, want)
+			}
+		})
+	}
+	if _, err := recomputeCampaignTagPerformanceSQLForPlatform("unsupported"); err == nil {
+		t.Fatal("unsupported platform built a report query")
 	}
 }
 
@@ -116,9 +155,9 @@ func TestRecomputeCampaignTagPerformanceSQLBindsEverySource(t *testing.T) {
 			t.Fatalf("tag performance query does not cast its INSERT projection parameter %q", fragment)
 		}
 	}
-	// Campaign + phase, four send sources, four delivery sources, and three
+	// Campaign + phase, one send source, one delivery source, and three
 	// materialization metadata values.
-	if got, want := strings.Count(recomputeCampaignTagPerformanceSQL, "?"), 13; got != want {
+	if got, want := strings.Count(recomputeCampaignTagPerformanceSQL, "?"), 7; got != want {
 		t.Fatalf("tag performance query bind count = %d, want %d", got, want)
 	}
 }
