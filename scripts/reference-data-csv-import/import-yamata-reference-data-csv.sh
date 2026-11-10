@@ -63,8 +63,9 @@ done
 
 readonly PREFIX_SQL="$PROJECT_DIR/scripts/reference-data-csv-import/reference-data-csv-import-prefix.sql"
 readonly MIDDLE_SQL="$PROJECT_DIR/scripts/reference-data-csv-import/reference-data-csv-import-middle.sql"
+readonly TAGS_PREFIX_SQL="$PROJECT_DIR/scripts/reference-data-csv-import/reference-data-csv-import-tags-prefix.sql"
 readonly SUFFIX_SQL="$PROJECT_DIR/scripts/reference-data-csv-import/reference-data-csv-import-suffix.sql"
-for sql_file in "$PREFIX_SQL" "$MIDDLE_SQL" "$SUFFIX_SQL"; do
+for sql_file in "$PREFIX_SQL" "$MIDDLE_SQL" "$TAGS_PREFIX_SQL" "$SUFFIX_SQL"; do
     [[ -f "$sql_file" ]] || die "Missing SQL stream component: $sql_file"
 done
 
@@ -136,8 +137,9 @@ stream_import_input() {
     stream_csv "$STATS_CSV"
     cat -- "$MIDDLE_SQL"
     stream_csv "$REFERENCE_CSV"
-    cat -- "$SUFFIX_SQL"
+    cat -- "$TAGS_PREFIX_SQL"
     stream_csv "$TAGS_CSV"
+    cat -- "$SUFFIX_SQL"
 }
 
 set +e
