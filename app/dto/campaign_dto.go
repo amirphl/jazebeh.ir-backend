@@ -74,6 +74,9 @@ type UpdateCampaignRequest struct {
 	Platform                *string    `json:"platform,omitempty" validate:"omitempty,oneof=sms rubika bale splus"`
 	Budget                  *uint64    `json:"budget,omitempty" validate:"omitempty"`
 	Finalize                *bool      `json:"finalize,omitempty" validate:"omitempty"`
+	// Required only when finalizing a Smart Targeting Execution campaign. The
+	// ID identifies the exact ready, non-reserving proposal to commit.
+	ExecutionAudienceCalculationID *int64 `json:"execution_audience_calculation_id,omitempty" validate:"omitempty,min=1"`
 
 	BundleID *uint   `json:"bundle_id,omitempty" validate:"omitempty,min=1"`
 	Phase    *string `json:"phase,omitempty" validate:"omitempty,max=255"`
