@@ -5,6 +5,9 @@
 
 \echo 'Starting database rollback...'
 
+\echo 'Running 0155_create_execution_audience_calculations_down.sql...'
+\i migrations/0155_create_execution_audience_calculations_down.sql
+
 \echo 'Running 0154_optimize_campaign_click_reporting_down.sql...'
 \i migrations/0154_optimize_campaign_click_reporting_down.sql
 
