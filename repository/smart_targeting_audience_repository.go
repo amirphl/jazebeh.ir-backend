@@ -107,6 +107,16 @@ WITH tagged_population AS (
       )
       AND NOT EXISTS (
           SELECT 1
+          FROM campaign_targeting_execution_calculation_members AS execution_member
+          JOIN campaign_targeting_execution_calculations AS execution_calculation
+            ON execution_calculation.id = execution_member.calculation_id
+          WHERE execution_calculation.bundle_id = ?
+            AND execution_member.audience_id = tagged.id
+            AND execution_calculation.status = 'committed'
+			AND (?::bigint = 0 OR execution_calculation.campaign_id <> ?)
+      )
+      AND NOT EXISTS (
+          SELECT 1
           FROM bundle_audience_exclusions AS bundle_exclusion
           WHERE bundle_exclusion.bundle_id = ?
             AND bundle_exclusion.audience_id = tagged.id
@@ -145,6 +155,16 @@ WITH tagged_population AS (
           WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = tagged.id
             AND execution_reserved.state = 'active'
 			AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
+      )
+      AND NOT EXISTS (
+          SELECT 1
+          FROM campaign_targeting_execution_calculation_members AS execution_member
+          JOIN campaign_targeting_execution_calculations AS execution_calculation
+            ON execution_calculation.id = execution_member.calculation_id
+          WHERE execution_calculation.bundle_id = ?
+            AND execution_member.audience_id = tagged.id
+            AND execution_calculation.status = 'committed'
+			AND (?::bigint = 0 OR execution_calculation.campaign_id <> ?)
       )
       AND NOT EXISTS (
           SELECT 1
@@ -195,6 +215,9 @@ func smartTargetingPopulationArgs(query SmartTargetingAudienceQuery) []any {
 		query.BundleID,
 		query.ExcludeActiveTestReservationCampaignID,
 		query.ExcludeActiveTestReservationCampaignID,
+		query.BundleID,
+		query.ExcludeActiveExecutionReservationCampaignID,
+		query.ExcludeActiveExecutionReservationCampaignID,
 		query.BundleID,
 		query.ExcludeActiveExecutionReservationCampaignID,
 		query.ExcludeActiveExecutionReservationCampaignID,
@@ -353,6 +376,18 @@ FROM (
 	sql += `
       AND NOT EXISTS (
           SELECT 1
+          FROM campaign_targeting_execution_calculation_members AS execution_member
+          JOIN campaign_targeting_execution_calculations AS execution_calculation
+            ON execution_calculation.id = execution_member.calculation_id
+          WHERE execution_calculation.bundle_id = ?
+            AND execution_member.audience_id = ap.id
+            AND execution_calculation.status = 'committed'
+			AND (?::bigint = 0 OR execution_calculation.campaign_id <> ?)
+      )`
+	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	sql += `
+      AND NOT EXISTS (
+          SELECT 1
           FROM bundle_audience_exclusions AS bundle_exclusion
           WHERE bundle_exclusion.bundle_id = ?
             AND bundle_exclusion.audience_id = ap.id
@@ -419,6 +454,18 @@ WHERE ap.tags @> ARRAY[?]::integer[]
       WHERE execution_reserved.bundle_id = ? AND execution_reserved.audience_id = ap.id
         AND execution_reserved.state = 'active'
 		AND (?::bigint = 0 OR execution_reserved.campaign_id <> ?)
+  )`
+	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
+	sql += `
+  AND NOT EXISTS (
+      SELECT 1
+      FROM campaign_targeting_execution_calculation_members AS execution_member
+      JOIN campaign_targeting_execution_calculations AS execution_calculation
+        ON execution_calculation.id = execution_member.calculation_id
+      WHERE execution_calculation.bundle_id = ?
+        AND execution_member.audience_id = ap.id
+        AND execution_calculation.status = 'committed'
+		AND (?::bigint = 0 OR execution_calculation.campaign_id <> ?)
   )`
 	args = append(args, query.BundleID, query.ExcludeActiveExecutionReservationCampaignID, query.ExcludeActiveExecutionReservationCampaignID)
 	sql += `
