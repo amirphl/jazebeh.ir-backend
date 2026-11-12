@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -73,6 +74,23 @@ func TestBundleActiveTestReservationsFingerprintQueryIsScopedAndStable(t *testin
 	} {
 		if !strings.Contains(sql, required) {
 			t.Fatalf("active Test reservation fingerprint query does not contain %q:\n%s", required, statement.SQL.String())
+		}
+	}
+}
+
+func TestBundleActiveExecutionReservationsIncludeCommittedCalculations(t *testing.T) {
+	source, err := os.ReadFile("campaign_execution_repository.go")
+	if err != nil {
+		t.Fatalf("read execution repository source: %v", err)
+	}
+	for _, fragment := range []string{
+		"campaign_targeting_execution_calculations",
+		"campaign_targeting_execution_calculation_members",
+		"calculation.status = 'committed'",
+		"UNION ALL",
+	} {
+		if !strings.Contains(string(source), fragment) {
+			t.Fatalf("execution reservation fingerprint is missing %q", fragment)
 		}
 	}
 }
