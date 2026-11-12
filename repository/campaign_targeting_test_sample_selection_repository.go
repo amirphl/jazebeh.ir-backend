@@ -35,6 +35,11 @@ LEFT JOIN campaign_targeting_test_sample_reservations AS reserved
 LEFT JOIN campaign_targeting_execution_reservations AS execution_reserved
   ON execution_reserved.bundle_id = ? AND execution_reserved.audience_id = member.audience_id
  AND execution_reserved.state = 'active'
+LEFT JOIN campaign_targeting_execution_calculation_members AS committed_execution_member
+  ON committed_execution_member.audience_id = member.audience_id
+LEFT JOIN campaign_targeting_execution_calculations AS committed_execution
+  ON committed_execution.id = committed_execution_member.calculation_id
+ AND committed_execution.bundle_id = ? AND committed_execution.status = 'committed'
 LEFT JOIN bundle_audience_exclusions AS excluded
   ON excluded.bundle_id = ? AND excluded.audience_id = member.audience_id
 WHERE member.selection_id = ?
@@ -54,7 +59,7 @@ WHERE member.selection_id = ?
 	       )
 	   )
 	   OR audience.normalized_score IS DISTINCT FROM member.audience_score
-	   OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR execution_reserved.id IS NOT NULL OR excluded.audience_id IS NOT NULL)`
+	   OR materialized.id IS NOT NULL OR reserved.id IS NOT NULL OR execution_reserved.id IS NOT NULL OR committed_execution.id IS NOT NULL OR excluded.audience_id IS NOT NULL)`
 
 // TODO(smart-targeting-score-bounds): Test reservation validation below checks
 // each saved score but not its current percentile class. Changes to other
@@ -206,7 +211,7 @@ func (r *CampaignTargetingTestSampleSelectionRepositoryImpl) ReserveForCampaign(
 	// Check the immutable snapshot against the current hard-safety population.
 	// Do not substitute candidates here: a collision requires a fresh sample.
 	var unavailable int64
-	if err := db.Raw(testSampleSelectionAvailabilityQuery, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.BundleID, selection.ID).Scan(&unavailable).Error; err != nil {
+	if err := db.Raw(testSampleSelectionAvailabilityQuery, selection.BundleID, selection.BundleID, campaign.ID, selection.BundleID, selection.BundleID, selection.BundleID, selection.ID).Scan(&unavailable).Error; err != nil {
 		return err
 	}
 	if unavailable != 0 {
