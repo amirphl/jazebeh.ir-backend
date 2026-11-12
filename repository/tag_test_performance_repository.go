@@ -309,14 +309,7 @@ WHERE campaign.id = ?
 			return fmt.Errorf("read tag performance click cutoff: %w", err)
 		}
 
-		result := db.Exec(performanceSQL,
-			campaignID,
-			campaign.PhaseType,
-			campaignID,
-			models.TagTestPerformanceCalculationVersion,
-			at,
-			at,
-		)
+		result := db.Exec(performanceSQL, recomputeCampaignTagPerformanceArgs(campaignID, campaign.PhaseType, at)...)
 		if result.Error != nil {
 			return fmt.Errorf("materialize campaign tag performance: %w", result.Error)
 		}
@@ -739,6 +732,20 @@ SET bundle_id = EXCLUDED.bundle_id,
     click_count = EXCLUDED.click_count,
     calculation_version = EXCLUDED.calculation_version,
     updated_at = EXCLUDED.updated_at`, source.sentRecipients, source.deliveredRecipients, nonAutomatedClickTrafficSQL("click")), nil
+}
+
+// Keep the query's positional arguments next to its platform-independent
+// shape. The sent and delivered CTEs each receive the Campaign ID.
+func recomputeCampaignTagPerformanceArgs(campaignID uint, phase models.CampaignPhase, at time.Time) []any {
+	return []any{
+		campaignID,
+		phase,
+		campaignID,
+		campaignID,
+		models.TagTestPerformanceCalculationVersion,
+		at,
+		at,
+	}
 }
 
 // recomputeCampaignTagPerformanceSQL remains available to SQL-shape tests and
