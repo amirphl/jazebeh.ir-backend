@@ -3,6 +3,7 @@ package repository
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/models"
 )
@@ -159,5 +160,15 @@ func TestRecomputeCampaignTagPerformanceSQLBindsEverySource(t *testing.T) {
 	// materialization metadata values.
 	if got, want := strings.Count(recomputeCampaignTagPerformanceSQL, "?"), 7; got != want {
 		t.Fatalf("tag performance query bind count = %d, want %d", got, want)
+	}
+	args := recomputeCampaignTagPerformanceArgs(42, models.CampaignPhaseTest, time.Unix(0, 0).UTC())
+	if got, want := len(args), 7; got != want {
+		t.Fatalf("tag performance argument count = %d, want %d", got, want)
+	}
+	if got, want := args[2], any(uint(42)); got != want {
+		t.Fatalf("sent recipient campaign ID = %v, want %v", got, want)
+	}
+	if got, want := args[3], any(uint(42)); got != want {
+		t.Fatalf("delivered recipient campaign ID = %v, want %v", got, want)
 	}
 }
