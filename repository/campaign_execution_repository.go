@@ -243,11 +243,26 @@ func ListBundleActiveExecutionReservations(ctx context.Context, db *gorm.DB, bun
 	if tx, ok := ctx.Value(TxContextKey).(*gorm.DB); ok && tx != nil {
 		queryDB = tx.WithContext(ctx)
 	}
+	// Modern execution campaigns use the committed calculation as their active
+	// reservation.  Legacy campaigns retain copied reservation rows. Keeping
+	// both sources in this fingerprint prevents a ready calculation from being
+	// committed after another campaign has frozen an overlapping audience.
 	var rows []BundleActiveTestReservation
-	err := queryDB.Table("campaign_targeting_execution_reservations").
-		Select("campaign_id, MIN(id) AS selection_id, COUNT(*) AS audience_count").
-		Where("bundle_id = ? AND campaign_id <> ? AND state = 'active'", bundleID, excludedCampaignID).
-		Group("campaign_id").Order("campaign_id ASC").Find(&rows).Error
+	err := queryDB.Raw(`
+SELECT campaign_id, selection_id, audience_count
+FROM (
+    SELECT campaign_id, MIN(id) AS selection_id, COUNT(*) AS audience_count
+    FROM campaign_targeting_execution_reservations
+    WHERE bundle_id = ? AND campaign_id <> ? AND state = 'active'
+    GROUP BY campaign_id
+    UNION ALL
+    SELECT calculation.campaign_id, calculation.id AS selection_id, COUNT(member.id) AS audience_count
+    FROM campaign_targeting_execution_calculations AS calculation
+    JOIN campaign_targeting_execution_calculation_members AS member ON member.calculation_id = calculation.id
+    WHERE calculation.bundle_id = ? AND calculation.campaign_id <> ? AND calculation.status = 'committed'
+    GROUP BY calculation.campaign_id, calculation.id
+) AS active_execution
+ORDER BY campaign_id ASC, selection_id ASC`, bundleID, excludedCampaignID, bundleID, excludedCampaignID).Scan(&rows).Error
 	return rows, err
 }
 
