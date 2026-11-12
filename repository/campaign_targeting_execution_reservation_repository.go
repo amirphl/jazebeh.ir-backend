@@ -287,7 +287,7 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ActiveReservedForC
 	var h models.CampaignTargetingExecutionReservationHeader
 	if err := r.getDB(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("campaign_id = ?", campaignID).First(&h).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrSmartTargetingExecutionReservationMissing
+			return r.committedCalculationSnapshot(ctx, campaignID, expected)
 		}
 		return nil, err
 	}
@@ -295,6 +295,46 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ActiveReservedForC
 		return nil, ErrSmartTargetingExecutionReservationStale
 	}
 	return r.activeSnapshot(ctx, &h, expected)
+}
+
+// committedCalculationSnapshot adapts the modern, worker-owned proposal to
+// the legacy reservation reader. It intentionally performs no profile lookup:
+// the immutable candidate rows are the reservation after the final money
+// transaction commits.
+func (r *CampaignTargetingExecutionReservationRepositoryImpl) committedCalculationSnapshot(ctx context.Context, campaignID uint, expected int64) (*CampaignTargetingExecutionReservationSnapshot, error) {
+	var calculation models.CampaignTargetingExecutionCalculation
+	if err := r.getDB(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationCommitted).
+		Order("committed_at DESC, id DESC").First(&calculation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSmartTargetingExecutionReservationMissing
+		}
+		return nil, err
+	}
+	if calculation.RequestedAudienceCount != expected || calculation.BundleID == 0 || calculation.CalculationVersion != models.SmartTargetingExecutionCalculationVersion {
+		return nil, ErrSmartTargetingExecutionReservationCorrupt
+	}
+	var members []models.CampaignTargetingExecutionCalculationMember
+	if err := r.getDB(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("calculation_id = ?", calculation.ID).Order("selection_order ASC").Find(&members).Error; err != nil {
+		return nil, err
+	}
+	if int64(len(members)) != expected {
+		return nil, ErrSmartTargetingExecutionReservationCorrupt
+	}
+	rows := make([]models.CampaignTargetingExecutionReservation, 0, len(members))
+	seen := make(map[int64]struct{}, len(members))
+	for i, member := range members {
+		if member.AudienceID <= 0 || member.AssignedTagID == 0 || member.SelectionOrder != int64(i) {
+			return nil, ErrSmartTargetingExecutionReservationCorrupt
+		}
+		if _, duplicate := seen[member.AudienceID]; duplicate {
+			return nil, ErrSmartTargetingExecutionReservationCorrupt
+		}
+		seen[member.AudienceID] = struct{}{}
+		rows = append(rows, models.CampaignTargetingExecutionReservation{CampaignID: campaignID, BundleID: calculation.BundleID, AudienceID: member.AudienceID, AssignedTagID: member.AssignedTagID, SelectionOrder: member.SelectionOrder, AudienceScore: member.AudienceScore, State: "active"})
+	}
+	header := &models.CampaignTargetingExecutionReservationHeader{CampaignID: campaignID, BundleID: calculation.BundleID, Phase: models.CampaignPhaseExecution, ReservationVersion: models.SmartTargetingExecutionReservationSchemaVersion, RequestedAudienceCount: calculation.RequestedAudienceCount, CandidateGeneration: models.SmartTargetingCapacityAlgorithmVersion, SelectionInputVersion: models.SmartTargetingExecutionReservationSelectionInputVersion, SelectionInputHash: calculation.SelectionInputHash, AllocationFingerprintVersion: models.SmartTargetingExecutionReservationAllocationFingerprintVersion, AllocationFingerprint: calculation.AllocationFingerprint, RequestSnapshot: calculation.RequestSnapshot, State: "active"}
+	return &CampaignTargetingExecutionReservationSnapshot{Header: header, Members: rows}, nil
 }
 
 // ValidateMaterializedForCampaign protects scheduler retries. A previously
@@ -311,7 +351,19 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ValidateMaterializ
 	var h models.CampaignTargetingExecutionReservationHeader
 	if err := r.getDB(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("campaign_id = ?", campaignID).First(&h).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrSmartTargetingExecutionReservationMissing
+			snapshot, snapshotErr := r.committedCalculationSnapshot(ctx, campaignID, expected)
+			if snapshotErr != nil {
+				return snapshotErr
+			}
+			if snapshot.Header.BundleID != bundleID || int64(len(snapshot.Members)) != expected {
+				return ErrSmartTargetingExecutionReservationCorrupt
+			}
+			for i, member := range snapshot.Members {
+				if member.AudienceID != audienceIDs[i] {
+					return ErrSmartTargetingExecutionReservationCorrupt
+				}
+			}
+			return nil
 		}
 		return err
 	}
@@ -346,6 +398,10 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) ValidateMaterializ
 func (r *CampaignTargetingExecutionReservationRepositoryImpl) HasActiveRowsForCampaign(ctx context.Context, campaignID uint) (bool, error) {
 	var count int64
 	err := r.getDB(ctx).Model(&models.CampaignTargetingExecutionReservation{}).Where("campaign_id = ? AND state = 'active'", campaignID).Count(&count).Error
+	if err != nil || count > 0 {
+		return count > 0, err
+	}
+	err = r.getDB(ctx).Model(&models.CampaignTargetingExecutionCalculation{}).Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationCommitted).Count(&count).Error
 	return count > 0, err
 }
 
@@ -353,6 +409,12 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) Materialize(ctx co
 	snapshot, err := r.ActiveReservedForCampaign(ctx, campaignID, expected)
 	if err != nil {
 		return err
+	}
+	// Modern calculations are already immutable and the permanent Bundle
+	// selection now owns the claim, so no audience-sized state transition is
+	// necessary here. Legacy copied reservations retain their lifecycle.
+	if snapshot.Header.ID == 0 {
+		return nil
 	}
 	now, db := utils.UTCNow(), r.getDB(ctx)
 	if result := db.Model(&models.CampaignTargetingExecutionReservation{}).Where("campaign_id = ? AND header_id = ? AND state = 'active'", campaignID, snapshot.Header.ID).Updates(map[string]any{"state": "materialized", "materialized_at": now}); result.Error != nil {
@@ -388,12 +450,32 @@ func (r *CampaignTargetingExecutionReservationRepositoryImpl) transitionForCampa
 	if err := db.Model(&models.CampaignTargetingExecutionReservationHeader{}).Select("DISTINCT bundle_id").Where("campaign_id = ? AND state = 'active'", campaignID).Order("bundle_id ASC").Scan(&bundleIDs).Error; err != nil {
 		return err
 	}
-	for _, bundleID := range bundleIDs {
+	var calculationBundleIDs []uint
+	if err := db.Model(&models.CampaignTargetingExecutionCalculation{}).Select("DISTINCT bundle_id").Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationCommitted).Order("bundle_id ASC").Scan(&calculationBundleIDs).Error; err != nil {
+		return err
+	}
+	seenBundles := make(map[uint]struct{}, len(bundleIDs)+len(calculationBundleIDs))
+	uniqueBundleIDs := make([]uint, 0, len(bundleIDs)+len(calculationBundleIDs))
+	for _, bundleID := range append(bundleIDs, calculationBundleIDs...) {
+		if _, seen := seenBundles[bundleID]; !seen {
+			seenBundles[bundleID] = struct{}{}
+			uniqueBundleIDs = append(uniqueBundleIDs, bundleID)
+		}
+	}
+	for _, bundleID := range uniqueBundleIDs {
 		if err := LockBundleForUpdate(ctx, bundleID); err != nil {
 			return err
 		}
 	}
 	now := utils.UTCNow()
+	// A modern committed calculation is the active reservation. Releasing a
+	// waiting-for-approval campaign must therefore retire it too; otherwise its
+	// members would remain excluded forever after cancellation/rejection.
+	if err := db.Model(&models.CampaignTargetingExecutionCalculation{}).
+		Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationCommitted).
+		Updates(map[string]any{"status": models.CampaignTargetingExecutionCalculationStale, "finished_at": now}).Error; err != nil {
+		return err
+	}
 	if err := db.Model(&models.CampaignTargetingExecutionReservation{}).Where("campaign_id = ? AND state = 'active'", campaignID).Updates(map[string]any{"state": "released", "released_at": now}).Error; err != nil {
 		return err
 	}
