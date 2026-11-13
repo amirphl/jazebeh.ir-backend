@@ -49,6 +49,71 @@ type CampaignHandlerInterface interface {
 	PreviewSmartTargetingTestSampling(c fiber.Ctx) error
 	GetSmartTargetingTestSampling(c fiber.Ctx) error
 	GetSmartTargetingTestSamplingByID(c fiber.Ctx) error
+	StartSmartTargetingExecutionCalculation(c fiber.Ctx) error
+	GetSmartTargetingExecutionCalculation(c fiber.Ctx) error
+}
+
+// StartSmartTargetingExecutionCalculation queues the expensive, non-reserving
+// execution audience scan. Finalization must later name this exact result.
+// @Summary Request Smart Targeting Execution audience calculation
+// @Description Queues an asynchronous, non-reserving audience selection for an editable Smart Targeting Execution campaign. Finalization must provide the returned calculation ID after its status becomes ready and current.
+// @Tags Campaigns
+// @Produce json
+// @Security BearerAuth
+// @Param uuid path string true "Owned Smart Targeting Execution campaign UUID" format(uuid)
+// @Success 202 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Execution audience calculation requested successfully"
+// @Failure 401 {object} dto.APIResponse "Authentication required"
+// @Failure 403 {object} dto.APIResponse "Campaign access denied or campaign is not editable"
+// @Failure 404 {object} dto.APIResponse "Campaign not found"
+// @Failure 409 {object} dto.APIResponse "A current exact capacity calculation is pending or required"
+// @Failure 500 {object} dto.APIResponse "Execution audience calculation request failed"
+// @Router /api/v1/campaigns/{uuid}/smart-targeting/execution-audience-calculations [post]
+func (h *CampaignHandler) StartSmartTargetingExecutionCalculation(c fiber.Ctx) error {
+	customerID, ok := c.Locals("customer_id").(uint)
+	if !ok {
+		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations", 30*time.Second)
+	defer cancel()
+	result, err := h.campaignFlow.StartSmartTargetingExecutionCalculation(ctx, &dto.SmartTargetingExecutionCalculationRequest{CustomerID: customerID, CampaignUUID: c.Params("uuid")}, businessflow.NewClientMetadata(c.IP(), c.Get("User-Agent")))
+	if err != nil {
+		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to request execution audience calculation", "SMART_TARGETING_EXECUTION_CALCULATION_REQUEST_FAILED")
+	}
+	return h.SuccessResponse(c, fiber.StatusAccepted, "Execution audience calculation requested successfully", result)
+}
+
+// GetSmartTargetingExecutionCalculation retrieves one requested execution
+// audience calculation and reports whether it remains current.
+// @Summary Get Smart Targeting Execution audience calculation
+// @Description Retrieves an owned execution-audience calculation by ID. A calculation can be finalized only when status is ready, is_current is true, and recalculation_required is false.
+// @Tags Campaigns
+// @Produce json
+// @Security BearerAuth
+// @Param uuid path string true "Owned Smart Targeting Execution campaign UUID" format(uuid)
+// @Param calculation_id path int true "Execution audience calculation ID" minimum(1)
+// @Success 200 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Execution audience calculation retrieved successfully"
+// @Failure 400 {object} dto.APIResponse "Invalid calculation ID"
+// @Failure 401 {object} dto.APIResponse "Authentication required"
+// @Failure 403 {object} dto.APIResponse "Campaign access denied"
+// @Failure 404 {object} dto.APIResponse "Campaign or execution audience calculation not found"
+// @Failure 500 {object} dto.APIResponse "Execution audience calculation lookup failed"
+// @Router /api/v1/campaigns/{uuid}/smart-targeting/execution-audience-calculations/{calculation_id} [get]
+func (h *CampaignHandler) GetSmartTargetingExecutionCalculation(c fiber.Ctx) error {
+	customerID, ok := c.Locals("customer_id").(uint)
+	if !ok {
+		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
+	}
+	id, err := strconv.ParseInt(c.Params("calculation_id"), 10, 64)
+	if err != nil || id < 1 {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Calculation ID is invalid", "INVALID_CALCULATION_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations/:calculation_id", 30*time.Second)
+	defer cancel()
+	result, err := h.campaignFlow.GetSmartTargetingExecutionCalculation(ctx, customerID, c.Params("uuid"), id)
+	if err != nil {
+		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load execution audience calculation", "SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED")
+	}
+	return h.SuccessResponse(c, fiber.StatusOK, "Execution audience calculation retrieved successfully", result)
 }
 
 // PreviewSmartTargetingTestSampling queues ordered, all-or-nothing per-tag
@@ -1520,6 +1585,12 @@ func (h *CampaignHandler) handleCampaignFlowError(c fiber.Ctx, err error, defaul
 	}
 	if errors.Is(err, businessflow.ErrSmartTargetingExactCapacityRequired) {
 		return h.ErrorResponse(c, fiber.StatusConflict, "A current exact Smart Targeting capacity calculation is required", "SMART_TARGETING_EXACT_CAPACITY_REQUIRED", nil)
+	}
+	if errors.Is(err, businessflow.ErrSmartTargetingExecutionCalculationRequired) {
+		return h.ErrorResponse(c, fiber.StatusConflict, err.Error(), "SMART_TARGETING_EXECUTION_CALCULATION_REQUIRED", nil)
+	}
+	if errors.Is(err, businessflow.ErrSmartTargetingExecutionCalculationStale) {
+		return h.ErrorResponse(c, fiber.StatusConflict, err.Error(), "SMART_TARGETING_EXECUTION_CALCULATION_STALE", nil)
 	}
 	if businessflow.IsCampaignNotFound(err) {
 		return h.ErrorResponse(c, fiber.StatusNotFound, "Campaign not found", "CAMPAIGN_NOT_FOUND", nil)
