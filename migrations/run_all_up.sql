@@ -476,5 +476,8 @@
 \echo 'Running 0155_create_execution_audience_calculations.sql...'
 \i migrations/0155_create_execution_audience_calculations.sql
 
+\echo 'Running 0156_create_bundle_action_reporting.sql...'
+\i migrations/0156_create_bundle_action_reporting.sql
+
 \echo 'All migrations completed successfully!'
 \echo 'Database schema is now ready for the Yamata no Orochi wallet, and payment system with comprehensive audit logging and tax collection.' 
