@@ -27,6 +27,8 @@ type campaignSelectedTagSnapshot struct {
 	BundleFitScore  *float64
 	TestPhaseAvgCTR *float64
 	OverallAvgCTR   *float64
+	TestPhaseAvgATR *float64
+	OverallAvgATR   *float64
 }
 
 func invalidateCampaignSmartTargetingTestPreview(db *gorm.DB, campaignID uint) error {
@@ -96,6 +98,10 @@ available_tags.tag_id ASC`, nil
 		expression = "tag_test_summary.test_phase_avg_ctr"
 	case "overall_avg_ctr":
 		expression = "tag_overall_summary.overall_avg_ctr"
+	case "test_phase_avg_atr":
+		expression = "action_tag_metrics.test_phase_avg_atr"
+	case "overall_avg_atr":
+		expression = "action_tag_metrics.overall_avg_atr"
 	default:
 		return "", fmt.Errorf("invalid sort field")
 	}
@@ -174,6 +180,12 @@ func applyCampaignTestPerformance(query *gorm.DB, campaignID, bundleID uint) *go
 				AND campaign_test_performance.phase_type = 'test'`, campaignID, bundleID)
 }
 
+func applyActionTagMetrics(query *gorm.DB, bundleID uint) *gorm.DB {
+	return query.Joins(`LEFT JOIN bundle_action_tag_metrics AS action_tag_metrics
+                 ON action_tag_metrics.bundle_id = ?
+                AND action_tag_metrics.tag_id = available_tags.tag_id`, bundleID)
+}
+
 // usedInBundleExpression is based on scheduler-time audience attributions,
 // rather than campaign_selected_tags. A selection alone is only a configured
 // intent and can be changed while a campaign is editable; an attribution is
@@ -247,6 +259,8 @@ func (r *CampaignSelectedTagRepositoryImpl) listAvailableRowsQuery(ctx context.C
                  campaign_test_performance.click_count,
 				 campaign_test_performance.test_campaign_ctr,
 				 tag_overall_summary.overall_avg_ctr,
+				 action_tag_metrics.test_phase_avg_atr,
+				 action_tag_metrics.overall_avg_atr,
 				 `+usedInBundleExpression+`,
                  EXISTS (
                      SELECT 1 FROM campaign_selected_tags AS selected
@@ -254,7 +268,8 @@ func (r *CampaignSelectedTagRepositoryImpl) listAvailableRowsQuery(ctx context.C
                        AND selected.bundle_id = ?
 	                       AND selected.tag_id = available_tags.tag_id
 				 ) AS selected`, bundleID, campaignID, bundleID)
-	query = applyCampaignTestPerformance(query, campaignID, bundleID).
+	query = applyCampaignTestPerformance(query, campaignID, bundleID)
+	query = applyActionTagMetrics(query, bundleID).
 		Order(order)
 	return query
 }
@@ -265,7 +280,7 @@ func (r *CampaignSelectedTagRepositoryImpl) ListAvailableTagIDs(ctx context.Cont
 		return nil, err
 	}
 	var ids []uint
-	query := r.baseAvailableQuery(ctx, bundleID, search, nil).Select("available_tags.tag_id").Order(order)
+	query := applyActionTagMetrics(r.baseAvailableQuery(ctx, bundleID, search, nil), bundleID).Select("available_tags.tag_id").Order(order)
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -338,6 +353,8 @@ func (r *CampaignSelectedTagRepositoryImpl) Replace(ctx context.Context, campaig
 					AND tag_test_summary.tag_id = available_tags.tag_id`, bundleID).
 			Joins(`LEFT JOIN tag_overall_performance_summaries AS tag_overall_summary
 					 ON tag_overall_summary.tag_id = available_tags.tag_id`).
+			Joins(`LEFT JOIN bundle_action_tag_metrics AS action_tag_metrics
+					 ON action_tag_metrics.bundle_id = ? AND action_tag_metrics.tag_id = available_tags.tag_id`, bundleID).
 			Select(`available_tags.tag_id,
 				COALESCE(
 					NULLIF(BTRIM(available_tags.tag_display_title), ''),
@@ -346,7 +363,9 @@ func (r *CampaignSelectedTagRepositoryImpl) Replace(ctx context.Context, campaig
 				available_tags.tag_audience_count AS audience_count,
 				available_tags.bundle_persona_fit_score AS bundle_fit_score,
 				tag_test_summary.test_phase_avg_ctr,
-				tag_overall_summary.overall_avg_ctr`).
+				tag_overall_summary.overall_avg_ctr,
+				action_tag_metrics.test_phase_avg_atr,
+				action_tag_metrics.overall_avg_atr`).
 			Where("available_tags.tag_id IN ?", tagIDs).
 			Order("available_tags.tag_id ASC").
 			Scan(&snapshots).Error
@@ -428,6 +447,8 @@ func buildCampaignSelectedTagRows(
 			// remains distinct from a real measured zero CTR.
 			TestPhaseAvgCTRSnapshot: item.TestPhaseAvgCTR,
 			OverallAvgCTRSnapshot:   item.OverallAvgCTR,
+			TestPhaseAvgATRSnapshot: item.TestPhaseAvgATR,
+			OverallAvgATRSnapshot:   item.OverallAvgATR,
 			SelectedByCustomerID:    selectedByCustomerID,
 			CreatedAt:               now, UpdatedAt: now,
 		})
