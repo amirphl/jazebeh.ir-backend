@@ -1,0 +1,10 @@
+BEGIN;
+ALTER TABLE campaign_selected_tags DROP COLUMN IF EXISTS overall_avg_atr_snapshot;
+ALTER TABLE campaign_selected_tags DROP COLUMN IF EXISTS test_phase_avg_atr_snapshot;
+DROP TABLE IF EXISTS bundle_action_tag_metrics;
+DROP TABLE IF EXISTS bundle_action_campaign_metrics;
+DROP TABLE IF EXISTS bundle_action_summaries;
+DROP TABLE IF EXISTS bundle_action_file_uids;
+DROP TABLE IF EXISTS bundle_action_files;
+ALTER TABLE bundles DROP COLUMN IF EXISTS action_data_updated_at;
+COMMIT;
