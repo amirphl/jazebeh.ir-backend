@@ -18,6 +18,8 @@ type CampaignSelectedTag struct {
 	// Nil means "not measured" and must not be replaced with numeric zero.
 	TestPhaseAvgCTRSnapshot *float64  `gorm:"type:numeric" json:"test_phase_avg_ctr_snapshot"`
 	OverallAvgCTRSnapshot   *float64  `gorm:"type:numeric" json:"overall_avg_ctr_snapshot"`
+	TestPhaseAvgATRSnapshot *float64  `gorm:"type:numeric" json:"test_phase_avg_atr_snapshot"`
+	OverallAvgATRSnapshot   *float64  `gorm:"type:numeric" json:"overall_avg_atr_snapshot"`
 	SelectedByCustomerID    uint      `gorm:"not null;index:idx_campaign_selected_tags_selected_by_customer" json:"selected_by_customer_id"`
 	CreatedAt               time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"created_at"`
 	UpdatedAt               time.Time `gorm:"default:(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')" json:"updated_at"`
@@ -47,6 +49,8 @@ type SmartTargetingTagRow struct {
 	ClickCount              *int64   `gorm:"column:click_count"`
 	TestCampaignCTR         *float64 `gorm:"column:test_campaign_ctr"`
 	OverallAvgCTR           *float64 `gorm:"column:overall_avg_ctr"`
+	TestPhaseAvgATR         *float64 `gorm:"column:test_phase_avg_atr"`
+	OverallAvgATR           *float64 `gorm:"column:overall_avg_atr"`
 	// UsedInBundle is true only when the scheduler has persistently attributed
 	// at least one audience to this tag in an operational campaign for the
 	// same bundle. It deliberately does not treat an editable selection as use.
