@@ -183,14 +183,15 @@ func TestBuildCampaignReportRowsUsesAudienceJSONLMapping(t *testing.T) {
 		[]string{"audience-b", "audience-a"},
 		map[string]string{"audience-a": "code-a", "audience-b": "code-b"},
 		[]string{"code-b"},
+		map[string]bool{"audience-a": true},
 	)
 	if len(rows) != 2 {
 		t.Fatalf("row count = %d, want 2", len(rows))
 	}
-	if rows[0] != (campaignReportRow{AudienceProfileUID: "audience-a", Status: "unknown", Clicked: "false"}) {
+	if rows[0] != (campaignReportRow{AudienceProfileUID: "audience-a", Status: "unknown", Clicked: "false", Action: "True"}) {
 		t.Fatalf("first row = %#v", rows[0])
 	}
-	if rows[1] != (campaignReportRow{AudienceProfileUID: "audience-b", Status: "unknown", Clicked: "true"}) {
+	if rows[1] != (campaignReportRow{AudienceProfileUID: "audience-b", Status: "unknown", Clicked: "true", Action: "False"}) {
 		t.Fatalf("second row = %#v", rows[1])
 	}
 }
@@ -204,11 +205,12 @@ func TestBuildCampaignAudienceClickReportRowsKeepsCampaignScope(t *testing.T) {
 		[]string{"audience-b", "audience-a"},
 		map[string]string{"audience-a": "code-a", "audience-b": "code-b"},
 		[]string{"code-b"},
+		map[string]bool{"audience-a": true},
 	)
 
 	want := []campaignAudienceClickReportRow{
-		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-a", Status: "unknown", Clicked: "false"},
-		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-b", Status: "unknown", Clicked: "true"},
+		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-a", Status: "unknown", Clicked: "false", Action: "True"},
+		{CampaignID: 42, CampaignUUID: campaignUUID.String(), AudienceProfileUID: "audience-b", Status: "unknown", Clicked: "true", Action: "False"},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("row count = %d, want %d", len(rows), len(want))
@@ -229,6 +231,7 @@ func TestBuildCampaignAudienceClickReportExcelUsesSingleSafeWorksheet(t *testing
 		AudienceProfileUID: "=dangerous-formula",
 		Status:             "unknown",
 		Clicked:            "true",
+		Action:             "True",
 	}})
 	if err != nil {
 		t.Fatalf("build report: %v", err)
@@ -239,10 +242,10 @@ func TestBuildCampaignAudienceClickReportExcelUsesSingleSafeWorksheet(t *testing
 		t.Fatalf("open report: %v", err)
 	}
 	defer func() { _ = xl.Close() }()
-	if sheets := xl.GetSheetList(); len(sheets) != 1 || sheets[0] != "Audience Click Report" {
-		t.Fatalf("sheets = %#v, want one Audience Click Report sheet", sheets)
+	if sheets := xl.GetSheetList(); len(sheets) != 1 || sheets[0] != "Campaign Audience Report" {
+		t.Fatalf("sheets = %#v, want one Campaign Audience Report sheet", sheets)
 	}
-	got, err := xl.GetRows("Audience Click Report")
+	got, err := xl.GetRows("Campaign Audience Report")
 	if err != nil {
 		t.Fatalf("read rows: %v", err)
 	}
@@ -252,7 +255,7 @@ func TestBuildCampaignAudienceClickReportExcelUsesSingleSafeWorksheet(t *testing
 	if strings.Join(got[0], ",") != strings.Join(campaignAudienceClickReportHeaders, ",") {
 		t.Fatalf("headers = %#v, want %#v", got[0], campaignAudienceClickReportHeaders)
 	}
-	if got[1][0] != "42" || got[1][2] != "'=dangerous-formula" || got[1][4] != "true" {
+	if got[1][0] != "42" || got[1][2] != "'=dangerous-formula" || got[1][4] != "true" || got[1][5] != "True" {
 		t.Fatalf("data row = %#v", got[1])
 	}
 }
