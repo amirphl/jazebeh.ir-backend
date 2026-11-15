@@ -1497,6 +1497,7 @@ type campaignReportRow struct {
 	AudienceProfileUID string
 	Status             string
 	Clicked            string
+	Action             string
 }
 
 type campaignAudienceClickReportRow struct {
@@ -1505,12 +1506,14 @@ type campaignAudienceClickReportRow struct {
 	AudienceProfileUID string
 	Status             string
 	Clicked            string
+	Action             string
 }
 
 var campaignReportHeaders = []string{
 	"Audience Profile UID",
 	"Status",
 	"Clicked",
+	"Action",
 }
 
 var campaignAudienceClickReportHeaders = []string{
@@ -1519,6 +1522,7 @@ var campaignAudienceClickReportHeaders = []string{
 	"Audience Profile UID",
 	"Status",
 	"Clicked",
+	"Action",
 }
 
 const (
@@ -1580,7 +1584,12 @@ func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUI
 		auditFailure(fmt.Sprintf("Campaign report export failed for campaign %s", campaign.UUID.String()), err)
 		return nil, NewBusinessError("CAMPAIGN_CLICK_LOOKUP_FAILED", "failed to load campaign clicks", err)
 	}
-	rows := buildCampaignReportRows(allUIDs, uidToCode, clickedCodes)
+	actionUIDs, err := s.activeBundleActionUIDSet(ctx, campaign.BundleID, allUIDs)
+	if err != nil {
+		auditFailure(fmt.Sprintf("Campaign report export failed while loading action data for campaign %s", campaign.UUID.String()), err)
+		return nil, NewBusinessError("CAMPAIGN_ACTION_LOOKUP_FAILED", "failed to load campaign action data", err)
+	}
+	rows := buildCampaignReportRows(allUIDs, uidToCode, clickedCodes, actionUIDs)
 
 	reportBytes, err := buildCampaignReportExcel(rows)
 	if err != nil {
@@ -1598,46 +1607,94 @@ func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUI
 // audience UID file and the set of clicked short-link codes. Delivery status
 // is not represented in that file, so it is explicitly reported as unknown
 // rather than inferred from a statistics projection that omits tracking rows.
-func buildCampaignReportRows(allUIDs []string, uidToCode map[string]string, clickedCodes []string) []campaignReportRow {
+func buildCampaignReportRows(allUIDs []string, uidToCode map[string]string, clickedCodes []string, actionUIDs map[string]bool) []campaignReportRow {
 	clickedCodeSet := make(map[string]struct{}, len(clickedCodes))
 	for _, code := range clickedCodes {
 		clickedCodeSet[code] = struct{}{}
 	}
 
-	sortedUIDs := append([]string(nil), allUIDs...)
+	sortedUIDs := uniqueSortedUIDs(allUIDs)
 	sort.Strings(sortedUIDs)
 	rows := make([]campaignReportRow, 0, len(sortedUIDs))
 	for _, audienceUID := range sortedUIDs {
 		_, clicked := clickedCodeSet[uidToCode[audienceUID]]
+		_, action := actionUIDs[audienceUID]
 		rows = append(rows, campaignReportRow{
 			AudienceProfileUID: audienceUID,
 			Status:             "unknown",
 			Clicked:            strconv.FormatBool(clicked),
+			Action:             actionReportValue(action),
 		})
 	}
 	return rows
 }
 
-func buildCampaignAudienceClickReportRows(campaign models.Campaign, allUIDs []string, uidToCode map[string]string, clickedCodes []string) []campaignAudienceClickReportRow {
+func buildCampaignAudienceClickReportRows(campaign models.Campaign, allUIDs []string, uidToCode map[string]string, clickedCodes []string, actionUIDs map[string]bool) []campaignAudienceClickReportRow {
 	clickedCodeSet := make(map[string]struct{}, len(clickedCodes))
 	for _, code := range clickedCodes {
 		clickedCodeSet[code] = struct{}{}
 	}
 
-	sortedUIDs := append([]string(nil), allUIDs...)
+	sortedUIDs := uniqueSortedUIDs(allUIDs)
 	sort.Strings(sortedUIDs)
 	rows := make([]campaignAudienceClickReportRow, 0, len(sortedUIDs))
 	for _, audienceUID := range sortedUIDs {
 		_, clicked := clickedCodeSet[uidToCode[audienceUID]]
+		_, action := actionUIDs[audienceUID]
 		rows = append(rows, campaignAudienceClickReportRow{
 			CampaignID:         campaign.ID,
 			CampaignUUID:       campaign.UUID.String(),
 			AudienceProfileUID: audienceUID,
 			Status:             "unknown",
 			Clicked:            strconv.FormatBool(clicked),
+			Action:             actionReportValue(action),
 		})
 	}
 	return rows
+}
+
+func uniqueSortedUIDs(uids []string) []string {
+	seen := make(map[string]struct{}, len(uids))
+	for _, uid := range uids {
+		seen[uid] = struct{}{}
+	}
+	result := make([]string, 0, len(seen))
+	for uid := range seen {
+		result = append(result, uid)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func actionReportValue(action bool) string {
+	if action {
+		return "True"
+	}
+	return "False"
+}
+
+// activeBundleActionUIDSet is deliberately a live lookup: action membership
+// changes when an active action file is deleted, so report output must never
+// rely on the file-processing snapshot.
+func (s *CampaignFlowImpl) activeBundleActionUIDSet(ctx context.Context, bundleID *uint, uids []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if bundleID == nil || *bundleID == 0 || len(uids) == 0 {
+		return result, nil
+	}
+	var found []string
+	err := s.db.WithContext(ctx).
+		Table("bundle_action_file_uids AS u").
+		Select("DISTINCT u.uid").
+		Joins("JOIN bundle_action_files AS f ON f.id=u.bundle_action_file_id").
+		Where("u.bundle_id=? AND f.status=? AND u.uid IN ?", *bundleID, models.BundleActionFileProcessed, uniqueSortedUIDs(uids)).
+		Scan(&found).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, uid := range found {
+		result[uid] = true
+	}
+	return result, nil
 }
 
 // ExportCampaignAudienceClickReport exports the audience UID and click report for several
@@ -1724,12 +1781,18 @@ func (s *CampaignFlowImpl) ExportCampaignAudienceClickReport(ctx context.Context
 			auditFailure(fmt.Sprintf("Campaign audience click report export failed for campaign %s", campaign.UUID.String()), err)
 			return nil, NewBusinessError("AUDIENCE_REPORT_NOT_AVAILABLE", "audience report data is not available for one or more campaigns (may have expired or not yet pushed)", nil)
 		}
+		allUIDs = uniqueSortedUIDs(allUIDs)
 		if len(rows)+len(allUIDs) > maxCampaignAudienceClickReportRows || len(rows)+len(allUIDs) > maxExcelWorksheetDataRows {
 			err := fmt.Errorf("report contains more than %d rows", maxCampaignAudienceClickReportRows)
 			auditFailure("Campaign audience click report export exceeded the supported row limit", err)
 			return nil, NewBusinessError("CAMPAIGN_REPORT_TOO_LARGE", "campaign audience report is too large for synchronous export", err)
 		}
-		rows = append(rows, buildCampaignAudienceClickReportRows(*campaign, allUIDs, uidToCode, clickedCodesByCampaignID[campaign.ID])...)
+		actionUIDs, err := s.activeBundleActionUIDSet(ctx, campaign.BundleID, allUIDs)
+		if err != nil {
+			auditFailure(fmt.Sprintf("Campaign audience report export failed while loading action data for campaign %s", campaign.UUID.String()), err)
+			return nil, NewBusinessError("CAMPAIGN_ACTION_LOOKUP_FAILED", "failed to load campaign action data", err)
+		}
+		rows = append(rows, buildCampaignAudienceClickReportRows(*campaign, allUIDs, uidToCode, clickedCodesByCampaignID[campaign.ID], actionUIDs)...)
 	}
 
 	reportBytes, err := buildCampaignAudienceClickReportExcel(rows)
@@ -4812,7 +4875,7 @@ func buildCampaignReportExcel(rows []campaignReportRow) ([]byte, error) {
 	}
 
 	for i, row := range rows {
-		record := []string{excelSafeString(row.AudienceProfileUID), excelSafeString(row.Status), excelSafeString(row.Clicked)}
+		record := []string{excelSafeString(row.AudienceProfileUID), excelSafeString(row.Status), excelSafeString(row.Clicked), excelSafeString(row.Action)}
 		cellRef, err := excelize.CoordinatesToCellName(1, i+2)
 		if err != nil {
 			return nil, err
@@ -4822,7 +4885,7 @@ func buildCampaignReportExcel(rows []campaignReportRow) ([]byte, error) {
 		}
 	}
 
-	if err := xl.SetColWidth(sheetName, "A", "C", 24); err != nil {
+	if err := xl.SetColWidth(sheetName, "A", "D", 24); err != nil {
 		return nil, err
 	}
 
@@ -4841,7 +4904,7 @@ func buildCampaignAudienceClickReportExcel(rows []campaignAudienceClickReportRow
 	xl := excelize.NewFile()
 	defer func() { _ = xl.Close() }()
 
-	sheetName := "Audience Click Report"
+	sheetName := "Campaign Audience Report"
 	defaultSheet := xl.GetSheetName(0)
 	if defaultSheet != sheetName {
 		xl.SetSheetName(defaultSheet, sheetName)
@@ -4850,10 +4913,10 @@ func buildCampaignAudienceClickReportExcel(rows []campaignAudienceClickReportRow
 	if err != nil {
 		return nil, err
 	}
-	if err := stream.SetColWidth(1, 5, 24); err != nil {
+	if err := stream.SetColWidth(1, 6, 24); err != nil {
 		return nil, err
 	}
-	if err := stream.SetRow("A1", []interface{}{"Campaign ID", "Campaign UUID", "Audience Profile UID", "Status", "Clicked"}); err != nil {
+	if err := stream.SetRow("A1", []interface{}{"Campaign ID", "Campaign UUID", "Audience Profile UID", "Status", "Clicked", "Action"}); err != nil {
 		return nil, err
 	}
 
@@ -4864,8 +4927,9 @@ func buildCampaignAudienceClickReportExcel(rows []campaignAudienceClickReportRow
 			excelSafeString(row.AudienceProfileUID),
 			excelSafeString(row.Status),
 			excelSafeString(row.Clicked),
+			excelSafeString(row.Action),
 		}
-		if err := stream.SetRow(fmt.Sprintf("A%d", i+2), []interface{}{record[0], record[1], record[2], record[3], record[4]}); err != nil {
+		if err := stream.SetRow(fmt.Sprintf("A%d", i+2), []interface{}{record[0], record[1], record[2], record[3], record[4], record[5]}); err != nil {
 			return nil, err
 		}
 	}
@@ -4938,11 +5002,15 @@ func (s *CampaignFlowImpl) ExportCampaignClickReport(ctx context.Context, campai
 		}
 	}
 
-	sort.Strings(allUIDs)
+	allUIDs = uniqueSortedUIDs(allUIDs)
+	actionUIDs, err := s.activeBundleActionUIDSet(ctx, campaign.BundleID, allUIDs)
+	if err != nil {
+		return nil, NewBusinessError("CAMPAIGN_ACTION_LOOKUP_FAILED", "failed to load campaign action data", err)
+	}
 
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
-	if err := w.Write([]string{"uid", "clicked"}); err != nil {
+	if err := w.Write([]string{"uid", "clicked", "action"}); err != nil {
 		return nil, NewBusinessError("CSV_WRITE_FAILED", "failed to write csv header", err)
 	}
 	for _, uid := range allUIDs {
@@ -4952,7 +5020,8 @@ func (s *CampaignFlowImpl) ExportCampaignClickReport(ctx context.Context, campai
 				clicked = "true"
 			}
 		}
-		if err := w.Write([]string{uid, clicked}); err != nil {
+		action := actionReportValue(actionUIDs[uid])
+		if err := w.Write([]string{uid, clicked, action}); err != nil {
 			return nil, NewBusinessError("CSV_WRITE_FAILED", "failed to write csv row", err)
 		}
 	}
