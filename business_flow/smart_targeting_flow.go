@@ -308,6 +308,8 @@ func smartTargetingTagItem(row *models.SmartTargetingTagRow) dto.SmartTargetingT
 		ClickCount:              row.ClickCount,
 		TestCampaignCTR:         row.TestCampaignCTR,
 		OverallAvgCTR:           row.OverallAvgCTR,
+		TestPhaseAvgATR:         row.TestPhaseAvgATR,
+		OverallAvgATR:           row.OverallAvgATR,
 		UsedInBundle:            row.UsedInBundle,
 		Selected:                row.Selected,
 	}
