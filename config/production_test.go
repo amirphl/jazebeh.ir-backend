@@ -98,6 +98,9 @@ func TestSchedulerDeploymentInheritsProductionConfigEnvironmentVariables(t *test
 	if !strings.Contains(string(schedulerDeployment), "EXTERNAL_SHORTLINK_ENABLED=false\n") {
 		t.Fatal("scheduler deployment must disable EXTERNAL_SHORTLINK_ENABLED")
 	}
+	if !strings.Contains(string(schedulerDeployment), "[[ -n \"$expected\" && \"$expected\" != \\#* ]] || continue") {
+		t.Fatal("scheduler deployment must ignore comments while verifying its Docker env file")
+	}
 	if !strings.Contains(string(schedulerDeployment), "MAIN_REFUND_SETTING=\"$(source_env_value CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED)\"") ||
 		!strings.Contains(string(schedulerDeployment), "\"${MAIN_REFUND_SETTING,,}\" == \"true\"") ||
 		!strings.Contains(string(schedulerDeployment), "CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED=false\n") {

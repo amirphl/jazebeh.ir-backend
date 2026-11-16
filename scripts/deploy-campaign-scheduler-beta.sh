@@ -277,7 +277,9 @@ EOF
 verify_runtime_environment() {
 	local expected key actual
 	while IFS= read -r expected; do
-		[[ -n "$expected" ]] || continue
+		# Docker accepts comment lines in --env-file inputs; they are not
+		# environment entries and therefore must not be verified as such.
+		[[ -n "$expected" && "$expected" != \#* ]] || continue
 		[[ "$expected" == *=* ]] || {
 			printf '[campaign-scheduler] ERROR: generated environment entry is invalid: %s\n' "${expected%%=*}" >&2
 			return 1
