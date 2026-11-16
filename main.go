@@ -429,6 +429,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	multimediaRepo := repository.NewMultimediaAssetRepository(db)
 	platformSettingsRepo := repository.NewPlatformSettingsRepository(db)
 	bundleRepo := repository.NewBundleRepository(db)
+	bundleActionRepo := repository.NewBundleActionRepository(db)
 	shortLinkRepo := repository.NewShortLinkRepository(db)
 	shortLinkClickRepo := repository.NewShortLinkClickRepository(db)
 	externalShortLinkSyncRepo := repository.NewExternalShortLinkSyncRepository(db)
@@ -710,6 +711,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	multimediaBotFlow := businessflow.NewMultimediaBotFlow(multimediaRepo)
 	platformSettingsFlow := businessflow.NewPlatformSettingsFlow(platformSettingsRepo, multimediaRepo, notificationService, cfg.Admin)
 	bundleFlow := businessflow.NewBundleFlow(bundleRepo, campaignRepo, customerRepo, auditRepo, bundleTagEvaluationReadRepo, db)
+	bundleActionFlow := businessflow.NewBundleActionFlow(bundleActionRepo, bundleRepo, campaignRepo, db)
 	bundleTagEvaluationFlow := businessflow.NewBundleTagEvaluationFlow(
 		bundleRepo,
 		customerRepo,
@@ -744,8 +746,8 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(signupFlow, loginFlow)
-	bundleHandler := handlers.NewBundleHandler(bundleFlow, bundleTagEvaluationFlow)
-	campaignHandler := handlers.NewCampaignHandler(campaignFlow, smartTargetingFlow, smartTargetingCapacityFlow)
+	bundleHandler := handlers.NewBundleHandler(bundleFlow, bundleTagEvaluationFlow, bundleActionFlow)
+	campaignHandler := handlers.NewCampaignHandler(campaignFlow, smartTargetingFlow, smartTargetingCapacityFlow, bundleActionFlow)
 	paymentHandler := handlers.NewPaymentHandler(paymentFlow)
 	paymentAdminHandler := handlers.NewPaymentAdminHandler(paymentAdminFlow)
 	cryptoPaymentHandler := handlers.NewCryptoPaymentHandler(cryptoPaymentFlow, cfg)
@@ -1015,6 +1017,17 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 		)
 		stopTagTestPerformanceScheduler := tagTestPerformanceScheduler.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopTagTestPerformanceScheduler)
+	}
+
+	if cfg.Scheduler.BundleActionFileSchedulerEnabled {
+		bundleActionScheduler := scheduler.NewBundleActionFileScheduler(
+			bundleActionFlow,
+			bundleActionRepo,
+			log.Default(),
+			cfg.Scheduler.BundleActionFileSchedulerInterval,
+			cfg.Scheduler.BundleActionFileSchedulerMaxParallelRuns,
+		)
+		stopFuncs = append(stopFuncs, bundleActionScheduler.Start(context.Background()))
 	}
 
 	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
