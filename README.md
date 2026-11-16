@@ -120,7 +120,7 @@ Create a local database:
 createdb yamata_no_orochi
 ```
 
-Then review the [migration README](migrations/README.md) before applying the schema. In this snapshot, `run_all_up.sql` has known stale entries for migrations `0052` and `0054` and omits `0104_create_splus_status_results.sql`; running it unchanged with `ON_ERROR_STOP=1` will fail.
+Then review the [migration README](migrations/README.md) before applying the schema. The checked-in aggregate manifests include every current migration exactly once; run them with `ON_ERROR_STOP` enabled.
 
 Run the service with environment variables from `.env`:
 
@@ -152,12 +152,13 @@ Note: `make run-dev-simple` currently expects `scripts/run-dev.sh`, which is not
 
 ## Database Migrations
 
-Migrations live in `migrations/` and are numbered up to schema head `0119_convert_bundle_tag_evaluation_ids_to_bigserial.sql`. The intended aggregate files are:
+Migrations live in `migrations/`; the current schema head is
+`0155_create_execution_audience_calculations.sql`. The intended aggregate files are:
 
 - `migrations/run_all_up.sql`
 - `migrations/run_all_down.sql`
 
-Before using the aggregate scripts, reconcile the manifest issues listed in [migrations/README.md](migrations/README.md). Once reconciled, run all up migrations with:
+Follow the execution-path guidance in [migrations/README.md](migrations/README.md), then run all up migrations with:
 
 ```bash
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f migrations/run_all_up.sql
@@ -267,6 +268,16 @@ warnings double their delay up to `PAYAM_BALANCE_MONITOR_MAX_ALERT_INTERVAL`
 (default `1h`) and reset once the balance recovers.
 
 Smart-tag evaluation is independent of campaign execution. When both `SMART_TAG_EVALUATION_ENABLED=true` and `SMART_TAG_EVALUATION_SCHEDULER_ENABLED=true`, a bounded-concurrency worker claims queued bundle evaluations and processes persona analysis and tag-score batches through the configured OpenAI-compatible Responses API.
+
+Under-delivery refunds are also independent of campaign execution and API reads.
+Set `CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED=true` in the API container,
+alongside the other API schedulers; the isolated campaign scheduler overrides it
+to `false`. The worker queues executed campaigns and claims them after
+`CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY` (default `72h`), using
+durable PostgreSQL leases and bounded exponential-backoff retries. Its main operational controls are poll
+interval, job timeout, lease duration, maximum parallel runs, maximum attempts,
+retry base/max durations, and historical discovery batch size, all prefixed
+`CAMPAIGN_REFUND_RECONCILIATION_`.
 
 `SMART_TAG_EVALUATION_DAILY_LIMIT_PER_CUSTOMER` limits each customer to newly queued evaluations per UTC calendar day (default: `2`). Failed runs still count, so retries cannot create unbounded provider cost.
 
