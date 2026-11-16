@@ -6,6 +6,7 @@ The complete ordered procedure is in
 | Script | Purpose |
 |---|---|
 | `deploy-beta.sh` | Deploy the Compose API stack; requires API campaign execution to remain disabled |
+| `ensure-openresty-base-image.sh` | Ensures the local, pinned OpenResty base-image alias used by Nginx builds; pulls upstream only when absent |
 | `deploy-production-beta.sh` | Canonical release command; deploys API then recreates isolated campaign workers |
 | `deploy-campaign-scheduler-beta.sh` | Recreates the private, restartable campaign-worker container from the running API environment |
 | `apply-yamata-required-migrations.sh` | Verifies required schema by default; `--repair` explicitly reapplies the restore/repair subset through 0149 |

@@ -406,6 +406,11 @@ start_services() {
 	# Resolve docker command (fallback to sudo if needed)
 	local docker_cmd
 	docker_cmd=$(get_docker_cmd)
+
+	# Dockerfile.edge deliberately uses a local OpenResty base-image alias. This
+	# avoids a 60-second Docker Hub metadata timeout on every Compose build;
+	# the helper pulls the pinned upstream image only if the alias is absent.
+	"$SCRIPT_DIR/ensure-openresty-base-image.sh"
 	
 	# Process init.sql with environment variables for beta environment
 	print_status "Processing PostgreSQL init.sql for beta environment..."
