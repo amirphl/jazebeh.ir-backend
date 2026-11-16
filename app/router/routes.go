@@ -288,6 +288,7 @@ func (r *FiberRouter) SetupRoutes() {
 	campaigns.Get("/summary", r.campaignHandler.GetApprovedRunningSummary)
 	campaigns.Get("/initiated/last", r.campaignHandler.GetLastInitiatedCampaign)
 	campaigns.Post("/audience-click-report", r.campaignHandler.ExportCampaignAudienceClickReport)
+	campaigns.Get("/:uuid/action-metrics", r.campaignHandler.GetCampaignActionMetrics)
 	campaigns.Get("/:id/export", r.campaignHandler.ExportCampaignReport)
 	campaigns.Get("/:uuid/click-report", r.campaignHandler.ExportCampaignClickReport)
 	campaigns.Post("/:id/cancel", r.campaignHandler.CancelCampaign)
@@ -305,6 +306,13 @@ func (r *FiberRouter) SetupRoutes() {
 	bundles.Post("/:id/tag-evaluations", r.bundleHandler.RequestTagEvaluation)
 	bundles.Get("/:id/tag-evaluation", r.bundleHandler.GetTagEvaluationStatus)
 	bundles.Get("/:id/tag-scores", r.bundleHandler.ListTagScores)
+	bundles.Get("/:id/action-files/template", r.bundleHandler.DownloadActionFileTemplate)
+	bundles.Post("/:id/action-files", r.bundleHandler.UploadActionFile)
+	bundles.Get("/:id/action-files", r.bundleHandler.ListActionFiles)
+	bundles.Get("/:id/action-files/:file_id", r.bundleHandler.GetActionFile)
+	bundles.Delete("/:id/action-files/:file_id", r.bundleHandler.DeleteActionFile)
+	bundles.Get("/:id/action-summary", r.bundleHandler.GetActionSummary)
+	bundles.Get("/:id/action-tag-metrics", r.bundleHandler.GetActionTagMetrics)
 
 	// Admin campaigns listing and actions
 	adminCampaigns := api.Group("/admin/campaigns")
