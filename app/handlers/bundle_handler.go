@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strconv"
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	businessflow "github.com/amirphl/Yamata-no-Orochi/business_flow"
+	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/utils"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
+	"github.com/xuri/excelize/v2"
 )
 
 type BundleHandlerInterface interface {
@@ -23,18 +26,177 @@ type BundleHandlerInterface interface {
 	RequestTagEvaluation(c fiber.Ctx) error
 	GetTagEvaluationStatus(c fiber.Ctx) error
 	ListTagScores(c fiber.Ctx) error
+	DownloadActionFileTemplate(c fiber.Ctx) error
+	UploadActionFile(c fiber.Ctx) error
+	ListActionFiles(c fiber.Ctx) error
+	GetActionFile(c fiber.Ctx) error
+	DeleteActionFile(c fiber.Ctx) error
+	GetActionSummary(c fiber.Ctx) error
+	GetActionTagMetrics(c fiber.Ctx) error
 }
 
 type BundleHandler struct {
 	flow           businessflow.BundleFlow
 	evaluationFlow businessflow.BundleTagEvaluationFlow
+	actionFlow     businessflow.BundleActionFlow
 	validator      *validator.Validate
 }
 
-func NewBundleHandler(flow businessflow.BundleFlow, evaluationFlow businessflow.BundleTagEvaluationFlow) *BundleHandler {
+func (h *BundleHandler) actionBundleRequest(c fiber.Ctx) (uint, uint, error) {
+	customerID, ok := c.Locals("customer_id").(uint)
+	if !ok || customerID == 0 {
+		return 0, 0, fmt.Errorf("customer id missing")
+	}
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil || id == 0 {
+		return 0, 0, fmt.Errorf("invalid bundle id")
+	}
+	return customerID, uint(id), nil
+}
+
+func actionFileDTO(row *models.BundleActionFile) dto.BundleActionFileItem {
+	return dto.BundleActionFileItem{ID: row.ID, OriginalFileName: row.OriginalFileName, Status: string(row.Status), TotalRowCount: row.TotalRowCount, UniqueUIDCount: row.UniqueUIDCount, NewActionUIDCount: row.NewActionUIDCount, DuplicateInFileCount: row.DuplicateInFileCount, DuplicateInOtherFilesCount: row.DuplicateInOtherFilesCount, InvalidUIDCount: row.InvalidUIDCount, OutsideBundleCount: row.OutsideBundleCount, UnassignedTagCount: row.UnassignedTagCount, MissingDeliveryCount: row.MissingDeliveryCount, EligibleActionUIDCount: row.EligibleActionUIDCount, ErrorCode: row.ErrorCode, ErrorMessage: row.ErrorMessage, CreatedAt: row.CreatedAt, ProcessedAt: row.ProcessedAt}
+}
+
+// DownloadActionFileTemplate returns a minimal XLSX template whose only
+// required column is uid.
+func (h *BundleHandler) DownloadActionFileTemplate(c fiber.Ctx) error {
+	if _, _, err := h.actionBundleRequest(c); err != nil {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid bundle request", "INVALID_BUNDLE_ID", nil)
+	}
+	xl := excelize.NewFile()
+	defer xl.Close()
+	sheet := xl.GetSheetName(0)
+	if err := xl.SetCellValue(sheet, "A1", "uid"); err != nil {
+		return h.ErrorResponse(c, 500, "Failed to create action-file template", "ACTION_TEMPLATE_FAILED", nil)
+	}
+	buf, err := xl.WriteToBuffer()
+	if err != nil {
+		return h.ErrorResponse(c, 500, "Failed to create action-file template", "ACTION_TEMPLATE_FAILED", nil)
+	}
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", "attachment; filename=\"bundle_action_template.xlsx\"")
+	return c.Send(buf.Bytes())
+}
+func (h *BundleHandler) UploadActionFile(c fiber.Ctx) error {
+	customer, bundle, err := h.actionBundleRequest(c)
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Invalid bundle request", "INVALID_BUNDLE_ID", nil)
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Action file is required", "ACTION_FILE_REQUIRED", nil)
+	}
+	opened, err := file.Open()
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Action file is invalid", "ACTION_FILE_INVALID", nil)
+	}
+	defer opened.Close()
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/action-files", 30*time.Second)
+	defer cancel()
+	row, err := h.actionFlow.Upload(ctx, customer, bundle, file.Filename, io.Reader(opened))
+	if err != nil {
+		return h.handleBundleFlowError(c, err, 500, "Failed to upload action file", "ACTION_FILE_UPLOAD_FAILED")
+	}
+	return h.SuccessResponse(c, fiber.StatusAccepted, "Action file queued for processing", actionFileDTO(row))
+}
+func (h *BundleHandler) ListActionFiles(c fiber.Ctx) error {
+	customer, bundle, err := h.actionBundleRequest(c)
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Invalid bundle request", "INVALID_BUNDLE_ID", nil)
+	}
+	page, limit := 1, 50
+	if q := c.Query("page"); q != "" {
+		if page, err = strconv.Atoi(q); err != nil || page < 1 {
+			return h.ErrorResponse(c, 400, "Invalid page", "INVALID_PAGE", nil)
+		}
+	}
+	if q := c.Query("limit"); q != "" {
+		if limit, err = strconv.Atoi(q); err != nil || limit < 1 || limit > 100 {
+			return h.ErrorResponse(c, 400, "Invalid limit", "INVALID_LIMIT", nil)
+		}
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/action-files", 30*time.Second)
+	defer cancel()
+	rows, total, err := h.actionFlow.List(ctx, customer, bundle, page, limit)
+	if err != nil {
+		return h.handleBundleFlowError(c, err, 500, "Failed to list action files", "ACTION_FILE_LIST_FAILED")
+	}
+	items := make([]dto.BundleActionFileItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, actionFileDTO(row))
+	}
+	return h.SuccessResponse(c, 200, "Action files retrieved", dto.BundleActionFilesResponse{Items: items, Pagination: dto.PaginationInfo{Page: page, Limit: limit, Total: total, TotalPages: int((total + int64(limit) - 1) / int64(limit))}})
+}
+func (h *BundleHandler) GetActionFile(c fiber.Ctx) error {
+	customer, bundle, err := h.actionBundleRequest(c)
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Invalid bundle request", "INVALID_BUNDLE_ID", nil)
+	}
+	id, err := strconv.ParseInt(c.Params("file_id"), 10, 64)
+	if err != nil || id < 1 {
+		return h.ErrorResponse(c, 400, "Invalid action file ID", "INVALID_ACTION_FILE_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/action-files/:file_id", 30*time.Second)
+	defer cancel()
+	row, err := h.actionFlow.Get(ctx, customer, bundle, id)
+	if err != nil {
+		return h.handleBundleFlowError(c, err, 500, "Failed to get action file", "ACTION_FILE_GET_FAILED")
+	}
+	return h.SuccessResponse(c, 200, "Action file retrieved", actionFileDTO(row))
+}
+func (h *BundleHandler) DeleteActionFile(c fiber.Ctx) error {
+	customer, bundle, err := h.actionBundleRequest(c)
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Invalid bundle request", "INVALID_BUNDLE_ID", nil)
+	}
+	id, err := strconv.ParseInt(c.Params("file_id"), 10, 64)
+	if err != nil || id < 1 {
+		return h.ErrorResponse(c, 400, "Invalid action file ID", "INVALID_ACTION_FILE_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/action-files/:file_id", 30*time.Second)
+	defer cancel()
+	if err := h.actionFlow.Delete(ctx, customer, bundle, id); err != nil {
+		return h.handleBundleFlowError(c, err, 500, "Failed to delete action file", "ACTION_FILE_DELETE_FAILED")
+	}
+	return h.SuccessResponse(c, fiber.StatusAccepted, "Action-file deletion queued", nil)
+}
+func (h *BundleHandler) GetActionSummary(c fiber.Ctx) error {
+	customer, bundle, err := h.actionBundleRequest(c)
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Invalid bundle request", "INVALID_BUNDLE_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/action-summary", 30*time.Second)
+	defer cancel()
+	x, err := h.actionFlow.Summary(ctx, customer, bundle)
+	if err != nil {
+		return h.handleBundleFlowError(c, err, 500, "Failed to get action summary", "ACTION_SUMMARY_GET_FAILED")
+	}
+	return h.SuccessResponse(c, 200, "Action summary retrieved", dto.BundleActionSummaryResponse{BundleID: x.BundleID, HasActiveActionFiles: x.HasActiveActionFiles, ActionCount: x.ActionCount, EligibleDeliveredCount: x.EligibleDeliveredCount, BundleAvgATR: x.BundleAvgATR, UpdatedAt: x.UpdatedAt})
+}
+func (h *BundleHandler) GetActionTagMetrics(c fiber.Ctx) error {
+	customer, bundle, err := h.actionBundleRequest(c)
+	if err != nil {
+		return h.ErrorResponse(c, 400, "Invalid bundle request", "INVALID_BUNDLE_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/action-tag-metrics", 30*time.Second)
+	defer cancel()
+	rows, err := h.actionFlow.TagMetrics(ctx, customer, bundle)
+	if err != nil {
+		return h.handleBundleFlowError(c, err, 500, "Failed to get tag action metrics", "ACTION_TAG_METRICS_GET_FAILED")
+	}
+	items := make([]dto.BundleActionTagMetricItem, 0, len(rows))
+	for _, x := range rows {
+		items = append(items, dto.BundleActionTagMetricItem{TagID: x.TagID, TestActionCount: x.TestActionCount, TestEligibleDeliveredCount: x.TestEligibleDeliveredCount, TestPhaseAvgATR: x.TestPhaseAvgATR, OverallActionCount: x.OverallActionCount, OverallEligibleDeliveredCount: x.OverallEligibleDeliveredCount, OverallAvgATR: x.OverallAvgATR})
+	}
+	return h.SuccessResponse(c, 200, "Tag action metrics retrieved", items)
+}
+
+func NewBundleHandler(flow businessflow.BundleFlow, evaluationFlow businessflow.BundleTagEvaluationFlow, actionFlow businessflow.BundleActionFlow) *BundleHandler {
 	return &BundleHandler{
 		flow:           flow,
 		evaluationFlow: evaluationFlow,
+		actionFlow:     actionFlow,
 		validator:      validator.New(),
 	}
 }
