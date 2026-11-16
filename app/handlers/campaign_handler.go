@@ -35,6 +35,7 @@ type CampaignHandlerInterface interface {
 	ExportCampaignReport(c fiber.Ctx) error
 	ExportCampaignClickReport(c fiber.Ctx) error
 	ExportCampaignAudienceClickReport(c fiber.Ctx) error
+	GetCampaignActionMetrics(c fiber.Ctx) error
 	SendCampaignTestMessage(c fiber.Ctx) error
 	HideCampaigns(c fiber.Ctx) error
 	UnhideCampaigns(c fiber.Ctx) error
@@ -196,6 +197,7 @@ type CampaignHandler struct {
 	campaignFlow       businessflow.CampaignFlow
 	smartTargetingFlow businessflow.SmartTargetingFlow
 	capacityFlow       businessflow.SmartTargetingCapacityFlow
+	actionFlow         businessflow.BundleActionFlow
 	validator          *validator.Validate
 }
 
@@ -219,11 +221,12 @@ func (h *CampaignHandler) SuccessResponse(c fiber.Ctx, statusCode int, message s
 }
 
 // NewCampaignHandler creates a new campaign handler
-func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFlow businessflow.SmartTargetingFlow, capacityFlow businessflow.SmartTargetingCapacityFlow) *CampaignHandler {
+func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFlow businessflow.SmartTargetingFlow, capacityFlow businessflow.SmartTargetingCapacityFlow, actionFlow businessflow.BundleActionFlow) *CampaignHandler {
 	handler := &CampaignHandler{
 		campaignFlow:       campaignFlow,
 		smartTargetingFlow: smartTargetingFlow,
 		capacityFlow:       capacityFlow,
+		actionFlow:         actionFlow,
 		validator:          validator.New(),
 	}
 
@@ -231,6 +234,41 @@ func NewCampaignHandler(campaignFlow businessflow.CampaignFlow, smartTargetingFl
 	handler.setupCustomValidations()
 
 	return handler
+}
+
+// GetCampaignActionMetrics returns the bundle-scoped action metrics for a campaign.
+// @Summary Get Campaign Action Metrics
+// @Tags Campaigns
+// @Produce json
+// @Param uuid path string true "Campaign UUID"
+// @Success 200 {object} dto.APIResponse{data=dto.CampaignActionMetricResponse} "Retrieved"
+// @Failure 400 {object} dto.APIResponse "Invalid request"
+// @Failure 401 {object} dto.APIResponse "Unauthorized"
+// @Failure 404 {object} dto.APIResponse "Not found"
+// @Failure 500 {object} dto.APIResponse "Internal server error"
+// @Router /api/v1/campaigns/{uuid}/action-metrics [get]
+func (h *CampaignHandler) GetCampaignActionMetrics(c fiber.Ctx) error {
+	campaignUUID := c.Params("uuid")
+	if campaignUUID == "" {
+		return h.ErrorResponse(c, fiber.StatusBadRequest, "Invalid campaign UUID", "INVALID_CAMPAIGN_UUID", nil)
+	}
+	customerID, ok := c.Locals("customer_id").(uint)
+	if !ok || customerID == 0 {
+		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/"+campaignUUID+"/action-metrics", 30*time.Second)
+	defer cancel()
+	metric, err := h.actionFlow.CampaignMetric(ctx, customerID, campaignUUID)
+	if err != nil {
+		log.Println("Get campaign action metrics failed", err)
+		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to get campaign action metrics", "CAMPAIGN_ACTION_METRICS_FAILED")
+	}
+	return h.SuccessResponse(c, fiber.StatusOK, "Campaign action metrics retrieved", dto.CampaignActionMetricResponse{
+		CampaignID:             metric.CampaignID,
+		ActionCount:            metric.ActionCount,
+		EligibleDeliveredCount: metric.EligibleDeliveredCount,
+		CampaignATR:            metric.CampaignATR,
+	})
 }
 
 // StartSmartTargetingCapacityCalculation queues an exact capacity generation.
@@ -888,10 +926,10 @@ func (h *CampaignHandler) ExportCampaignClickReport(c fiber.Ctx) error {
 	return c.Send(data)
 }
 
-// ExportCampaignAudienceClickReport exports audience UID/click results from multiple
+// ExportCampaignAudienceClickReport exports campaign audience UID/click/action results from multiple
 // customer-owned campaigns into one Excel worksheet.
-// @Summary Export Campaign Audience Click Report
-// @Description Export one Excel worksheet containing audience UID and click results for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.
+// @Summary Export Campaign Audience Report
+// @Description Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.
 // @Tags Campaigns
 // @Accept json
 // @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
@@ -937,7 +975,7 @@ func (h *CampaignHandler) ExportCampaignAudienceClickReport(c fiber.Ctx) error {
 	}
 
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Set("Content-Disposition", "attachment; filename=\"campaign_audience_click_report.xlsx\"")
+	c.Set("Content-Disposition", "attachment; filename=\"campaign_audience_report.xlsx\"")
 	return c.Send(data)
 }
 
