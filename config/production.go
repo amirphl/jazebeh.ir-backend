@@ -454,6 +454,9 @@ type SchedulerConfig struct {
 	TagTestPerformanceSchedulerEnabled                 bool          `json:"tag_test_performance_scheduler_enabled"`
 	TagTestPerformanceSchedulerInterval                time.Duration `json:"tag_test_performance_scheduler_interval"`
 	TagTestPerformanceSchedulerBatchSize               int           `json:"tag_test_performance_scheduler_batch_size"`
+	BundleActionFileSchedulerEnabled                   bool          `json:"bundle_action_file_scheduler_enabled"`
+	BundleActionFileSchedulerInterval                  time.Duration `json:"bundle_action_file_scheduler_interval"`
+	BundleActionFileSchedulerMaxParallelRuns           int           `json:"bundle_action_file_scheduler_max_parallel_runs"`
 	CampaignRefundReconciliationSchedulerEnabled       bool          `json:"campaign_refund_reconciliation_scheduler_enabled"`
 	CampaignRefundReconciliationPollInterval           time.Duration `json:"campaign_refund_reconciliation_poll_interval"`
 	CampaignRefundReconciliationEligibilityDelay       time.Duration `json:"campaign_refund_reconciliation_eligibility_delay"`
@@ -511,6 +514,9 @@ func loadSchedulerConfig() SchedulerConfig {
 		TagTestPerformanceSchedulerEnabled:                 getEnvBool("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", false),
 		TagTestPerformanceSchedulerInterval:                getEnvDuration("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", time.Minute),
 		TagTestPerformanceSchedulerBatchSize:               getEnvInt("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", 25),
+		BundleActionFileSchedulerEnabled:                   getEnvBool("BUNDLE_ACTION_FILE_SCHEDULER_ENABLED", false),
+		BundleActionFileSchedulerInterval:                  getEnvDuration("BUNDLE_ACTION_FILE_SCHEDULER_INTERVAL", time.Minute),
+		BundleActionFileSchedulerMaxParallelRuns:           getEnvInt("BUNDLE_ACTION_FILE_SCHEDULER_MAX_PARALLEL_RUNS", 2),
 		CampaignRefundReconciliationSchedulerEnabled:       getEnvBool("CAMPAIGN_REFUND_RECONCILIATION_SCHEDULER_ENABLED", false),
 		CampaignRefundReconciliationPollInterval:           getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_POLL_INTERVAL", time.Minute),
 		CampaignRefundReconciliationEligibilityDelay:       getEnvDuration("CAMPAIGN_REFUND_RECONCILIATION_ELIGIBILITY_DELAY", 72*time.Hour),
@@ -1290,6 +1296,14 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		}
 		if cfg.Scheduler.TagTestPerformanceSchedulerBatchSize <= 0 {
 			errors = append(errors, "TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE must be positive")
+		}
+	}
+	if cfg.Scheduler.BundleActionFileSchedulerEnabled {
+		if cfg.Scheduler.BundleActionFileSchedulerInterval <= 0 {
+			errors = append(errors, "BUNDLE_ACTION_FILE_SCHEDULER_INTERVAL must be positive")
+		}
+		if cfg.Scheduler.BundleActionFileSchedulerMaxParallelRuns <= 0 {
+			errors = append(errors, "BUNDLE_ACTION_FILE_SCHEDULER_MAX_PARALLEL_RUNS must be positive")
 		}
 	}
 	if cfg.Scheduler.CampaignRefundReconciliationSchedulerEnabled {
