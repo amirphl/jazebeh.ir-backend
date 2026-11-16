@@ -51,6 +51,7 @@ type CampaignHandlerInterface interface {
 	GetSmartTargetingTestSampling(c fiber.Ctx) error
 	GetSmartTargetingTestSamplingByID(c fiber.Ctx) error
 	StartSmartTargetingExecutionCalculation(c fiber.Ctx) error
+	GetCurrentSmartTargetingExecutionCalculation(c fiber.Ctx) error
 	GetSmartTargetingExecutionCalculation(c fiber.Ctx) error
 }
 
@@ -81,6 +82,36 @@ func (h *CampaignHandler) StartSmartTargetingExecutionCalculation(c fiber.Ctx) e
 		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to request execution audience calculation", "SMART_TARGETING_EXECUTION_CALCULATION_REQUEST_FAILED")
 	}
 	return h.SuccessResponse(c, fiber.StatusAccepted, "Execution audience calculation requested successfully", result)
+}
+
+// GetCurrentSmartTargetingExecutionCalculation returns the execution-audience
+// calculation for the campaign's current input, so clients can resume polling
+// without retaining a calculation ID.
+// @Summary Get current Smart Targeting Execution audience calculation
+// @Description Retrieves the current execution-audience calculation for an owned Smart Targeting Execution campaign. A ready calculation is finalizable only when is_current is true and recalculation_required is false.
+// @Tags Campaigns
+// @Produce json
+// @Security BearerAuth
+// @Param uuid path string true "Owned Smart Targeting Execution campaign UUID" format(uuid)
+// @Success 200 {object} dto.APIResponse{data=dto.SmartTargetingExecutionCalculationResponse} "Current execution audience calculation retrieved successfully"
+// @Failure 401 {object} dto.APIResponse "Authentication required"
+// @Failure 403 {object} dto.APIResponse "Campaign access denied"
+// @Failure 404 {object} dto.APIResponse "Campaign not found"
+// @Failure 409 {object} dto.APIResponse "A current exact capacity calculation is pending or required"
+// @Failure 500 {object} dto.APIResponse "Execution audience calculation lookup failed"
+// @Router /api/v1/campaigns/{uuid}/smart-targeting/execution-audience-calculations [get]
+func (h *CampaignHandler) GetCurrentSmartTargetingExecutionCalculation(c fiber.Ctx) error {
+	customerID, ok := c.Locals("customer_id").(uint)
+	if !ok {
+		return h.ErrorResponse(c, fiber.StatusUnauthorized, "Customer ID not found in context", "MISSING_CUSTOMER_ID", nil)
+	}
+	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/campaigns/:uuid/smart-targeting/execution-audience-calculations", 30*time.Second)
+	defer cancel()
+	result, err := h.campaignFlow.GetCurrentSmartTargetingExecutionCalculation(ctx, customerID, c.Params("uuid"))
+	if err != nil {
+		return h.handleCampaignFlowError(c, err, fiber.StatusInternalServerError, "Failed to load current execution audience calculation", "SMART_TARGETING_EXECUTION_CALCULATION_LOOKUP_FAILED")
+	}
+	return h.SuccessResponse(c, fiber.StatusOK, "Current execution audience calculation retrieved successfully", result)
 }
 
 // GetSmartTargetingExecutionCalculation retrieves one requested execution

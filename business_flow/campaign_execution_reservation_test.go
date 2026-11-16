@@ -18,6 +18,38 @@ func TestFirstMatchingSmartTargetingTagUsesPersistedTagOrder(t *testing.T) {
 	}
 }
 
+func TestExecutionCalculationDTOExposesOnlyExplicitPOSTReuse(t *testing.T) {
+	calculation := &models.CampaignTargetingExecutionCalculation{
+		ID: 31, CampaignID: 17, BundleID: 4, RequestedAudienceCount: 250,
+		Status: models.CampaignTargetingExecutionCalculationPending,
+	}
+	response := smartTargetingExecutionCalculationDTO(calculation, false, false, true)
+	if !response.Reused || response.CalculationID != calculation.ID {
+		t.Fatalf("reused response = %#v, want calculation %d marked reused", response, calculation.ID)
+	}
+	pollingResponse := smartTargetingExecutionCalculationDTO(calculation, false, false, false)
+	if pollingResponse.Reused {
+		t.Fatal("polling response must not claim POST job reuse")
+	}
+}
+
+func TestExecutionCalculationCurrentnessRejectsChangedRequestedCount(t *testing.T) {
+	bundleID := uint(4)
+	method := models.CampaignAudienceTargetingSmart
+	campaign := &models.Campaign{
+		ID: 17, Status: models.CampaignStatusInitiated, BundleID: &bundleID, Phase: models.CampaignPhaseExecution,
+		Spec: models.CampaignSpec{AudienceTargetingMethod: &method},
+	}
+	calculation := &models.CampaignTargetingExecutionCalculation{
+		CampaignID: campaign.ID, BundleID: bundleID, RequestedAudienceCount: 250,
+		CalculationVersion: models.SmartTargetingExecutionCalculationVersion,
+	}
+	err := (&CampaignFlowImpl{}).executionCalculationStillMatches(t.Context(), campaign, calculation, 251)
+	if !errors.Is(err, errSmartTargetingExecutionCalculationStale) {
+		t.Fatalf("changed requested count error = %v, want stale", err)
+	}
+}
+
 func TestShortLinkAllocationKeyIsStableAndBindsEveryRecipient(t *testing.T) {
 	firstDestination := "https://example.test/a"
 	secondDestination := "https://example.test/b"

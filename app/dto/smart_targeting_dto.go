@@ -8,18 +8,21 @@ type SmartTargetingExecutionCalculationRequest struct {
 }
 
 type SmartTargetingExecutionCalculationResponse struct {
-	CalculationID          int64      `json:"calculation_id"`
-	CampaignID             uint       `json:"campaign_id"`
-	BundleID               uint       `json:"bundle_id"`
-	RequestedAudienceCount uint64     `json:"requested_audience_count"`
-	Status                 string     `json:"status"`
-	IsCurrent              bool       `json:"is_current"`
-	RecalculationRequired  bool       `json:"recalculation_required"`
-	CreatedAt              time.Time  `json:"created_at"`
-	StartedAt              *time.Time `json:"started_at,omitempty"`
-	FinishedAt             *time.Time `json:"finished_at,omitempty"`
-	ErrorCode              *string    `json:"error_code,omitempty"`
-	ErrorMessage           *string    `json:"error_message,omitempty"`
+	CalculationID          int64  `json:"calculation_id"`
+	CampaignID             uint   `json:"campaign_id"`
+	BundleID               uint   `json:"bundle_id"`
+	RequestedAudienceCount uint64 `json:"requested_audience_count"`
+	Status                 string `json:"status"`
+	IsCurrent              bool   `json:"is_current"`
+	RecalculationRequired  bool   `json:"recalculation_required"`
+	// Reused is true only on a POST response when an equivalent pending or
+	// current ready calculation was returned instead of creating a new job.
+	Reused       bool       `json:"reused"`
+	CreatedAt    time.Time  `json:"created_at"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	ErrorCode    *string    `json:"error_code,omitempty"`
+	ErrorMessage *string    `json:"error_message,omitempty"`
 }
 
 // ListSmartTargetingTagsRequest carries normalized list filters from either a

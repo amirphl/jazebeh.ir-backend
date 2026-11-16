@@ -15,6 +15,8 @@ var ErrCampaignTargetingExecutionCalculationStateConflict = errors.New("executio
 type CampaignTargetingExecutionCalculationRepository interface {
 	Save(context.Context, *models.CampaignTargetingExecutionCalculation) error
 	ByID(context.Context, int64) (*models.CampaignTargetingExecutionCalculation, error)
+	LatestByCampaignID(context.Context, uint) (*models.CampaignTargetingExecutionCalculation, error)
+	LatestByInput(context.Context, uint, string, int64) (*models.CampaignTargetingExecutionCalculation, error)
 	ActiveByCampaignID(context.Context, uint) (*models.CampaignTargetingExecutionCalculation, error)
 	ReadyByInput(context.Context, uint, string, int64) (*models.CampaignTargetingExecutionCalculation, error)
 	Members(context.Context, int64) ([]models.CampaignTargetingExecutionCalculationMember, error)
@@ -50,9 +52,18 @@ func (r *CampaignTargetingExecutionCalculationRepositoryImpl) ByID(ctx context.C
 	}
 	return &row, nil
 }
+func (r *CampaignTargetingExecutionCalculationRepositoryImpl) LatestByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingExecutionCalculation, error) {
+	return r.latest(ctx, "campaign_id = ?", campaignID)
+}
+func (r *CampaignTargetingExecutionCalculationRepositoryImpl) LatestByInput(ctx context.Context, campaignID uint, hash string, requested int64) (*models.CampaignTargetingExecutionCalculation, error) {
+	return r.latest(ctx, "campaign_id = ? AND selection_input_hash = ? AND requested_audience_count = ?", campaignID, hash, requested)
+}
 func (r *CampaignTargetingExecutionCalculationRepositoryImpl) ActiveByCampaignID(ctx context.Context, campaignID uint) (*models.CampaignTargetingExecutionCalculation, error) {
+	return r.latest(ctx, "campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationPending)
+}
+func (r *CampaignTargetingExecutionCalculationRepositoryImpl) latest(ctx context.Context, query string, args ...any) (*models.CampaignTargetingExecutionCalculation, error) {
 	var row models.CampaignTargetingExecutionCalculation
-	err := r.getDB(ctx).Where("campaign_id = ? AND status = ?", campaignID, models.CampaignTargetingExecutionCalculationPending).Order("created_at DESC, id DESC").First(&row).Error
+	err := r.getDB(ctx).Where(query, args...).Order("created_at DESC, id DESC").First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -62,15 +73,7 @@ func (r *CampaignTargetingExecutionCalculationRepositoryImpl) ActiveByCampaignID
 	return &row, nil
 }
 func (r *CampaignTargetingExecutionCalculationRepositoryImpl) ReadyByInput(ctx context.Context, campaignID uint, hash string, requested int64) (*models.CampaignTargetingExecutionCalculation, error) {
-	var row models.CampaignTargetingExecutionCalculation
-	err := r.getDB(ctx).Where("campaign_id = ? AND selection_input_hash = ? AND requested_audience_count = ? AND status = ?", campaignID, hash, requested, models.CampaignTargetingExecutionCalculationReady).Order("created_at DESC, id DESC").First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &row, nil
+	return r.latest(ctx, "campaign_id = ? AND selection_input_hash = ? AND requested_audience_count = ? AND status = ?", campaignID, hash, requested, models.CampaignTargetingExecutionCalculationReady)
 }
 func (r *CampaignTargetingExecutionCalculationRepositoryImpl) Members(ctx context.Context, id int64) ([]models.CampaignTargetingExecutionCalculationMember, error) {
 	if _, err := transactionForLock(ctx); err != nil {

@@ -55,6 +55,7 @@ type CampaignFlow interface {
 	GetSmartTargetingTestSamplingByID(ctx context.Context, customerID uint, campaignUUID string, calculationID int64) (*dto.SmartTargetingTestSamplingCalculationResponse, error)
 	ExecuteSmartTargetingTestSamplingCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) error
 	StartSmartTargetingExecutionCalculation(ctx context.Context, req *dto.SmartTargetingExecutionCalculationRequest, metadata *ClientMetadata) (*dto.SmartTargetingExecutionCalculationResponse, error)
+	GetCurrentSmartTargetingExecutionCalculation(ctx context.Context, customerID uint, campaignUUID string) (*dto.SmartTargetingExecutionCalculationResponse, error)
 	GetSmartTargetingExecutionCalculation(ctx context.Context, customerID uint, campaignUUID string, calculationID int64) (*dto.SmartTargetingExecutionCalculationResponse, error)
 	ExecuteSmartTargetingExecutionCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) error
 	ReconcileUndeliveredCampaignRefund(ctx context.Context, campaignID uint, eligibilityDelay time.Duration) error

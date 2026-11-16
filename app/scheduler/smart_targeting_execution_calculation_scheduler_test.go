@@ -29,6 +29,12 @@ func (r *executionCalculationSchedulerRepo) Save(context.Context, *models.Campai
 func (r *executionCalculationSchedulerRepo) ByID(context.Context, int64) (*models.CampaignTargetingExecutionCalculation, error) {
 	return nil, nil
 }
+func (r *executionCalculationSchedulerRepo) LatestByCampaignID(context.Context, uint) (*models.CampaignTargetingExecutionCalculation, error) {
+	return nil, nil
+}
+func (r *executionCalculationSchedulerRepo) LatestByInput(context.Context, uint, string, int64) (*models.CampaignTargetingExecutionCalculation, error) {
+	return nil, nil
+}
 func (r *executionCalculationSchedulerRepo) ActiveByCampaignID(context.Context, uint) (*models.CampaignTargetingExecutionCalculation, error) {
 	return nil, nil
 }
