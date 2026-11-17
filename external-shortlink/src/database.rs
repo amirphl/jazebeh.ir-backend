@@ -33,8 +33,7 @@ pub enum DatabaseError {
 impl Database {
     pub fn new(settings: &Settings) -> Result<Self, sqlx::Error> {
         let statement_timeout = postgres_timeout(settings.db_command_timeout);
-        let lock_timeout =
-            postgres_timeout(settings.db_command_timeout.min(Duration::from_secs(1)));
+        let lock_timeout = postgres_timeout(settings.db_lock_timeout);
         let pool = PgPoolOptions::new()
             .min_connections(settings.pool_min_size)
             .max_connections(settings.pool_max_size)
