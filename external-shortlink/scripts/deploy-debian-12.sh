@@ -607,17 +607,20 @@ write_service_env() {
     {
         printf '%s\n' \
             "EXTERNAL_SHORTLINK_DATABASE_URL=postgresql://external_shortlink_runtime:$POSTGRES_RUNTIME_PASSWORD@127.0.0.1:5433/external_shortlink" \
-            "EXTERNAL_SHORTLINK_API_TOKEN=$API_TOKEN"
-        awk '!/^EXTERNAL_SHORTLINK_DATABASE_URL=/ && !/^EXTERNAL_SHORTLINK_API_TOKEN=/' "$source_env"
+            "EXTERNAL_SHORTLINK_API_TOKEN=$API_TOKEN" \
+            'EXTERNAL_SHORTLINK_DB_COMMAND_TIMEOUT_SECONDS=15' \
+            'EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS=10' \
+            'EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS=0.100' \
+            'EXTERNAL_SHORTLINK_SPOOL_MAX_BYTES=51539607552' \
+            'EXTERNAL_SHORTLINK_SPOOL_MAX_EVENTS=20000000' \
+            'EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS=2'
+        awk '!/^(EXTERNAL_SHORTLINK_DATABASE_URL|EXTERNAL_SHORTLINK_API_TOKEN|EXTERNAL_SHORTLINK_DB_COMMAND_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS|EXTERNAL_SHORTLINK_SPOOL_MAX_BYTES|EXTERNAL_SHORTLINK_SPOOL_MAX_EVENTS|EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS)=/' "$source_env"
     } > "$temporary"
     install -o root -g "$SERVICE_GROUP" -m 0640 "$temporary" "$SERVICE_ENV"
     rm -f -- "$temporary"
 }
 
 install_release_files() {
-    log "building locked Rust release binary as $DEPLOYMENT_USER"
-    as_deployment_user cargo "+$RUST_TOOLCHAIN" build --release --locked --manifest-path "$SOURCE_DIR/Cargo.toml"
-
     if ! getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
         groupadd --system "$SERVICE_GROUP"
     fi
@@ -642,6 +645,14 @@ install_release_files() {
     validate_deployed_environment
     install -o root -g root -m 0644 "$INSTALL_DIR/app/deploy/external-shortlink.service" "/etc/systemd/system/$SERVICE_NAME.service"
     systemd-analyze verify "/etc/systemd/system/$SERVICE_NAME.service"
+}
+
+build_release() {
+    # Do this while the installed service is still running. A build failure must
+    # never turn a healthy redirect service into a deployment outage.
+    log "building locked Rust release binary as $DEPLOYMENT_USER before service replacement"
+    as_deployment_user cargo "+$RUST_TOOLCHAIN" build --release --locked --manifest-path "$SOURCE_DIR/Cargo.toml"
+    [[ -x "$SOURCE_DIR/target/release/external-shortlink" ]] || die 'release binary was not produced'
 }
 
 ensure_installed_deployment() {
@@ -776,6 +787,7 @@ start_service_and_verify() {
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
     if [[ "$restart" == true ]]; then
+        log "compiled release and PostgreSQL checks succeeded; performing the single service restart"
         systemctl restart "$SERVICE_NAME"
     else
         systemctl start "$SERVICE_NAME"
@@ -801,6 +813,7 @@ run_deploy() {
     verify_production_ip
     install_rust_toolchain
     prepare_secrets
+    build_release
     install_release_files
     start_service_and_verify true
     ensure_certificate
