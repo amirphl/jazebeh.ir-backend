@@ -4,8 +4,11 @@ use external_shortlink::{
     spool::{DurableSpool, SpoolError},
 };
 use rusqlite::Connection;
+use std::time::Duration;
 use tempfile::tempdir;
 use uuid::Uuid;
+
+const OPERATION_WAIT: Duration = Duration::from_secs(1);
 
 fn event() -> ClickEvent {
     ClickEvent {
@@ -35,13 +38,13 @@ async fn spool_is_durable_across_reopen() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("click-spool.sqlite3");
     let first = event();
-    let spool = DurableSpool::open(path.clone(), 10 * 1024 * 1024, 100)
+    let spool = DurableSpool::open(path.clone(), 10 * 1024 * 1024, 100, OPERATION_WAIT)
         .await
         .unwrap();
     spool.enqueue(&first).await.unwrap();
     drop(spool);
 
-    let reopened = DurableSpool::open(path, 10 * 1024 * 1024, 100)
+    let reopened = DurableSpool::open(path, 10 * 1024 * 1024, 100, OPERATION_WAIT)
         .await
         .unwrap();
     let events = reopened.peek(10).await.unwrap();
@@ -58,6 +61,7 @@ async fn spool_enforces_the_event_limit() {
         directory.path().join("click-spool.sqlite3"),
         10 * 1024 * 1024,
         1,
+        OPERATION_WAIT,
     )
     .await
     .unwrap();
@@ -73,7 +77,7 @@ async fn spool_capacity_is_reclaimed_after_replay() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("click-spool.sqlite3");
     let first = event();
-    let spool = DurableSpool::open(path.clone(), 1024 * 1024, 10)
+    let spool = DurableSpool::open(path.clone(), 1024 * 1024, 10, OPERATION_WAIT)
         .await
         .unwrap();
     spool.enqueue(&first).await.unwrap();
@@ -83,7 +87,9 @@ async fn spool_capacity_is_reclaimed_after_replay() {
 
     // The SQLite database file remains allocated after DELETE. Capacity must
     // still be based on queued payloads, not that historical file size.
-    let reopened = DurableSpool::open(path, capacity, 10).await.unwrap();
+    let reopened = DurableSpool::open(path, capacity, 10, OPERATION_WAIT)
+        .await
+        .unwrap();
     reopened.enqueue(&first).await.unwrap();
 }
 
@@ -92,7 +98,7 @@ async fn corrupt_spool_record_is_quarantined_without_blocking_replay() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("click-spool.sqlite3");
     let valid = event();
-    let spool = DurableSpool::open(path.clone(), 1024 * 1024, 10)
+    let spool = DurableSpool::open(path.clone(), 1024 * 1024, 10, OPERATION_WAIT)
         .await
         .unwrap();
     spool.enqueue(&valid).await.unwrap();
@@ -107,7 +113,9 @@ async fn corrupt_spool_record_is_quarantined_without_blocking_replay() {
         .unwrap();
     drop(connection);
 
-    let reopened = DurableSpool::open(path, 1024 * 1024, 10).await.unwrap();
+    let reopened = DurableSpool::open(path, 1024 * 1024, 10, OPERATION_WAIT)
+        .await
+        .unwrap();
     let events = reopened.peek(10).await.unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_id, valid.event_id);
