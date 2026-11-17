@@ -11,6 +11,7 @@ pub struct Settings {
     pub pool_min_size: u32,
     pub pool_max_size: u32,
     pub db_command_timeout: Duration,
+    pub db_lock_timeout: Duration,
     pub click_insert_timeout: Duration,
     pub link_lookup_timeout: Duration,
     pub cache_max_entries: u64,
@@ -22,6 +23,7 @@ pub struct Settings {
     pub spool_max_events: u64,
     pub spool_replay_batch_size: usize,
     pub spool_replay_interval: Duration,
+    pub spool_operation_timeout: Duration,
     pub acknowledged_retention_days: i64,
     pub purge_interval: Duration,
 }
@@ -74,12 +76,13 @@ impl Settings {
             pool_max_size,
             db_command_timeout: seconds(
                 "EXTERNAL_SHORTLINK_DB_COMMAND_TIMEOUT_SECONDS",
-                5.0,
+                15.0,
                 0.01,
             )?,
+            db_lock_timeout: seconds("EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS", 10.0, 0.01)?,
             click_insert_timeout: seconds(
                 "EXTERNAL_SHORTLINK_CLICK_INSERT_TIMEOUT_SECONDS",
-                0.025,
+                0.100,
                 0.001,
             )?,
             link_lookup_timeout: seconds(
@@ -109,15 +112,15 @@ impl Settings {
             )?)?,
             spool_max_bytes: unsigned(
                 "EXTERNAL_SHORTLINK_SPOOL_MAX_BYTES",
-                1024 * 1024 * 1024,
+                48 * 1024 * 1024 * 1024,
                 1,
-                4 * 1024 * 1024 * 1024,
+                60 * 1024 * 1024 * 1024,
             )?,
             spool_max_events: unsigned(
                 "EXTERNAL_SHORTLINK_SPOOL_MAX_EVENTS",
-                1_000_000,
+                20_000_000,
                 1,
-                5_000_000,
+                25_000_000,
             )?,
             spool_replay_batch_size: usize::try_from(unsigned(
                 "EXTERNAL_SHORTLINK_SPOOL_REPLAY_BATCH_SIZE",
@@ -129,6 +132,11 @@ impl Settings {
                 "EXTERNAL_SHORTLINK_SPOOL_REPLAY_INTERVAL_SECONDS",
                 1.0,
                 0.05,
+            )?,
+            spool_operation_timeout: seconds(
+                "EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS",
+                2.0,
+                0.01,
             )?,
             acknowledged_retention_days: i64::try_from(unsigned(
                 "EXTERNAL_SHORTLINK_ACK_RETENTION_DAYS",
