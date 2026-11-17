@@ -18,6 +18,7 @@ fn settings(database_url: String) -> Settings {
         pool_min_size: 0,
         pool_max_size: 2,
         db_command_timeout: Duration::from_secs(5),
+        db_lock_timeout: Duration::from_secs(5),
         click_insert_timeout: Duration::from_millis(100),
         link_lookup_timeout: Duration::from_millis(100),
         cache_max_entries: 100,
@@ -29,6 +30,7 @@ fn settings(database_url: String) -> Settings {
         spool_max_events: 100,
         spool_replay_batch_size: 10,
         spool_replay_interval: Duration::from_secs(1),
+        spool_operation_timeout: Duration::from_secs(1),
         acknowledged_retention_days: 7,
         purge_interval: Duration::from_secs(60),
     }
