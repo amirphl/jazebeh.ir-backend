@@ -1532,6 +1532,10 @@ const (
 	// response-buffer usage even when a customer selects many campaigns.
 	maxExcelWorksheetDataRows          = 1_048_575
 	maxCampaignAudienceClickReportRows = 100_000
+	// PostgreSQL's extended query protocol accepts no more than 65,535 bound
+	// parameters. Keep this well below that ceiling because the action lookup
+	// also binds the bundle ID and file status.
+	activeBundleActionUIDLookupBatchSize = 10_000
 )
 
 func (s *CampaignFlowImpl) ExportCampaignReport(ctx context.Context, campaignUUID string) ([]byte, error) {
@@ -1682,18 +1686,22 @@ func (s *CampaignFlowImpl) activeBundleActionUIDSet(ctx context.Context, bundleI
 	if bundleID == nil || *bundleID == 0 || len(uids) == 0 {
 		return result, nil
 	}
-	var found []string
-	err := s.db.WithContext(ctx).
-		Table("bundle_action_file_uids AS u").
-		Select("DISTINCT u.uid").
-		Joins("JOIN bundle_action_files AS f ON f.id=u.bundle_action_file_id").
-		Where("u.bundle_id=? AND f.status=? AND u.uid IN ?", *bundleID, models.BundleActionFileProcessed, uniqueSortedUIDs(uids)).
-		Scan(&found).Error
-	if err != nil {
-		return nil, err
-	}
-	for _, uid := range found {
-		result[uid] = true
+	uniqueUIDs := uniqueSortedUIDs(uids)
+	for start := 0; start < len(uniqueUIDs); start += activeBundleActionUIDLookupBatchSize {
+		end := min(start+activeBundleActionUIDLookupBatchSize, len(uniqueUIDs))
+		var found []string
+		err := s.db.WithContext(ctx).
+			Table("bundle_action_file_uids AS u").
+			Select("DISTINCT u.uid").
+			Joins("JOIN bundle_action_files AS f ON f.id=u.bundle_action_file_id").
+			Where("u.bundle_id=? AND f.status=? AND u.uid IN ?", *bundleID, models.BundleActionFileProcessed, uniqueUIDs[start:end]).
+			Scan(&found).Error
+		if err != nil {
+			return nil, err
+		}
+		for _, uid := range found {
+			result[uid] = true
+		}
 	}
 	return result, nil
 }
