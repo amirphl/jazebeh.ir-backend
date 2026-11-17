@@ -59,6 +59,7 @@ impl AppState {
             settings.spool_path.clone(),
             settings.spool_max_bytes,
             settings.spool_max_events,
+            settings.spool_operation_timeout,
         )
         .await
         .context("open durable click spool")?;
@@ -125,8 +126,11 @@ impl AppState {
                 );
                 Some(stats)
             }
+            Err(SpoolError::Busy) => {
+                tracing::debug!("durable click spool metrics deferred because the spool is busy");
+                None
+            }
             Err(error) => {
-                self.metrics.spool_dropped("stats_error");
                 error!(error = %error, "could not read durable click spool metrics");
                 None
             }
@@ -276,8 +280,10 @@ async fn spool_replay_loop(state: AppState, mut shutdown: watch::Receiver<bool>)
                         }
                         replay_failure_reported = false;
                     }
+                    Err(SpoolError::Busy) => {
+                        tracing::debug!("durable click spool replay deferred because the spool is busy");
+                    }
                     Err(error) => {
-                        state.metrics.spool_dropped("read_error");
                         if !replay_failure_reported {
                             error!(error = %error, "could not read durable click spool");
                             replay_failure_reported = true;
@@ -783,6 +789,7 @@ mod tests {
             pool_min_size: 0,
             pool_max_size: 1,
             db_command_timeout: Duration::from_millis(50),
+            db_lock_timeout: Duration::from_millis(50),
             click_insert_timeout: Duration::from_millis(5),
             link_lookup_timeout: Duration::from_millis(5),
             cache_max_entries: 100,
@@ -794,6 +801,7 @@ mod tests {
             spool_max_events: 100,
             spool_replay_batch_size: 10,
             spool_replay_interval: Duration::from_secs(60),
+            spool_operation_timeout: Duration::from_secs(1),
             acknowledged_retention_days: 7,
             purge_interval: Duration::from_secs(60),
         }
