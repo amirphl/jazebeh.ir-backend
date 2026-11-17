@@ -110,6 +110,20 @@ defaults. `EXTERNAL_SHORTLINK_BIND_ADDR` defaults to `127.0.0.1:8081`; do not
 bind it publicly. The spool path must be writable by the `external-shortlink`
 service account and live on durable local storage.
 
+For an existing installation, add
+`EXTERNAL_SHORTLINK_DB_LOCK_TIMEOUT_SECONDS=10` to
+`/etc/external-shortlink.env` before deploying this version. This is separate
+from the command timeout so transient PostgreSQL lock holders get a bounded
+chance to clear. The default spool-operation wait is now two seconds; set
+`EXTERNAL_SHORTLINK_SPOOL_OPERATION_TIMEOUT_SECONDS` only when a different
+durability-versus-redirect-latency trade-off is required.
+
+The production example reserves up to 48 GiB for the click spool and caps it
+at 20 million events, leaving roughly 27 GB on a 75 GB host for PostgreSQL,
+the operating system, and growth. Alert before the spool reaches either limit;
+no finite local disk allocation can guarantee retention during an indefinitely
+long PostgreSQL outage.
+
 ## Production application configuration
 
 Apply production migration `0135_external_short_link_sync.sql`, then configure
