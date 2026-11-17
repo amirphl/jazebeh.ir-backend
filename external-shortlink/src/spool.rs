@@ -14,8 +14,6 @@ use uuid::Uuid;
 use crate::domain::ClickEvent;
 
 const COMPACT_AFTER_DRAIN_BYTES: u64 = 64 * 1024 * 1024;
-const SPOOL_OPERATION_WAIT: std::time::Duration = std::time::Duration::from_millis(100);
-
 #[derive(Clone)]
 pub struct DurableSpool {
     inner: Arc<Mutex<Connection>>,
@@ -23,6 +21,7 @@ pub struct DurableSpool {
     path: Arc<PathBuf>,
     max_bytes: u64,
     max_events: u64,
+    operation_wait: std::time::Duration,
 }
 
 #[derive(Debug, Error)]
@@ -36,7 +35,12 @@ pub enum SpoolError {
 }
 
 impl DurableSpool {
-    pub async fn open(path: PathBuf, max_bytes: u64, max_events: u64) -> Result<Self, SpoolError> {
+    pub async fn open(
+        path: PathBuf,
+        max_bytes: u64,
+        max_events: u64,
+        operation_wait: std::time::Duration,
+    ) -> Result<Self, SpoolError> {
         let connection_path = path.clone();
         let connection = task::spawn_blocking(move || open_connection(&connection_path))
             .await
@@ -47,6 +51,7 @@ impl DurableSpool {
             path: Arc::new(path),
             max_bytes,
             max_events,
+            operation_wait,
         })
     }
 
@@ -58,20 +63,19 @@ impl DurableSpool {
         let max_events = self.max_events;
         self.run(move |connection| {
             let event_id = event_id.to_string();
-            let existing: Option<i64> = connection
-                .query_row(
-                    "SELECT 1 FROM click_spool WHERE event_id = ?1",
-                    [&event_id],
-                    |row| row.get(0),
-                )
+            let transaction = connection.transaction().map_err(storage)?;
+            let existing: Option<i64> = transaction
+                .query_row("SELECT 1 FROM click_spool WHERE event_id = ?1", [&event_id], |row| {
+                    row.get(0)
+                })
                 .optional()
                 .map_err(storage)?;
             if existing.is_some() {
                 return Ok(());
             }
-            let (event_count, queued_bytes): (u64, u64) = connection
+            let (event_count, queued_bytes): (u64, u64) = transaction
                 .query_row(
-                    "SELECT COUNT(*), COALESCE(SUM(payload_bytes), 0) FROM click_spool",
+                    "SELECT event_count, queued_bytes FROM click_spool_state WHERE id = 1",
                     [],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
@@ -84,12 +88,19 @@ impl DurableSpool {
             if queued_bytes.saturating_add(payload_bytes) > max_bytes {
                 return Err(SpoolError::Full);
             }
-            connection
+            transaction
                 .execute(
                     "INSERT INTO click_spool(event_id, payload, payload_bytes, created_unix) VALUES (?1, ?2, ?3, ?4)",
                     params![event_id, payload, payload_bytes, unix_time()],
                 )
                 .map_err(storage)?;
+            transaction
+                .execute(
+                    "UPDATE click_spool_state SET event_count = event_count + 1, queued_bytes = queued_bytes + ?1 WHERE id = 1",
+                    [payload_bytes],
+                )
+                .map_err(storage)?;
+            transaction.commit().map_err(storage)?;
             Ok(())
         })
         .await
@@ -135,6 +146,7 @@ impl DurableSpool {
                         .map_err(storage)?;
                 }
                 transaction.commit().map_err(storage)?;
+                refresh_capacity_state(connection)?;
                 warn!(
                     quarantined_events,
                     "quarantined corrupt durable click spool records"
@@ -150,9 +162,23 @@ impl DurableSpool {
             return Ok(());
         }
         let ids: Vec<String> = event_ids.iter().map(Uuid::to_string).collect();
+        let event_count = ids.len();
         let path = Arc::clone(&self.path);
         self.run(move |connection| {
             let transaction = connection.transaction().map_err(storage)?;
+            let mut removed_bytes = 0_u64;
+            {
+                let mut statement = transaction
+                    .prepare("SELECT payload_bytes FROM click_spool WHERE event_id = ?1")
+                    .map_err(storage)?;
+                for id in &ids {
+                    let payload_bytes: Option<u64> = statement
+                        .query_row([id], |row| row.get(0))
+                        .optional()
+                        .map_err(storage)?;
+                    removed_bytes = removed_bytes.saturating_add(payload_bytes.unwrap_or(0));
+                }
+            }
             {
                 let mut statement = transaction
                     .prepare("DELETE FROM click_spool WHERE event_id = ?1")
@@ -161,9 +187,15 @@ impl DurableSpool {
                     statement.execute([id]).map_err(storage)?;
                 }
             }
+            transaction
+                .execute(
+                    "UPDATE click_spool_state SET event_count = MAX(event_count - ?1, 0), queued_bytes = MAX(queued_bytes - ?2, 0) WHERE id = 1",
+                    params![event_count, removed_bytes],
+                )
+                .map_err(storage)?;
             transaction.commit().map_err(storage)?;
             let remaining: u64 = connection
-                .query_row("SELECT COUNT(*) FROM click_spool", [], |row| row.get(0))
+                .query_row("SELECT event_count FROM click_spool_state WHERE id = 1", [], |row| row.get(0))
                 .map_err(storage)?;
             let disk_bytes = database_size(&path);
             if remaining == 0 && disk_bytes >= COMPACT_AFTER_DRAIN_BYTES {
@@ -182,15 +214,22 @@ impl DurableSpool {
     pub async fn stats(&self) -> Result<SpoolStats, SpoolError> {
         let path = Arc::clone(&self.path);
         self.run(move |connection| {
-            let (events, queued_bytes, oldest): (u64, u64, Option<f64>) = connection
+            let (events, queued_bytes): (u64, u64) = connection
                 .query_row(
-                    "SELECT COUNT(*), COALESCE(SUM(payload_bytes), 0), MIN(created_unix) FROM click_spool",
+                    "SELECT event_count, queued_bytes FROM click_spool_state WHERE id = 1",
                     [],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .map_err(storage)?;
+            let oldest: Option<f64> = connection
+                .query_row("SELECT MIN(created_unix) FROM click_spool", [], |row| {
+                    row.get(0)
+                })
+                .map_err(storage)?;
             let dead_letter_events: u64 = connection
-                .query_row("SELECT COUNT(*) FROM click_spool_dead_letters", [], |row| row.get(0))
+                .query_row("SELECT COUNT(*) FROM click_spool_dead_letters", [], |row| {
+                    row.get(0)
+                })
                 .map_err(storage)?;
             let oldest_age_seconds = oldest.map_or(0.0, |created| (unix_time() - created).max(0.0));
             Ok(SpoolStats {
@@ -210,7 +249,7 @@ impl DurableSpool {
         F: FnOnce(&mut Connection) -> Result<T, SpoolError> + Send + 'static,
     {
         let permit = time::timeout(
-            SPOOL_OPERATION_WAIT,
+            self.operation_wait,
             Arc::clone(&self.operation_gate).acquire_owned(),
         )
         .await
@@ -263,6 +302,11 @@ fn open_connection(path: &Path) -> Result<Connection, SpoolError> {
                 created_unix REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_click_spool_created ON click_spool(created_unix);
+            CREATE TABLE IF NOT EXISTS click_spool_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                event_count INTEGER NOT NULL,
+                queued_bytes INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS click_spool_dead_letters (
                 event_id TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
@@ -286,7 +330,20 @@ fn open_connection(path: &Path) -> Result<Connection, SpoolError> {
             )
             .map_err(storage)?;
     }
+    refresh_capacity_state(&connection)?;
     Ok(connection)
+}
+
+fn refresh_capacity_state(connection: &Connection) -> Result<(), SpoolError> {
+    connection
+        .execute(
+            "INSERT INTO click_spool_state(id, event_count, queued_bytes) \
+             SELECT 1, COUNT(*), COALESCE(SUM(payload_bytes), 0) FROM click_spool WHERE true \
+             ON CONFLICT(id) DO UPDATE SET event_count = excluded.event_count, queued_bytes = excluded.queued_bytes",
+            [],
+        )
+        .map_err(storage)?;
+    Ok(())
 }
 
 fn has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, SpoolError> {
