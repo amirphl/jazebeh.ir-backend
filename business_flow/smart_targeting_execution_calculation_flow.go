@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -300,7 +301,7 @@ func (s *CampaignFlowImpl) executionCalculationStillMatches(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	if input.header.SelectionInputHash != calculation.SelectionInputHash || string(input.header.RequestSnapshot) != string(calculation.RequestSnapshot) {
+	if input.header.SelectionInputHash != calculation.SelectionInputHash || !sameExecutionReservationRequestSnapshot(input.header.RequestSnapshot, calculation.RequestSnapshot) {
 		return errSmartTargetingExecutionCalculationStale
 	}
 	if err := s.selectedTagRepo.Validate(ctx, campaign.ID, *campaign.BundleID); err != nil {
@@ -310,6 +311,20 @@ func (s *CampaignFlowImpl) executionCalculationStillMatches(ctx context.Context,
 		return err
 	}
 	return nil
+}
+
+// sameExecutionReservationRequestSnapshot compares the JSON value, rather
+// than its byte representation. request_snapshot is JSONB, whose text output
+// may be reformatted by PostgreSQL after it is persisted.
+func sameExecutionReservationRequestSnapshot(left, right json.RawMessage) bool {
+	var leftSnapshot, rightSnapshot repository.ExecutionReservationRequestSnapshot
+	if json.Unmarshal(left, &leftSnapshot) != nil || json.Unmarshal(right, &rightSnapshot) != nil {
+		return false
+	}
+	return slices.Equal(leftSnapshot.TagIDs, rightSnapshot.TagIDs) &&
+		slices.Equal(leftSnapshot.ScoreClasses, rightSnapshot.ScoreClasses) &&
+		slices.Equal(leftSnapshot.AllowedColors, rightSnapshot.AllowedColors) &&
+		leftSnapshot.Platform == rightSnapshot.Platform
 }
 
 func (s *CampaignFlowImpl) ExecuteSmartTargetingExecutionCalculation(ctx context.Context, calculationID int64, leaseStartedAt time.Time) (err error) {
