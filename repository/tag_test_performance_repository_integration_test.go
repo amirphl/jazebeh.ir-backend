@@ -114,7 +114,7 @@ WHERE campaign_id = 1900000001`, fourthLease.Add(-time.Second), fourthLease, fou
 	}
 
 	// Feature 6 reuses the same materialization for Execution Campaigns. Adding
-	// one delivered/clicked Tag A audience yields a global weighted CTR of
+	// one delivered/clicked Tag A audience yields a Bundle-weighted CTR of
 	// (1 Test + 1 Execution clicks) / (3 Test + 1 Execution deliveries) = 1/2.
 	executionLease := lease.Add(8 * time.Minute)
 	if err := repo.DiscoverPending(context.Background(), executionLease.Add(-time.Minute)); err != nil {
