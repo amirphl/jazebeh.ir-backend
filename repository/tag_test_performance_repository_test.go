@@ -128,8 +128,9 @@ func TestOverallSummarySQLUsesWeightedTotalsAndStableUpsert(t *testing.T) {
 		"SUM(performance.sent_count)",
 		"SUM(performance.delivered_count)",
 		"SUM(performance.click_count)",
-		"GROUP BY performance.tag_id",
-		"ON CONFLICT (tag_id) DO UPDATE",
+		"WHERE performance.bundle_id = ?",
+		"GROUP BY performance.bundle_id, performance.tag_id",
+		"ON CONFLICT (bundle_id, tag_id) DO UPDATE",
 	} {
 		if !strings.Contains(overallSummarySQL, fragment) {
 			t.Fatalf("overall summary query does not contain %q", fragment)
