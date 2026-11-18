@@ -17,7 +17,7 @@ var (
 )
 
 // TagTestPerformanceRepository owns discovery, durable leasing, per-Campaign
-// recomputation, Bundle/tag Test refresh, and global overall refresh. The
+// recomputation, Bundle/tag Test refresh, and Bundle/tag overall refresh. The
 // historical name is retained for configuration compatibility. It never locks
 // short-link or click rows: ingestion and redirects remain independent.
 type TagTestPerformanceRepository interface {
@@ -320,10 +320,9 @@ WHERE campaign.id = ?
 			return err
 		}
 
-		// Only the inexpensive materialized summaries are serialized. This global
-		// lock is required because different Bundles can update the same tag's
-		// overall row; the high-volume Campaign aggregation remains parallel.
-		if err := db.Exec("SELECT pg_advisory_xact_lock(845171, 0)").Error; err != nil {
+		// Only the inexpensive materialized summaries are serialized per Bundle.
+		// Campaign aggregation remains parallel across Bundles.
+		if err := db.Exec("SELECT pg_advisory_xact_lock(845171, ?::integer)", campaign.BundleID).Error; err != nil {
 			return fmt.Errorf("lock tag performance summaries: %w", err)
 		}
 
@@ -356,7 +355,7 @@ WHERE campaign.id = ?
 		if err := refreshTagTestPhaseSummary(db, campaign.BundleID, at); err != nil {
 			return err
 		}
-		if err := refreshTagOverallPerformanceSummary(db, at); err != nil {
+		if err := refreshTagOverallPerformanceSummary(db, campaign.BundleID, at); err != nil {
 			return err
 		}
 		return nil
@@ -447,6 +446,7 @@ WHERE summary.bundle_id = ?
 
 const overallSummarySQL = `
 INSERT INTO tag_overall_performance_summaries (
+    bundle_id,
     tag_id,
     total_selected_count,
     total_sent_count,
@@ -457,6 +457,7 @@ INSERT INTO tag_overall_performance_summaries (
     updated_at
 )
 SELECT
+    performance.bundle_id,
     performance.tag_id,
     SUM(performance.selected_count),
     SUM(performance.sent_count),
@@ -466,8 +467,9 @@ SELECT
     ?::timestamptz,
     ?::timestamptz
 FROM campaign_tag_test_performances AS performance
-GROUP BY performance.tag_id
-ON CONFLICT (tag_id) DO UPDATE
+WHERE performance.bundle_id = ?
+GROUP BY performance.bundle_id, performance.tag_id
+ON CONFLICT (bundle_id, tag_id) DO UPDATE
 SET total_selected_count = EXCLUDED.total_selected_count,
     total_sent_count = EXCLUDED.total_sent_count,
     total_delivered_count = EXCLUDED.total_delivered_count,
@@ -475,18 +477,20 @@ SET total_selected_count = EXCLUDED.total_selected_count,
     calculation_version = EXCLUDED.calculation_version,
     updated_at = EXCLUDED.updated_at`
 
-func refreshTagOverallPerformanceSummary(db *gorm.DB, at time.Time) error {
-	if err := db.Exec(overallSummarySQL, models.TagTestPerformanceCalculationVersion, at, at).Error; err != nil {
+func refreshTagOverallPerformanceSummary(db *gorm.DB, bundleID uint, at time.Time) error {
+	if err := db.Exec(overallSummarySQL, models.TagTestPerformanceCalculationVersion, at, at, bundleID).Error; err != nil {
 		return fmt.Errorf("refresh overall tag performance summary: %w", err)
 	}
 	const deleteStaleSQL = `
 DELETE FROM tag_overall_performance_summaries AS summary
-WHERE NOT EXISTS (
+WHERE summary.bundle_id = ?
+  AND NOT EXISTS (
     SELECT 1
     FROM campaign_tag_test_performances AS performance
-    WHERE performance.tag_id = summary.tag_id
+    WHERE performance.bundle_id = summary.bundle_id
+      AND performance.tag_id = summary.tag_id
 )`
-	if err := db.Exec(deleteStaleSQL).Error; err != nil {
+	if err := db.Exec(deleteStaleSQL, bundleID).Error; err != nil {
 		return fmt.Errorf("delete stale overall tag performance summaries: %w", err)
 	}
 	return nil
