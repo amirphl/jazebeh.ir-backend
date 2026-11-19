@@ -110,6 +110,7 @@ func TestBaseAvailableSmartTagsQueryReadsMaterializedTestPerformance(t *testing.
 		"LEFT JOIN tag_test_phase_performance_summaries AS tag_test_summary",
 		"LEFT JOIN tag_overall_performance_summaries AS tag_overall_summary",
 		"tag_test_summary.bundle_id = $3",
+		"tag_overall_summary.bundle_id = $4",
 		"tag_overall_summary.tag_id = available_tags.tag_id",
 		"ORDER BY tag_test_summary.test_phase_avg_ctr DESC NULLS LAST",
 	} {
@@ -135,7 +136,7 @@ func TestBaseAvailableSmartTagsQueryFiltersCapacityStrictly(t *testing.T) {
 	if statement.Error != nil {
 		t.Fatalf("build capacity-filtered tag query: %v", statement.Error)
 	}
-	if !strings.Contains(statement.SQL.String(), "available_tags.tag_audience_count > $4") {
+	if !strings.Contains(statement.SQL.String(), "available_tags.tag_audience_count > $5") {
 		t.Fatalf("capacity query is not strict-greater-than:\n%s", statement.SQL.String())
 	}
 	if got, want := statement.Vars[len(statement.Vars)-1], capacity; got != want {
@@ -161,8 +162,8 @@ func TestCampaignTestPerformanceJoinIsBundleScoped(t *testing.T) {
 	}
 	sql := statement.SQL.String()
 	for _, fragment := range []string{
-		"campaign_test_performance.campaign_id = $4",
-		"campaign_test_performance.bundle_id = $5",
+		"campaign_test_performance.campaign_id = $5",
+		"campaign_test_performance.bundle_id = $6",
 		"campaign_test_performance.tag_id = available_tags.tag_id",
 		"campaign_test_performance.phase_type = 'test'",
 	} {
