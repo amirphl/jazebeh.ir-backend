@@ -164,7 +164,8 @@ func (r *CampaignSelectedTagRepositoryImpl) baseAvailableQuery(ctx context.Conte
                  ON tag_test_summary.bundle_id = ?
 				AND tag_test_summary.tag_id = available_tags.tag_id`, bundleID).
 		Joins(`LEFT JOIN tag_overall_performance_summaries AS tag_overall_summary
-				 ON tag_overall_summary.tag_id = available_tags.tag_id`)
+				 ON tag_overall_summary.bundle_id = ?
+				AND tag_overall_summary.tag_id = available_tags.tag_id`, bundleID)
 	query = applySmartTagSearch(query, search)
 	if capacity != nil {
 		query = query.Where("available_tags.tag_audience_count > ?", *capacity)
@@ -352,7 +353,8 @@ func (r *CampaignSelectedTagRepositoryImpl) Replace(ctx context.Context, campaig
                      ON tag_test_summary.bundle_id = ?
 					AND tag_test_summary.tag_id = available_tags.tag_id`, bundleID).
 			Joins(`LEFT JOIN tag_overall_performance_summaries AS tag_overall_summary
-					 ON tag_overall_summary.tag_id = available_tags.tag_id`).
+					 ON tag_overall_summary.bundle_id = ?
+					AND tag_overall_summary.tag_id = available_tags.tag_id`, bundleID).
 			Joins(`LEFT JOIN bundle_action_tag_metrics AS action_tag_metrics
 					 ON action_tag_metrics.bundle_id = ? AND action_tag_metrics.tag_id = available_tags.tag_id`, bundleID).
 			Select(`available_tags.tag_id,
