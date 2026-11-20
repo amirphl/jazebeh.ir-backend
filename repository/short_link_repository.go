@@ -460,6 +460,16 @@ func (r *ShortLinkRepositoryImpl) GetLastScenarioID(ctx context.Context) (uint, 
 	return uint(max.Int64), nil
 }
 
+// NextScenarioID reserves an ID in PostgreSQL rather than deriving one from a
+// snapshot of short_links, which races across application replicas.
+func (r *ShortLinkRepositoryImpl) NextScenarioID(ctx context.Context) (uint, error) {
+	var id uint
+	if err := r.getDB(ctx).Raw("SELECT nextval('short_links_scenario_id_seq')").Scan(&id).Error; err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 // GetMaxUIDSince returns the highest UID (by numeric base36 order) among
 // short links created strictly after the provided timestamp. It orders by
 // character length first, then lexicographically, which is correct for fixed-length
@@ -469,7 +479,7 @@ func (r *ShortLinkRepositoryImpl) GetMaxUIDSince(ctx context.Context, since time
 	var uids []string
 	q := db.Model(&models.ShortLink{}).
 		Where("created_at > ?", since).
-		Order("id DESC").
+		Order("length(uid) DESC, uid DESC").
 		Limit(1)
 	if err := q.Pluck("uid", &uids).Error; err != nil {
 		return "", err
