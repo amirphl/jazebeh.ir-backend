@@ -50,12 +50,10 @@ func (s *BotShortLinkFlowImpl) CreateShortLink(ctx context.Context, req *dto.Bot
 	lockShortLinkGen()
 	defer unlockShortLinkGen()
 
-	// read last scenario id from last short link from database and increment it
-	lastScenarioID, err := s.shortRepo.GetLastScenarioID(ctx)
+	newScenarioID, err := s.shortRepo.NextScenarioID(ctx)
 	if err != nil {
 		return nil, NewBusinessError("FETCH_SCENARIO_ID_FAILED", "Failed to determine next scenario id", err)
 	}
-	newScenarioID := lastScenarioID + 1
 
 	row := &models.ShortLink{
 		UID:         req.UID,
@@ -86,12 +84,10 @@ func (s *BotShortLinkFlowImpl) CreateShortLinks(ctx context.Context, req *dto.Bo
 	lockShortLinkGen()
 	defer unlockShortLinkGen()
 
-	// read last scenario id from last short link from database and increment it
-	lastScenarioID, err := s.shortRepo.GetLastScenarioID(ctx)
+	newScenarioID, err := s.shortRepo.NextScenarioID(ctx)
 	if err != nil {
 		return nil, NewBusinessError("FETCH_SCENARIO_ID_FAILED", "Failed to determine next scenario id", err)
 	}
-	newScenarioID := lastScenarioID + 1
 
 	rows := make([]*models.ShortLink, 0, len(req.Items))
 	for _, it := range req.Items {
@@ -181,11 +177,10 @@ func (s *BotShortLinkFlowImpl) GenerateAndCreateShortLinks(ctx context.Context, 
 			seq = n + 1
 		}
 
-		lastScenarioID, scenarioErr := s.shortRepo.GetLastScenarioID(ctx)
+		newScenarioID, scenarioErr := s.shortRepo.NextScenarioID(ctx)
 		if scenarioErr != nil {
 			return NewBusinessError("FETCH_SCENARIO_ID_FAILED", "Failed to determine next scenario id", scenarioErr)
 		}
-		newScenarioID := lastScenarioID + 1
 
 		codes = make([]string, len(req.Items))
 		rows = make([]*models.ShortLink, 0, len(req.Items))
