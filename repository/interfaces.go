@@ -530,6 +530,7 @@ type ShortLinkRepository interface {
 	ListWithClicksDetailsByScenarioNameRegex(ctx context.Context, pattern string, orderBy string) ([]*ShortLinkWithClick, error)
 	ListWithClicksDetailsByScenarioNameLike(ctx context.Context, pattern string, orderBy string) ([]*ShortLinkWithClick, error)
 	GetLastScenarioID(ctx context.Context) (uint, error)
+	NextScenarioID(ctx context.Context) (uint, error)
 	GetMaxUIDSince(ctx context.Context, since time.Time) (string, error)
 }
 
