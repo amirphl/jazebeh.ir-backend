@@ -3,7 +3,18 @@
 
 \set ON_ERROR_STOP on
 
+\echo 'Running 0160_harden_admin_short_link_upload_jobs_down.sql...'
+\i migrations/0160_harden_admin_short_link_upload_jobs_down.sql
+\echo 'Running 0159_create_admin_short_link_upload_jobs_down.sql...'
+\i migrations/0159_create_admin_short_link_upload_jobs_down.sql
+
 \echo 'Starting database rollback...'
+
+\echo 'Running 0158_cascade_bundle_overall_tag_ctr_summary_down.sql...'
+\i migrations/0158_cascade_bundle_overall_tag_ctr_summary_down.sql
+
+\echo 'Running 0157_scope_overall_tag_ctr_to_bundle_down.sql...'
+\i migrations/0157_scope_overall_tag_ctr_to_bundle_down.sql
 
 \echo 'Running 0156_create_bundle_action_reporting_down.sql...'
 \i migrations/0156_create_bundle_action_reporting_down.sql
