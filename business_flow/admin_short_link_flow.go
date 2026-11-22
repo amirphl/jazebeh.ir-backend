@@ -1,12 +1,16 @@
 package businessflow
 
 import (
-	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -16,8 +20,20 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 	"github.com/amirphl/Yamata-no-Orochi/models"
 	"github.com/amirphl/Yamata-no-Orochi/repository"
+	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 )
+
+const (
+	adminUploadLeaseDuration = 35 * time.Minute
+	adminUploadMaxAttempts   = 10
+)
+
+type permanentUploadError struct{ err error }
+
+func (e permanentUploadError) Error() string { return e.err.Error() }
+func (e permanentUploadError) Unwrap() error { return e.err }
+func permanentUpload(err error) error        { return permanentUploadError{err: err} }
 
 // AdminShortLinkFlow provides use cases for admin short link creation
 // The admin uploads a CSV with a 'long_link' column and provides a short_link_domain parameter
@@ -32,6 +48,8 @@ import (
 // If not provided with a scheme, https:// will be prefixed automatically
 type AdminShortLinkFlow interface {
 	CreateShortLinksFromCSV(ctx context.Context, csvReader io.Reader, shortLinkDomain string, scenarioName string) (*dto.AdminCreateShortLinksResponse, error)
+	UploadJob(ctx context.Context, id string) (*dto.AdminShortLinkUploadJobDTO, error)
+	ProcessPendingUploadJobs(ctx context.Context) error
 	DownloadShortLinksCSV(ctx context.Context, scenarioID uint) (string, []byte, error)
 	DownloadShortLinksWithClicksCSV(ctx context.Context, scenarioID uint) (string, []byte, error)
 	DownloadShortLinksWithClicksCSVRange(ctx context.Context, scenarioFrom, scenarioTo uint) (string, []byte, error)
@@ -42,10 +60,16 @@ type AdminShortLinkFlowImpl struct {
 	repo      repository.ShortLinkRepository
 	clickRepo repository.ShortLinkClickRepository
 	auditRepo repository.AuditLogRepository
+	publisher ShortLinkMappingPublisher
+	jobRepo   repository.AdminShortLinkUploadJobRepository
 }
 
-func NewAdminShortLinkFlow(repo repository.ShortLinkRepository, clickRepo repository.ShortLinkClickRepository, auditRepo repository.AuditLogRepository) AdminShortLinkFlow {
-	return &AdminShortLinkFlowImpl{repo: repo, clickRepo: clickRepo, auditRepo: auditRepo}
+func NewAdminShortLinkFlow(repo repository.ShortLinkRepository, clickRepo repository.ShortLinkClickRepository, auditRepo repository.AuditLogRepository, jobRepo repository.AdminShortLinkUploadJobRepository, publishers ...ShortLinkMappingPublisher) AdminShortLinkFlow {
+	var publisher ShortLinkMappingPublisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
+	}
+	return &AdminShortLinkFlowImpl{repo: repo, clickRepo: clickRepo, auditRepo: auditRepo, publisher: publisher, jobRepo: jobRepo}
 }
 
 func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(ctx context.Context, csvReader io.Reader, shortLinkDomain string, scenarioName string) (*dto.AdminCreateShortLinksResponse, error) {
@@ -62,122 +86,30 @@ func (f *AdminShortLinkFlowImpl) CreateShortLinksFromCSV(ctx context.Context, cs
 		return nil, NewBusinessError("VALIDATION_ERROR", "scenario_name is required", nil)
 	}
 
-	// Determine new scenario id upfront for the response (with lock)
-	lockShortLinkGen()
-	lastScenarioID, err := f.repo.GetLastScenarioID(ctx)
-	if err != nil {
-		unlockShortLinkGen()
-		return nil, NewBusinessError("FETCH_SCENARIO_ID_FAILED", "Failed to determine next scenario id", err)
+	if f.jobRepo == nil {
+		return nil, NewBusinessError("UPLOAD_JOB_UNAVAILABLE", "Admin upload jobs are not configured", nil)
 	}
-	newScenarioID := lastScenarioID + 1
-	unlockShortLinkGen()
-
-	// Buffer the CSV content to allow async processing after we return
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, csvReader); err != nil {
 		return nil, NewBusinessError("CSV_READ_ERROR", "Failed to read CSV", err)
 	}
-
-	// Spawn background job with longer timeout
-	go func(data []byte, domain, scenario string, scenarioID uint) {
-		lockShortLinkGen()
-		defer unlockShortLinkGen()
-
-		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
-
-		reader := csv.NewReader(bufio.NewReader(bytes.NewReader(data)))
-		reader.TrimLeadingSpace = true
-
-		header, err := reader.Read()
-		if err != nil {
-			return
-		}
-		colIndex := map[string]int{}
-		for i, h := range header {
-			colIndex[strings.ToLower(strings.TrimSpace(h))] = i
-		}
-		longIdx, ok := colIndex["long_link"]
-		if !ok {
-			return
-		}
-
-		// Compute starting UID sequence
-		cutoff := time.Date(2025, 11, 10, 15, 45, 11, 401492000, time.UTC)
-		lastUID, err := f.repo.GetMaxUIDSince(bgCtx, cutoff)
-		if err != nil {
-			return
-		}
-		var seq uint64
-		if lastUID != "" {
-			n, err := decodeBase36(lastUID)
-			if err != nil {
-				return
-			}
-			seq = n + 1
-		} else {
-			seq = 0
-		}
-
-		batch := make([]*models.ShortLink, 0, 5000)
-		flush := func() {
-			if len(batch) == 0 {
-				return
-			}
-			_ = f.repo.SaveBatch(bgCtx, batch)
-			batch = batch[:0]
-		}
-		for {
-			rec, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				break
-			}
-			if longIdx >= len(rec) {
-				continue
-			}
-			longLink := strings.TrimSpace(rec[longIdx])
-			if longLink == "" {
-				continue
-			}
-
-			uid, err := formatSequentialUID(seq)
-			if err != nil {
-				break
-			}
-			seq++
-			shortURL := fmt.Sprintf("%s/%s", domain, uid)
-			sid := scenarioID
-			sn := scenario
-			batch = append(batch, &models.ShortLink{
-				UID:          uid,
-				CampaignID:   nil,
-				ClientID:     nil,
-				PhoneNumber:  nil,
-				ScenarioID:   &sid,
-				ScenarioName: &sn,
-				LongLink:     longLink,
-				ShortLink:    shortURL,
-			})
-			if len(batch) >= 5000 {
-				flush()
-			}
-		}
-		flush()
-	}(buf.Bytes(), shortLinkDomain, scenarioName, newScenarioID)
-
-	// Return immediately with accepted message and the scenario id
-	resp := &dto.AdminCreateShortLinksResponse{
-		Message:    "Upload accepted; processing asynchronously",
-		TotalRows:  0,
-		Created:    0,
-		Skipped:    0,
-		ScenarioID: newScenarioID,
+	scenarioID, err := f.repo.NextScenarioID(ctx)
+	if err != nil {
+		return nil, NewBusinessError("RESERVE_SCENARIO_ID_FAILED", "Failed to reserve scenario id", err)
 	}
+	keyRaw := sha256.Sum256([]byte(uuid.NewString()))
+	job := &models.AdminShortLinkUploadJob{ID: uuid.NewString(), AllocationKey: hex.EncodeToString(keyRaw[:]), ScenarioID: scenarioID, ScenarioName: scenarioName, Domain: shortLinkDomain, CSVData: buf.Bytes(), Status: "pending"}
+	if err := f.jobRepo.Save(ctx, job); err != nil {
+		return nil, NewBusinessError("CREATE_UPLOAD_JOB_FAILED", "Failed to create upload job", err)
+	}
+	_, _ = f.processJobUntil(ctx, job.ID)
+	current, _ := f.jobRepo.ByID(ctx, job.ID)
+	if current == nil {
+		current = job
+	}
+	resp := &dto.AdminCreateShortLinksResponse{Message: "Upload processing", TotalRows: current.TotalRows, Created: current.Created, Skipped: current.Skipped, ScenarioID: current.ScenarioID, Job: mapAdminUploadJob(current)}
 	logAdminAction(ctx, f.auditRepo, models.AuditActionAdminCreateShortLinks, "Admin upload short link CSV", true, nil, map[string]any{
-		"scenario_id":   newScenarioID,
+		"scenario_id":   current.ScenarioID,
 		"scenario_name": scenarioName,
 		"domain":        shortLinkDomain,
 	}, nil)
@@ -189,11 +121,239 @@ func normalizeDomain(domain string) string {
 	if domain == "" {
 		return ""
 	}
-	if !strings.HasPrefix(domain, "http://") && !strings.HasPrefix(domain, "https://") {
+	if !strings.Contains(domain, "://") {
 		domain = "https://" + domain
 	}
-	// remove trailing slashes
-	return strings.TrimRight(domain, "/")
+	u, err := url.Parse(domain)
+	if err != nil || u.Scheme != "https" || u.Hostname() != "jzbe.ir" || u.User != nil || u.Port() != "" || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" {
+		return ""
+	}
+	return "https://jzbe.ir"
+}
+
+func mapAdminUploadJob(j *models.AdminShortLinkUploadJob) dto.AdminShortLinkUploadJobDTO {
+	return dto.AdminShortLinkUploadJobDTO{ID: j.ID, ScenarioID: j.ScenarioID, Status: j.Status, TotalRows: j.TotalRows, Created: j.Created, Skipped: j.Skipped, Published: j.Published, Attempts: j.Attempts, NextAttemptAt: j.NextAttemptAt, LastError: j.LastError}
+}
+func (f *AdminShortLinkFlowImpl) UploadJob(ctx context.Context, id string) (*dto.AdminShortLinkUploadJobDTO, error) {
+	j, err := f.jobRepo.ByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if j == nil {
+		return nil, NewBusinessError("UPLOAD_JOB_NOT_FOUND", "Upload job not found", nil)
+	}
+	out := mapAdminUploadJob(j)
+	return &out, nil
+}
+func (f *AdminShortLinkFlowImpl) ProcessPendingUploadJobs(ctx context.Context) error {
+	jobs, err := f.jobRepo.Due(ctx, time.Now().UTC(), 20)
+	if err != nil {
+		return err
+	}
+	for _, j := range jobs {
+		if _, err := f.processJob(ctx, j.ID); err != nil {
+			log.Printf("admin short link upload job %s: %v", j.ID, err)
+		}
+	}
+	return nil
+}
+
+// processJobUntil gives the upload request its documented opportunity to wait
+// for a transient external outage. The scheduler intentionally makes one
+// attempt so it never monopolizes its worker loop.
+func (f *AdminShortLinkFlowImpl) processJobUntil(ctx context.Context, id string) (*models.AdminShortLinkUploadJob, error) {
+	for {
+		job, err := f.processJob(ctx, id)
+		if err == nil || job == nil || job.Status == "failed" || ctx.Err() != nil {
+			return job, err
+		}
+		deadline, bounded := ctx.Deadline()
+		if !bounded {
+			return job, err
+		}
+		wait := time.Until(nextUploadAttempt(job, deadline))
+		if wait <= 0 {
+			continue
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return job, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (f *AdminShortLinkFlowImpl) processJob(ctx context.Context, id string) (*models.AdminShortLinkUploadJob, error) {
+	job, claimed, err := f.jobRepo.Claim(ctx, id, time.Now().UTC(), adminUploadLeaseDuration)
+	if err != nil || !claimed {
+		return job, err
+	}
+	if f.publisher == nil {
+		return f.failJob(ctx, job, fmt.Errorf("external short-link publisher is not configured"))
+	}
+	reader := csv.NewReader(bytes.NewReader(job.CSVData))
+	reader.TrimLeadingSpace = true
+	header, err := reader.Read()
+	if err != nil {
+		return f.failJob(ctx, job, permanentUpload(err))
+	}
+	longIdx := -1
+	for i, h := range header {
+		if strings.EqualFold(strings.TrimSpace(h), "long_link") {
+			longIdx = i
+		}
+	}
+	if longIdx < 0 {
+		return f.failJob(ctx, job, permanentUpload(fmt.Errorf("CSV requires long_link column")))
+	}
+	totalRows, skipped, inspectErr := inspectAdminCSV(job.CSVData, longIdx)
+	if inspectErr != nil {
+		return f.failJob(ctx, job, permanentUpload(inspectErr))
+	}
+	job.TotalRows, job.Skipped = totalRows, skipped
+	links, err := f.repo.ByAllocationKey(ctx, job.AllocationKey)
+	if err != nil {
+		return f.failJob(ctx, job, err)
+	}
+	expectedLinks := totalRows - skipped
+	if len(links) > 0 && len(links) != expectedLinks {
+		return f.failJob(ctx, job, permanentUpload(fmt.Errorf("short-link allocation is incomplete: got %d rows, expected %d", len(links), expectedLinks)))
+	}
+	if len(links) == 0 {
+		lockShortLinkGen()
+		allocationLocked := true
+		defer func() {
+			if allocationLocked {
+				unlockShortLinkGen()
+			}
+		}()
+		last, e := f.repo.GetMaxUIDSince(ctx, time.Date(2025, 11, 10, 15, 45, 11, 401492000, time.UTC))
+		if e != nil {
+			return f.failJob(ctx, job, e)
+		}
+		var seq uint64
+		if last != "" {
+			seq, e = decodeBase36(last)
+			if e != nil {
+				return f.failJob(ctx, job, permanentUpload(e))
+			}
+			seq++
+		}
+		batch := make([]*models.ShortLink, 0, 500)
+		pos := 0
+		for {
+			rec, e := reader.Read()
+			if e == io.EOF {
+				break
+			}
+			if e != nil {
+				return f.failJob(ctx, job, e)
+			}
+			if longIdx >= len(rec) || strings.TrimSpace(rec[longIdx]) == "" {
+				continue
+			}
+			if e = validateAdminLongLink(rec[longIdx]); e != nil {
+				return f.failJob(ctx, job, permanentUpload(e))
+			}
+			uid, e := formatSequentialUID(seq)
+			if e != nil {
+				return f.failJob(ctx, job, permanentUpload(e))
+			}
+			seq++
+			sid := job.ScenarioID
+			sn := job.ScenarioName
+			p := pos
+			batch = append(batch, &models.ShortLink{UID: uid, ScenarioID: &sid, ScenarioName: &sn, LongLink: strings.TrimSpace(rec[longIdx]), ShortLink: job.Domain + "/" + uid, AllocationKey: &job.AllocationKey, AllocationPosition: &p})
+			pos++
+		}
+		if e = f.jobRepo.PersistAllocation(ctx, job, batch); e != nil {
+			return f.failJob(ctx, job, e)
+		}
+		links, e = f.repo.ByAllocationKey(ctx, job.AllocationKey)
+		if e != nil {
+			return f.failJob(ctx, job, e)
+		}
+		job.Created = len(links)
+		unlockShortLinkGen()
+		allocationLocked = false
+	}
+	for start := 0; start < len(links); start += 500 {
+		end := start + 500
+		if end > len(links) {
+			end = len(links)
+		}
+		if err := publishShortLinkMappings(ctx, f.repo, f.publisher, links[start:end]); err != nil {
+			return f.failJob(ctx, job, err)
+		}
+	}
+	now := time.Now().UTC()
+	job.Status = "completed"
+	job.Published = len(links)
+	job.CompletedAt = &now
+	job.NextAttemptAt = nil
+	job.LastError = nil
+	_, err = f.jobRepo.UpdateClaimed(ctx, job)
+	return job, err
+}
+func (f *AdminShortLinkFlowImpl) failJob(ctx context.Context, j *models.AdminShortLinkUploadJob, err error) (*models.AdminShortLinkUploadJob, error) {
+	msg := err.Error()
+	var permanent permanentUploadError
+	if j.Attempts >= adminUploadMaxAttempts || errors.As(err, &permanent) {
+		j.Status = "failed"
+		j.LastError = &msg
+		j.NextAttemptAt = nil
+		_, _ = f.jobRepo.UpdateClaimed(ctx, j)
+		return j, err
+	}
+	delay := time.Minute * time.Duration(1<<min(j.Attempts, 6))
+	next := time.Now().UTC().Add(delay)
+	j.Status = "retrying"
+	j.LastError = &msg
+	j.NextAttemptAt = &next
+	_, _ = f.jobRepo.UpdateClaimed(ctx, j)
+	return j, err
+}
+
+func validateAdminLongLink(value string) error {
+	u, err := url.ParseRequestURI(strings.TrimSpace(value))
+	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Hostname() == "" {
+		return fmt.Errorf("invalid long_link")
+	}
+	return nil
+}
+
+func nextUploadAttempt(j *models.AdminShortLinkUploadJob, fallback time.Time) time.Time {
+	if j.NextAttemptAt != nil {
+		return *j.NextAttemptAt
+	}
+	return fallback
+}
+
+func inspectAdminCSV(data []byte, longIdx int) (totalRows, skipped int, err error) {
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.TrimLeadingSpace = true
+	if _, err = reader.Read(); err != nil {
+		return 0, 0, err
+	}
+	for {
+		record, readErr := reader.Read()
+		if readErr == io.EOF {
+			return totalRows, skipped, nil
+		}
+		if readErr != nil {
+			return 0, 0, readErr
+		}
+		totalRows++
+		if longIdx >= len(record) || strings.TrimSpace(record[longIdx]) == "" {
+			skipped++
+			continue
+		}
+		if validationErr := validateAdminLongLink(record[longIdx]); validationErr != nil {
+			return 0, 0, validationErr
+		}
+	}
 }
 
 func encodeBase36(n uint64) string {
