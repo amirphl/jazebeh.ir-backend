@@ -241,12 +241,15 @@ every production change.
 | `0135` | Durable external short-link publication and synchronization state |
 | `0136` | Versioned exact-capacity eligibility with platform colors and Test Bundle exclusions |
 | `0137` | Auditable SMS-provider selection and send-attempt persistence |
-| `0138` | Smart Targeting Execution tag attribution metrics and global delivered-based tag CTR summaries |
+| `0138` | Smart Targeting Execution tag attribution metrics and delivered-based tag CTR summaries |
 | `0139` | Canonical public short-link metadata and explicit campaign test-click exclusion from reporting |
 | `0140` | Immutable Smart Targeting Test sample snapshots and releasable pre-execution audience reservations |
 | `0141` | Provider-aware Smart Targeting capacity eligibility snapshots |
 | `0142`–`0148` | Execution reservation persistence and hardening, Bundle claim guards, interrupted-capacity indexing, and idempotent external short-link allocation |
 | `0149` | Bundle-scoped advisory claim locks, replacing per-audience locks to prevent bulk reservation lock-table exhaustion and lock-order deadlocks |
+| `0157` | Bundle-scoped overall Smart Targeting tag CTR summaries |
+| `0159` | Durable admin short-link CSV upload jobs and retry state |
+| `0158` | Cascading Bundle cleanup for overall Smart Targeting tag CTR summaries |
 
 ## Current schema areas
 
