@@ -431,6 +431,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	bundleRepo := repository.NewBundleRepository(db)
 	bundleActionRepo := repository.NewBundleActionRepository(db)
 	shortLinkRepo := repository.NewShortLinkRepository(db)
+	adminShortLinkUploadJobRepo := repository.NewAdminShortLinkUploadJobRepository(db)
 	shortLinkClickRepo := repository.NewShortLinkClickRepository(db)
 	externalShortLinkSyncRepo := repository.NewExternalShortLinkSyncRepository(db)
 	tagTestPerformanceRepo := repository.NewTagTestPerformanceRepository(db)
@@ -733,9 +734,9 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	shortLinkVisitFlow := businessflow.NewShortLinkVisitFlow(shortLinkRepo, shortLinkClickRepo)
 
 	// Admin short-links flows and handler
-	adminShortLinkFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo)
-	adminShortLinkDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo)
-	adminShortLinkClicksDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo)
+	adminShortLinkFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, shortLinkPublishers...)
+	adminShortLinkDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, shortLinkPublishers...)
+	adminShortLinkClicksDownloadFlow := businessflow.NewAdminShortLinkFlow(shortLinkRepo, shortLinkClickRepo, auditRepo, adminShortLinkUploadJobRepo, shortLinkPublishers...)
 
 	// Profile flow
 	profileFlow := businessflow.NewProfileFlow(customerRepo)
@@ -819,6 +820,22 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 	)
 
 	if cfg.ExternalShortLink.Enabled {
+		uploadJobCtx, cancelUploadJobs := context.WithCancel(context.Background())
+		uploadJobDone := make(chan struct{})
+		go func() {
+			defer close(uploadJobDone)
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				_ = adminShortLinkFlow.ProcessPendingUploadJobs(uploadJobCtx)
+				select {
+				case <-uploadJobCtx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+		stopFuncs = append(stopFuncs, func() { cancelUploadJobs(); <-uploadJobDone })
 		mappingScheduler := scheduler.NewExternalShortLinkMappingScheduler(
 			shortLinkRepo,
 			externalShortLinkClient,
