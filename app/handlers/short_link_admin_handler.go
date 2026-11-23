@@ -16,13 +16,14 @@ import (
 )
 
 const (
-	shortLinkUploadTimeout   = 5 * time.Minute
+	shortLinkUploadTimeout   = 30 * time.Minute
 	shortLinkDownloadTimeout = 5 * time.Minute
 )
 
 // ShortLinkAdminHandlerInterface defines admin endpoints for short links (CSV upload and downloads)
 type ShortLinkAdminHandlerInterface interface {
 	UploadCSV(c fiber.Ctx) error
+	UploadStatus(c fiber.Ctx) error
 	DownloadByScenario(c fiber.Ctx) error
 	DownloadWithClicksByScenario(c fiber.Ctx) error
 	DownloadWithClicksByScenarioRange(c fiber.Ctx) error
@@ -86,7 +87,27 @@ func (h *ShortLinkAdminHandler) UploadCSV(c fiber.Ctx) error {
 		return h.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to create short links", "CREATE_SHORT_LINKS_FAILED", nil)
 	}
 	_ = metadata // reserved for audit if needed later
-	return c.Status(fiber.StatusCreated).JSON(dto.APIResponse{Success: true, Message: "Short links created", Data: res})
+	status := fiber.StatusAccepted
+	if res.Job.Status == "completed" {
+		status = fiber.StatusCreated
+	}
+	return c.Status(status).JSON(dto.APIResponse{Success: true, Message: res.Message, Data: res})
+}
+
+// UploadStatus returns the current status and progress of a short-link CSV upload job.
+// @Summary Get Short Links CSV Upload Status
+// @Tags Admin ShortLinks
+// @Produce json
+// @Param id path string true "Upload job ID"
+// @Success 200 {object} dto.APIResponse{data=dto.AdminShortLinkUploadJobDTO}
+// @Failure 404 {object} dto.APIResponse
+// @Router /api/v1/admin/short-links/upload-csv/{id} [get]
+func (h *ShortLinkAdminHandler) UploadStatus(c fiber.Ctx) error {
+	res, err := h.uploadFlow.UploadJob(c.Context(), c.Params("id"))
+	if err != nil {
+		return h.ErrorResponse(c, fiber.StatusNotFound, "Upload job not found", "UPLOAD_JOB_NOT_FOUND", nil)
+	}
+	return c.JSON(dto.APIResponse{Success: true, Message: "Upload job status", Data: res})
 }
 
 // DownloadByScenario posts scenario_id and returns CSV of all short links with that scenario
