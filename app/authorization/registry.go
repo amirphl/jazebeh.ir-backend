@@ -40,6 +40,7 @@ var RoutePermissionRegistry = []RoutePermission{
 	// Short-links
 	{"POST", "/api/v1/admin/short-links", PermissionShortLinkManage, "Upload/download short-links"},
 	{"POST", "/api/v1/admin/short-links/upload-csv", PermissionShortLinkManage, "Upload short-links CSV"},
+	{"GET", "/api/v1/admin/short-links/upload-csv/", PermissionShortLinkManage, "Get short-links CSV upload status"},
 	{"POST", "/api/v1/admin/short-links/download", PermissionShortLinkManage, "Export short-links"},
 	{"POST", "/api/v1/admin/short-links/download-with-clicks", PermissionShortLinkManage, "Export short-links with clicks"},
 	{"POST", "/api/v1/admin/short-links/download-with-clicks-range", PermissionShortLinkManage, "Export short-links with clicks range"},
