@@ -44,7 +44,7 @@ PAYAM_BATCH_SIZE = 200
 CANDOO_BATCH_SIZE = 100
 RETRYABLE_HTTP_STATUSES = frozenset((429, 500, 502, 503, 504))
 MAX_ATTEMPTS = 5
-DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env.beta"
 
 
 @dataclass
