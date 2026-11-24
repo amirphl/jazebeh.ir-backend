@@ -343,7 +343,7 @@ func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
 				TrackingID: buildProviderTestID("test-sms", campaign.CustomerID),
 			}})
 			if err == nil && len(resp.Items) > 0 {
-				log.Printf("sendCampaignTestMessageBestEffort: PayamSMS response for campaign test send (line number: %s): %+v", lineNumber, resp.Items)
+				log.Printf("sendCampaignTestMessageBestEffort: PayamSMS response for campaign test send (line number: %s): %s", lineNumber, formatPayamSMSResponseItems(resp.Items))
 			}
 			return err
 		})
@@ -520,6 +520,32 @@ func (s *CampaignFlowImpl) sendCampaignTestMessageBestEffort(
 	default:
 		return nil, ErrCampaignPlatformInvalid
 	}
+}
+
+// formatPayamSMSResponseItems deliberately dereferences the optional provider
+// fields. Formatting the response structs with %+v renders pointer addresses,
+// which conceals the error code and description needed to diagnose rejected
+// test sends.
+func formatPayamSMSResponseItems(items []scheduler.PayamSMSResponseItem) string {
+	formatted := make([]string, 0, len(items))
+	for _, item := range items {
+		formatted = append(formatted, fmt.Sprintf(
+			"{tracking_id=%q mobile=%q server_id=%s error_code=%s description=%s}",
+			item.TrackingID,
+			item.Mobile,
+			formatOptionalPayamSMSResponseValue(item.ServerID),
+			formatOptionalPayamSMSResponseValue(item.ErrorCode),
+			formatOptionalPayamSMSResponseValue(item.Desc),
+		))
+	}
+	return "[" + strings.Join(formatted, " ") + "]"
+}
+
+func formatOptionalPayamSMSResponseValue(value *string) string {
+	if value == nil {
+		return "null"
+	}
+	return strconv.Quote(*value)
 }
 
 func (s *CampaignFlowImpl) newTestPayamSMSClient() (scheduler.PayamSMSClient, error) {
