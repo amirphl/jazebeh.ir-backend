@@ -123,13 +123,14 @@ def connect_read_only(args: argparse.Namespace):
 
 
 def fetch_messages(cur, campaign_id: int, include_unjobbed: bool) -> list[Message]:
-    # A status job stores application tracking IDs.  The provider lookup ID is
-    # intentionally taken from sent_sms, exactly like handleExternalSMSStatusJob.
+    # PayamSMS is queried with byCustomer=true, so its lookup ID is the
+    # application's original customer/tracking ID. Candoo instead requires the
+    # numeric provider_customer_id stored on sent_sms.
     cur.execute(
         """
         SELECT j.id, j.processed_campaign_id, COALESCE(j.provider, 'payamsms'),
                j.executed_at, j.error, BTRIM(job_tracking_id),
-               BTRIM(s.tracking_id), s.provider, s.server_id, s.provider_customer_id
+               BTRIM(s.tracking_id), s.provider, s.provider_customer_id
         FROM campaign_status_jobs AS j
         JOIN processed_campaigns AS pc ON pc.id = j.processed_campaign_id
         CROSS JOIN LATERAL unnest(j.tracking_ids) AS job_tracking_id
@@ -142,7 +143,7 @@ def fetch_messages(cur, campaign_id: int, include_unjobbed: bool) -> list[Messag
         (campaign_id,),
     )
     messages: dict[tuple[int, str], Message] = {}
-    for job_id, processed_id, job_provider, executed_at, job_error, job_tracking, tracking, sent_provider, server_id, customer_id in cur.fetchall():
+    for job_id, processed_id, job_provider, executed_at, job_error, job_tracking, tracking, sent_provider, customer_id in cur.fetchall():
         tracking_id = str(tracking or job_tracking or "").strip()
         if not tracking_id:
             continue
@@ -155,7 +156,7 @@ def fetch_messages(cur, campaign_id: int, include_unjobbed: bool) -> list[Messag
         if job_error:
             message.job_errors.append(str(job_error))
         if provider == "payamsms":
-            message.lookup_id = str(server_id).strip() if server_id else None
+            message.lookup_id = tracking_id
         elif provider == "candoo":
             message.lookup_id = str(customer_id) if customer_id else None
 
@@ -163,7 +164,7 @@ def fetch_messages(cur, campaign_id: int, include_unjobbed: bool) -> list[Messag
         cur.execute(
             """
             SELECT s.processed_campaign_id, BTRIM(s.tracking_id), s.provider,
-                   s.server_id, s.provider_customer_id
+                   s.provider_customer_id
             FROM sent_sms AS s
             JOIN processed_campaigns AS pc ON pc.id = s.processed_campaign_id
             WHERE pc.campaign_id = %s AND BTRIM(s.tracking_id) <> ''
@@ -171,12 +172,12 @@ def fetch_messages(cur, campaign_id: int, include_unjobbed: bool) -> list[Messag
             """,
             (campaign_id,),
         )
-        for processed_id, tracking_id, provider, server_id, customer_id in cur.fetchall():
+        for processed_id, tracking_id, provider, customer_id in cur.fetchall():
             key = (int(processed_id), str(tracking_id).strip())
             if key in messages:
                 continue
             provider = str(provider or "payamsms").strip().lower()
-            lookup_id = str(server_id).strip() if provider == "payamsms" and server_id else (str(customer_id) if provider == "candoo" and customer_id else None)
+            lookup_id = key[1] if provider == "payamsms" else (str(customer_id) if provider == "candoo" and customer_id else None)
             messages[key] = Message(int(processed_id), key[1], provider, lookup_id, source="sent_sms_without_status_job")
     return list(messages.values())
 
