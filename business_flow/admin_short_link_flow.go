@@ -125,10 +125,15 @@ func normalizeDomain(domain string) string {
 		domain = "https://" + domain
 	}
 	u, err := url.Parse(domain)
-	if err != nil || u.Scheme != "https" || u.Hostname() != "jzbe.ir" || u.User != nil || u.Port() != "" || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil {
 		return ""
 	}
-	return "https://jzbe.ir"
+	host := strings.ToLower(u.Hostname())
+	allowedHost := host == "jzbe.ir" || host == "jo1n.ir" || host == "j0in.ir"
+	if u.Scheme != "https" || !allowedHost || u.User != nil || u.Port() != "" || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" {
+		return ""
+	}
+	return "https://" + host
 }
 
 func mapAdminUploadJob(j *models.AdminShortLinkUploadJob) dto.AdminShortLinkUploadJobDTO {

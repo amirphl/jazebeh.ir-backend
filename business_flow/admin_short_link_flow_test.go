@@ -6,13 +6,24 @@ import (
 	"github.com/amirphl/Yamata-no-Orochi/models"
 )
 
-func TestNormalizeAdminShortLinkDomainRequiresJzbeHTTPSOrigin(t *testing.T) {
-	for _, value := range []string{"jzbe.ir", "https://jzbe.ir", "https://jzbe.ir/"} {
-		if got := normalizeDomain(value); got != "https://jzbe.ir" {
-			t.Fatalf("normalizeDomain(%q) = %q", value, got)
+func TestNormalizeAdminShortLinkDomainRequiresAllowedHTTPSOrigin(t *testing.T) {
+	tests := map[string]string{
+		"jzbe.ir":          "https://jzbe.ir",
+		"https://jzbe.ir":  "https://jzbe.ir",
+		"https://jzbe.ir/": "https://jzbe.ir",
+		"jo1n.ir":          "https://jo1n.ir",
+		"https://jo1n.ir":  "https://jo1n.ir",
+		"https://jo1n.ir/": "https://jo1n.ir",
+		"j0in.ir":          "https://j0in.ir",
+		"https://j0in.ir":  "https://j0in.ir",
+		"https://j0in.ir/": "https://j0in.ir",
+	}
+	for value, want := range tests {
+		if got := normalizeDomain(value); got != want {
+			t.Fatalf("normalizeDomain(%q) = %q, want %q", value, got, want)
 		}
 	}
-	for _, value := range []string{"http://jzbe.ir", "https://evil.example", "https://jzbe.ir/x", "https://user@jzbe.ir", "https://jzbe.ir?x=1"} {
+	for _, value := range []string{"http://jzbe.ir", "https://evil.example", "https://jzbe.ir/x", "https://user@jzbe.ir", "https://jzbe.ir?x=1", "https://jo1n.ir/x", "https://j0in.ir?x=1"} {
 		if got := normalizeDomain(value); got != "" {
 			t.Fatalf("normalizeDomain(%q) = %q, want empty", value, got)
 		}
