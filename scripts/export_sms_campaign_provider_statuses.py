@@ -62,7 +62,7 @@ class Message:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("campaign_id", type=int, help="campaigns.id to inspect")
-    parser.add_argument("--db-host", default=os.getenv("DB_HOST", "127.0.0.1"))
+    parser.add_argument("--db-host", default="172.30.0.10")
     parser.add_argument("--db-port", type=int, default=int(os.getenv("DB_PORT", "5432")))
     parser.add_argument("--db-name", default=os.getenv("DB_NAME", ""))
     parser.add_argument("--db-user", default=os.getenv("DB_USER", ""))
