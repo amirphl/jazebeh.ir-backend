@@ -2757,6 +2757,52 @@
                 }
             }
         },
+        "/api/v1/admin/short-links/upload-csv/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin ShortLinks"
+                ],
+                "summary": "Get Short Links CSV Upload Status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Upload job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.AdminShortLinkUploadJobDTO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/tickets": {
             "get": {
                 "description": "Admin lists tickets with optional filters",
@@ -4308,7 +4354,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a page of tags for an owned bundle before a campaign exists, including whether each tag was scheduler-used in an operational campaign of the bundle, materialized Bundle/tag Test totals and CTR, plus global overall CTR. A tag is scheduler-used only when an audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count. When current score rows exist, their tag and score snapshots are authoritative; otherwise the endpoint falls back to active live tags with null evaluation fields. selected_tag_ids and the selection summary are empty; submit chosen IDs with campaign creation.",
+                "description": "Returns a page of tags for an owned bundle before a campaign exists, including whether each tag was scheduler-used in an operational campaign of the bundle, materialized Bundle/tag Test totals and CTR, plus Bundle/tag overall CTR. A tag is scheduler-used only when an audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count. When current score rows exist, their tag and score snapshots are authoritative; otherwise the endpoint falls back to active live tags with null evaluation fields. selected_tag_ids and the selection summary are empty; submit chosen IDs with campaign creation.",
                 "produces": [
                     "application/json"
                 ],
@@ -4829,7 +4875,7 @@
         },
         "/api/v1/campaigns/audience-click-report": {
             "post": {
-                "description": "Export one Excel worksheet containing audience UID and click results for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.",
+                "description": "Export one Excel worksheet containing every unique audience UID, click result, and current Bundle action membership for selected campaigns owned by the authenticated customer. Delivery status is unavailable in the stored audience mapping and is reported as unknown.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4839,7 +4885,7 @@
                 "tags": [
                     "Campaigns"
                 ],
-                "summary": "Export Campaign Audience Click Report",
+                "summary": "Export Campaign Audience Report",
                 "parameters": [
                     {
                         "description": "Campaign IDs to export",
@@ -5544,6 +5590,70 @@
                 }
             }
         },
+        "/api/v1/campaigns/{uuid}/action-metrics": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Get Campaign Action Metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Retrieved",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.CampaignActionMetricResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/campaigns/{uuid}/click-report": {
             "get": {
                 "description": "Export a CSV showing which targeted audience members clicked the campaign short link",
@@ -5882,6 +5992,243 @@
                 }
             }
         },
+        "/api/v1/campaigns/{uuid}/smart-targeting/execution-audience-calculations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves the current execution-audience calculation for an owned Smart Targeting Execution campaign. A ready calculation is finalizable only when is_current is true and recalculation_required is false.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Get current Smart Targeting Execution audience calculation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Owned Smart Targeting Execution campaign UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Current execution audience calculation retrieved successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.SmartTargetingExecutionCalculationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Campaign access denied",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Campaign not found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "A current exact capacity calculation is pending or required",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Execution audience calculation lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Queues an asynchronous, non-reserving audience selection for an editable Smart Targeting Execution campaign. Finalization must provide the returned calculation ID after its status becomes ready and current.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Request Smart Targeting Execution audience calculation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Owned Smart Targeting Execution campaign UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Execution audience calculation requested successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.SmartTargetingExecutionCalculationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Campaign access denied or campaign is not editable",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Campaign not found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "A current exact capacity calculation is pending or required",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Execution audience calculation request failed",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/campaigns/{uuid}/smart-targeting/execution-audience-calculations/{calculation_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves an owned execution-audience calculation by ID. A calculation can be finalized only when status is ready, is_current is true, and recalculation_required is false.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Get Smart Targeting Execution audience calculation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Owned Smart Targeting Execution campaign UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Execution audience calculation ID",
+                        "name": "calculation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Execution audience calculation retrieved successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dto.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dto.SmartTargetingExecutionCalculationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid calculation ID",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Campaign access denied",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Campaign or execution audience calculation not found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Execution audience calculation lookup failed",
+                        "schema": {
+                            "$ref": "#/definitions/dto.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/campaigns/{uuid}/smart-targeting/selection": {
             "get": {
                 "security": [
@@ -6142,7 +6489,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a page of tags for an owned campaign, each row's selected state, whether the tag was scheduler-used in an operational campaign of the bundle, materialized Bundle/tag Test CTR, global overall CTR, nullable per-Campaign Test totals and CTR, the complete selected_tag_ids set across all pages, and the complete selection capacity summary. A tag is scheduler-used only when an audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count. Execution Campaigns default to Test CTR descending, then persona-fit score descending, then database order. When the bundle has current score rows, tag names, display titles, personas, capacities, fit scores, and score explanations come from that completed evaluation snapshot. Otherwise active live tags are returned and evaluation fields are null.",
+                "description": "Returns a page of tags for an owned campaign, each row's selected state, whether the tag was scheduler-used in an operational campaign of the bundle, materialized Bundle/tag Test CTR and overall CTR, nullable per-Campaign Test totals and CTR, the complete selected_tag_ids set across all pages, and the complete selection capacity summary. A tag is scheduler-used only when an audience attribution exists for a running, interrupted, executed, or expired campaign; both Test and Execution phases count. Execution Campaigns default to Test CTR descending, then persona-fit score descending, then database order. When the bundle has current score rows, tag names, display titles, personas, capacities, fit scores, and score explanations come from that completed evaluation snapshot. Otherwise active live tags are returned and evaluation fields are null.",
                 "produces": [
                     "application/json"
                 ],
@@ -9052,6 +9399,9 @@
                 "created": {
                     "type": "integer"
                 },
+                "job": {
+                    "$ref": "#/definitions/dto.AdminShortLinkUploadJobDTO"
+                },
                 "message": {
                     "type": "string"
                 },
@@ -10086,6 +10436,41 @@
                 },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.AdminShortLinkUploadJobDTO": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "created": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "next_attempt_at": {
+                    "type": "string"
+                },
+                "published": {
+                    "type": "integer"
+                },
+                "scenario_id": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_rows": {
+                    "type": "integer"
                 }
             }
         },
@@ -11282,6 +11667,23 @@
                     "minimum": 1
                 },
                 "num_messages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.CampaignActionMetricResponse": {
+            "type": "object",
+            "properties": {
+                "action_count": {
+                    "type": "integer"
+                },
+                "campaign_atr": {
+                    "type": "number"
+                },
+                "campaign_id": {
+                    "type": "integer"
+                },
+                "eligible_delivered_count": {
                     "type": "integer"
                 }
             }
@@ -13113,6 +13515,51 @@
                 }
             }
         },
+        "dto.SmartTargetingExecutionCalculationResponse": {
+            "type": "object",
+            "properties": {
+                "bundle_id": {
+                    "type": "integer"
+                },
+                "calculation_id": {
+                    "type": "integer"
+                },
+                "campaign_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "is_current": {
+                    "type": "boolean"
+                },
+                "recalculation_required": {
+                    "type": "boolean"
+                },
+                "requested_audience_count": {
+                    "type": "integer"
+                },
+                "reused": {
+                    "description": "Reused is true only on a POST response when an equivalent pending or\ncurrent ready calculation was returned instead of creating a new job.",
+                    "type": "boolean"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.SmartTargetingSelectionResponse": {
             "type": "object",
             "properties": {
@@ -13156,8 +13603,11 @@
                 "fit_level": {
                     "type": "string"
                 },
+                "overall_avg_atr": {
+                    "type": "number"
+                },
                 "overall_avg_ctr": {
-                    "description": "OverallAvgCTR is global across attributable Test and Execution Campaigns\nand remains null when no attributed audience has been delivered.",
+                    "description": "OverallAvgCTR is Bundle-scoped across attributable Test and Execution\nCampaigns and remains null when no attributed audience has been delivered.",
                     "type": "number"
                 },
                 "relation_type": {
@@ -13185,6 +13635,10 @@
                     "type": "integer"
                 },
                 "test_campaign_ctr": {
+                    "type": "number"
+                },
+                "test_phase_avg_atr": {
+                    "description": "ATR values use the same Bundle scope as CTR.",
                     "type": "number"
                 },
                 "test_phase_avg_ctr": {
@@ -13694,6 +14148,11 @@
                     "type": "string",
                     "maxLength": 4096,
                     "minLength": 1
+                },
+                "execution_audience_calculation_id": {
+                    "description": "Required only when finalizing a Smart Targeting Execution campaign. The\nID identifies the exact ready, non-reserving proposal to commit.",
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "finalize": {
                     "type": "boolean"
