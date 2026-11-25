@@ -33,7 +33,7 @@ const (
 	trackingCounterBits   = 16 * 4
 
 	numJobsPerTick          = 1000
-	statusJobWorkerInterval = 10 * time.Second
+	statusJobWorkerInterval = 10 * time.Millisecond
 
 	// statusJobMaxRetry is the maximum number of times a status-check job is
 	// retried before it is permanently marked as executed. Used by all platform
