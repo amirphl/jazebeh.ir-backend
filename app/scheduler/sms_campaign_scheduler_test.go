@@ -19,6 +19,7 @@ import (
 )
 
 type stubSMSClient struct {
+	getTokenFn    func(ctx context.Context) (string, error)
 	fetchStatusFn func(ctx context.Context, token string, ids []string) (PayamStatusFetchResult, error)
 }
 
@@ -27,6 +28,9 @@ func (s *stubSMSClient) SendBatch(ctx context.Context, sender string, items []Pa
 }
 
 func (s *stubSMSClient) GetToken(ctx context.Context) (string, error) {
+	if s.getTokenFn != nil {
+		return s.getTokenFn(ctx)
+	}
 	return "", nil
 }
 
@@ -179,6 +183,94 @@ func TestScheduleStatusCheckJobsKeeps48HourPayamSMSCheck(t *testing.T) {
 		}
 	}
 	t.Fatal("PayamSMS status checks must retain the 48-hour job")
+}
+
+func TestGroupSMSStatusJobsByCampaignPreservesCampaignAndJobOrder(t *testing.T) {
+	jobs := []*models.CampaignStatusJob{
+		{ID: 10, ProcessedCampaignID: 2},
+		{ID: 11, ProcessedCampaignID: 1},
+		{ID: 12, ProcessedCampaignID: 2},
+		{ID: 13, ProcessedCampaignID: 3},
+		{ID: 14, ProcessedCampaignID: 1},
+	}
+
+	groups := groupSMSStatusJobsByCampaign(jobs)
+	if len(groups) != 3 {
+		t.Fatalf("groups = %d, want 3", len(groups))
+	}
+	got := [][]uint{{groups[0][0].ID, groups[0][1].ID}, {groups[1][0].ID, groups[1][1].ID}, {groups[2][0].ID}}
+	want := [][]uint{{10, 12}, {11, 14}, {13}}
+	for i := range want {
+		if len(got[i]) != len(want[i]) {
+			t.Fatalf("group %d = %v, want %v", i, got[i], want[i])
+		}
+		for j := range want[i] {
+			if got[i][j] != want[i][j] {
+				t.Fatalf("group %d = %v, want %v", i, got[i], want[i])
+			}
+		}
+	}
+}
+
+func TestRunSMSStatusJobGroupsBoundsConcurrencyAndWaitsAtBarrier(t *testing.T) {
+	groups := [][]*models.CampaignStatusJob{
+		{{ProcessedCampaignID: 1}},
+		{{ProcessedCampaignID: 2}},
+		{{ProcessedCampaignID: 3}},
+	}
+	started := make(chan uint, len(groups))
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		runSMSStatusJobGroups(context.Background(), groups, 2, func(group []*models.CampaignStatusJob) {
+			started <- group[0].ProcessedCampaignID
+			<-release
+		})
+		close(done)
+	}()
+
+	<-started
+	<-started
+	select {
+	case id := <-started:
+		t.Fatalf("third group %d started before a worker was released", id)
+	default:
+	}
+	select {
+	case <-done:
+		t.Fatal("batch returned before all groups reached the barrier")
+	default:
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("batch did not finish after all groups were released")
+	}
+}
+
+func TestGetPayamStatusTokenCachesForFiveMinutes(t *testing.T) {
+	calls := 0
+	s := &SMSCampaignScheduler{smsClient: &stubSMSClient{getTokenFn: func(context.Context) (string, error) {
+		calls++
+		return fmt.Sprintf("token-%d", calls), nil
+	}}}
+
+	first, err := s.getPayamStatusToken(context.Background())
+	if err != nil || first != "token-1" {
+		t.Fatalf("first token = %q, %v", first, err)
+	}
+	second, err := s.getPayamStatusToken(context.Background())
+	if err != nil || second != "token-1" || calls != 1 {
+		t.Fatalf("cached token = %q, calls=%d, err=%v; want token-1/1/nil", second, calls, err)
+	}
+
+	s.payamStatusTokenIssuedAt = time.Now().UTC().Add(-smsStatusJobTokenTTL)
+	third, err := s.getPayamStatusToken(context.Background())
+	if err != nil || third != "token-2" || calls != 2 {
+		t.Fatalf("refreshed token = %q, calls=%d, err=%v; want token-2/2/nil", third, calls, err)
+	}
 }
 
 func TestDispatchPendingSMSCampaignsSerializesSameBundle(t *testing.T) {
