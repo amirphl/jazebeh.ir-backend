@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -26,8 +27,10 @@ import (
 // TODO: Tx management in queries, especially around processed_campaign creation and audience fetching to ensure consistency
 
 const (
-	smsSendBatchSize     = 200 // NOTE: MUST BE LESS THAN 250
-	smsStatusJobMaxRetry = 3
+	smsSendBatchSize                   = 200 // NOTE: MUST BE LESS THAN 250
+	smsStatusJobMaxRetry               = 3
+	smsStatusJobTokenTTL               = 5 * time.Minute
+	smsStatusJobMaxConcurrentCampaigns = 10
 )
 
 type SMSCampaignScheduler struct {
@@ -57,6 +60,11 @@ type SMSCampaignScheduler struct {
 
 	bundleAudienceCache *BundleAudienceCache
 	executionLimiter    *CampaignExecutionLimiter
+
+	statusJobMaxConcurrentCampaigns int
+	payamStatusTokenMu              sync.Mutex
+	payamStatusToken                string
+	payamStatusTokenIssuedAt        time.Time
 }
 
 // NotificationSender is a minimal interface extracted from NotificationService for SMS
@@ -100,26 +108,27 @@ func NewCampaignScheduler(
 		candooProvider = maybeMockSMSProvider(candooProvider, true)
 	}
 	s := &SMSCampaignScheduler{
-		audRepo:             audRepo,
-		tagRepo:             tagRepo,
-		lineRepo:            lineRepo,
-		sentRepo:            sentRepo,
-		pcRepo:              pcRepo,
-		jobRepo:             jobRepo,
-		resRepo:             resRepo,
-		statsRepo:           statsRepo,
-		notifier:            notifier,
-		logger:              logger,
-		db:                  db,
-		interval:            interval,
-		adminCfg:            adminCfg,
-		botCfg:              botCfg,
-		botClient:           newHTTPBotClient(botCfg),
-		smsClient:           payamClient,
-		providers:           NewSMSProviderRegistry(newPayamSMSProvider(payamClient), candooProvider),
-		bundleAudienceCache: NewBundleAudienceCache(repository.NewBundleAudienceSelectionRepository(db)),
-		executionLimiter:    executionLimiter,
-		schedulerName:       "sms",
+		audRepo:                         audRepo,
+		tagRepo:                         tagRepo,
+		lineRepo:                        lineRepo,
+		sentRepo:                        sentRepo,
+		pcRepo:                          pcRepo,
+		jobRepo:                         jobRepo,
+		resRepo:                         resRepo,
+		statsRepo:                       statsRepo,
+		notifier:                        notifier,
+		logger:                          logger,
+		db:                              db,
+		interval:                        interval,
+		adminCfg:                        adminCfg,
+		botCfg:                          botCfg,
+		botClient:                       newHTTPBotClient(botCfg),
+		smsClient:                       payamClient,
+		providers:                       NewSMSProviderRegistry(newPayamSMSProvider(payamClient), candooProvider),
+		bundleAudienceCache:             NewBundleAudienceCache(repository.NewBundleAudienceSelectionRepository(db)),
+		executionLimiter:                executionLimiter,
+		schedulerName:                   "sms",
+		statusJobMaxConcurrentCampaigns: smsStatusJobMaxConcurrentCampaigns,
 	}
 
 	if err := s.initSchedulerLogger(); err != nil {
@@ -1052,11 +1061,11 @@ func (s *SMSCampaignScheduler) scheduleStatusCheckJobs(ctx context.Context, proc
 
 	corrID := uuid.NewString()
 	now := utils.UTCNow()
-	offsets := []time.Duration{1 * time.Minute, 3 * time.Minute, 5 * time.Minute, 7 * time.Minute, 24 * time.Hour}
+	offsets := []time.Duration{10 * time.Minute, 20 * time.Minute}
 	// Candoo delivery status is not queried after the first day. Keep the
 	// existing 48-hour check for PayamSMS campaigns.
 	if provider != models.SMSProviderCandoo {
-		offsets = append(offsets, 48*time.Hour)
+		offsets = append(offsets, 24*time.Hour)
 	}
 	jobs := make([]*models.CampaignStatusJob, 0, len(offsets))
 	for _, off := range offsets {
@@ -1099,57 +1108,136 @@ func (s *SMSCampaignScheduler) startStatusJobWorker(parent context.Context) {
 				continue
 			}
 
-			var (
-				payamToken    string
-				payamTokenErr error
-				payamLoaded   bool
-			)
+			// Wait for all campaign groups before polling again; this is the batch
+			// barrier that prevents overlapping status-job passes.
+			s.processSMSStatusJobBatch(parent, jobs)
+		}
+	}
+}
 
-			for i, job := range jobs {
-				if parent.Err() != nil {
-					return
-				}
+// processSMSStatusJobBatch runs separate processed campaigns concurrently, but
+// preserves the repository order for jobs from the same processed campaign.
+func (s *SMSCampaignScheduler) processSMSStatusJobBatch(parent context.Context, jobs []*models.CampaignStatusJob) {
+	groups := groupSMSStatusJobsByCampaign(jobs)
+	if len(groups) == 0 {
+		return
+	}
+	runSMSStatusJobGroups(parent, groups, s.statusJobMaxConcurrentCampaigns, func(group []*models.CampaignStatusJob) {
+		s.processSMSStatusJobGroup(parent, group)
+	})
+}
 
-				providerName, providerErr := statusJobProvider(job)
-				if providerErr != nil {
-					err = providerErr
-				} else if providerName == models.SMSProviderPayamSMS {
-					if !payamLoaded {
-						tokenCtx, tokenCancel := context.WithTimeout(parent, 30*time.Second)
-						payamToken, payamTokenErr = s.smsClient.GetToken(tokenCtx)
-						tokenCancel()
-						payamLoaded = true
-					}
-					if payamTokenErr != nil {
-						err = fmt.Errorf("PayamSMS token for status jobs: %w", payamTokenErr)
-					} else {
-						jobCtx, jobCancel := context.WithTimeout(parent, 2*time.Minute)
-						err = s.handleStatusJob(jobCtx, job, payamToken)
-						jobCancel()
-					}
-				} else {
-					jobCtx, jobCancel := context.WithTimeout(parent, 2*time.Minute)
-					err = s.handleStatusJob(jobCtx, job, "")
-					jobCancel()
-				}
+func runSMSStatusJobGroups(parent context.Context, groups [][]*models.CampaignStatusJob, maxConcurrent int, process func([]*models.CampaignStatusJob)) {
+	workerCount := maxConcurrent
+	if workerCount <= 0 {
+		workerCount = smsStatusJobMaxConcurrentCampaigns
+	}
+	if workerCount > len(groups) {
+		workerCount = len(groups)
+	}
 
-				if err != nil {
-					s.logger.Printf("SMS scheduler: handle status job id=%d failed: %v", job.ID, err)
-					if job.RetryCount >= smsStatusJobMaxRetry {
-						s.notifyAdmin(fmt.Sprintf("SMS scheduler: status job id=%d has failed %d times with error: %v", job.ID, job.RetryCount, err))
-					}
-				} else {
-					s.logger.Printf("SMS scheduler: handle status job id=%d succeeded", job.ID)
-				}
+	groupQueue := make(chan []*models.CampaignStatusJob)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for group := range groupQueue {
+				process(group)
+			}
+		}()
+	}
+	for _, group := range groups {
+		select {
+		case groupQueue <- group:
+		case <-parent.Done():
+			close(groupQueue)
+			workers.Wait()
+			return
+		}
+	}
+	close(groupQueue)
+	workers.Wait()
+}
 
-				if i < len(jobs)-1 {
-					if err := sleepWithContext(parent, time.Second); err != nil {
-						return
-					}
-				}
+func groupSMSStatusJobsByCampaign(jobs []*models.CampaignStatusJob) [][]*models.CampaignStatusJob {
+	groupsByCampaign := make(map[uint][]*models.CampaignStatusJob)
+	campaignOrder := make([]uint, 0)
+	for _, job := range jobs {
+		if job == nil {
+			continue
+		}
+		if _, exists := groupsByCampaign[job.ProcessedCampaignID]; !exists {
+			campaignOrder = append(campaignOrder, job.ProcessedCampaignID)
+		}
+		groupsByCampaign[job.ProcessedCampaignID] = append(groupsByCampaign[job.ProcessedCampaignID], job)
+	}
+	groups := make([][]*models.CampaignStatusJob, 0, len(campaignOrder))
+	for _, campaignID := range campaignOrder {
+		groups = append(groups, groupsByCampaign[campaignID])
+	}
+	return groups
+}
+
+func (s *SMSCampaignScheduler) processSMSStatusJobGroup(parent context.Context, jobs []*models.CampaignStatusJob) {
+	for i, job := range jobs {
+		if parent.Err() != nil {
+			return
+		}
+		var err error
+		providerName, providerErr := statusJobProvider(job)
+		if providerErr != nil {
+			err = providerErr
+		} else if providerName == models.SMSProviderPayamSMS {
+			tokenCtx, tokenCancel := context.WithTimeout(parent, 30*time.Second)
+			payamToken, tokenErr := s.getPayamStatusToken(tokenCtx)
+			tokenCancel()
+			if tokenErr != nil {
+				err = fmt.Errorf("PayamSMS token for status jobs: %w", tokenErr)
+			} else {
+				jobCtx, jobCancel := context.WithTimeout(parent, 2*time.Minute)
+				err = s.handleStatusJob(jobCtx, job, payamToken)
+				jobCancel()
+			}
+		} else {
+			jobCtx, jobCancel := context.WithTimeout(parent, 2*time.Minute)
+			err = s.handleStatusJob(jobCtx, job, "")
+			jobCancel()
+		}
+
+		if err != nil {
+			s.logger.Printf("SMS scheduler: handle status job id=%d failed: %v", job.ID, err)
+			if job.RetryCount >= smsStatusJobMaxRetry {
+				s.notifyAdmin(fmt.Sprintf("SMS scheduler: status job id=%d has failed %d times with error: %v", job.ID, job.RetryCount, err))
+			}
+		} else {
+			s.logger.Printf("SMS scheduler: handle status job id=%d succeeded", job.ID)
+		}
+
+		if i < len(jobs)-1 {
+			if err := sleepWithContext(parent, 10*time.Millisecond); err != nil {
+				return
 			}
 		}
 	}
+}
+
+// getPayamStatusToken shares one status-check token across workers for five
+// minutes. Holding the mutex through refresh prevents duplicate token requests.
+func (s *SMSCampaignScheduler) getPayamStatusToken(ctx context.Context) (string, error) {
+	s.payamStatusTokenMu.Lock()
+	defer s.payamStatusTokenMu.Unlock()
+
+	if s.payamStatusToken != "" && utils.UTCNow().Sub(s.payamStatusTokenIssuedAt) < smsStatusJobTokenTTL {
+		return s.payamStatusToken, nil
+	}
+	token, err := s.smsClient.GetToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	s.payamStatusToken = token
+	s.payamStatusTokenIssuedAt = utils.UTCNow()
+	return token, nil
 }
 
 func (s *SMSCampaignScheduler) handleStatusJob(ctx context.Context, job *models.CampaignStatusJob, jazzAccessToken string) error {
