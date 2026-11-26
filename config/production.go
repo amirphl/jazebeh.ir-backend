@@ -407,14 +407,15 @@ type CandooSMSConfig struct {
 
 func loadCandooSMSConfig() CandooSMSConfig {
 	return CandooSMSConfig{
-		Enabled:              getEnvBool("CANDOO_SMS_ENABLED", false),
-		BaseURL:              getEnvString("CANDOO_SMS_BASE_URL", "https://api.candoosms.com"),
-		APIKey:               getEnvString("CANDOO_SMS_API_KEY", ""),
-		MessageType:          getEnvInt("CANDOO_SMS_MESSAGE_TYPE", 0),
-		RetryCount:           getEnvInt("CANDOO_SMS_RETRY_COUNT", 0),
-		ValidityPeriod:       getEnvInt("CANDOO_SMS_VALIDITY_PERIOD", 0),
-		Timeout:              getEnvDuration("CANDOO_SMS_TIMEOUT", 30*time.Second),
-		MaxRequestsPerSecond: getEnvInt("CANDOO_SMS_MAX_REQUESTS_PER_SECOND", 1),
+		Enabled:        getEnvBool("CANDOO_SMS_ENABLED", false),
+		BaseURL:        getEnvString("CANDOO_SMS_BASE_URL", "https://api.candoosms.com"),
+		APIKey:         getEnvString("CANDOO_SMS_API_KEY", ""),
+		MessageType:    getEnvInt("CANDOO_SMS_MESSAGE_TYPE", 0),
+		RetryCount:     getEnvInt("CANDOO_SMS_RETRY_COUNT", 0),
+		ValidityPeriod: getEnvInt("CANDOO_SMS_VALIDITY_PERIOD", 0),
+		Timeout:        getEnvDuration("CANDOO_SMS_TIMEOUT", 30*time.Second),
+		// 20 requests/second spaces requests by 50ms in the shared limiter.
+		MaxRequestsPerSecond: getEnvInt("CANDOO_SMS_MAX_REQUESTS_PER_SECOND", 20),
 		HTTPMaxAttempts:      getEnvInt("CANDOO_SMS_HTTP_MAX_ATTEMPTS", 3),
 		StatusCodeMap:        getEnvStringMap("CANDOO_SMS_STATUS_MAP", map[string]string{}),
 	}
@@ -444,6 +445,7 @@ type SchedulerConfig struct {
 	CampaignExecutionEnabled                           bool          `json:"campaign_execution_enabled"`
 	CampaignExecutionInterval                          time.Duration `json:"campaign_execution_interval"`
 	CampaignExecutionMaxParallelRuns                   int           `json:"campaign_execution_max_parallel_runs"`
+	SMSCampaignBatchSendConcurrency                    int           `json:"sms_campaign_batch_send_concurrency"`
 	MessageSendDelay                                   time.Duration `json:"message_send_delay"`
 	MessageSendMockEnabled                             bool          `json:"message_send_mock_enabled"`
 	SmartTargetingCapacitySchedulerEnabled             bool          `json:"smart_targeting_capacity_scheduler_enabled"`
@@ -500,6 +502,7 @@ func loadSchedulerConfig() SchedulerConfig {
 		// row/advisory locks, so an unbounded goroutine per ready Bundle causes
 		// lock waits and defeats the database connection-pool limit.
 		CampaignExecutionMaxParallelRuns:       getEnvInt("CAMPAIGN_EXECUTION_MAX_PARALLEL_RUNS", 2),
+		SMSCampaignBatchSendConcurrency:        getEnvInt("SMS_CAMPAIGN_BATCH_SEND_CONCURRENCY", 5),
 		MessageSendDelay:                       getEnvDuration("CAMPAIGN_MESSAGE_SEND_DELAY", 23*time.Millisecond),
 		MessageSendMockEnabled:                 getEnvBool("CAMPAIGN_MESSAGE_SEND_MOCK_ENABLED", false),
 		SmartTargetingCapacitySchedulerEnabled: capacitySchedulerEnabled,
@@ -1199,6 +1202,9 @@ func ValidateProductionConfig(cfg *ProductionConfig) error {
 		if cfg.Scheduler.PayamBalanceMonitorThresholdTomans <= 0 || cfg.Scheduler.PayamBalanceMonitorThresholdTomans > 922_337_203_685_477_580 {
 			errors = append(errors, "PAYAM_BALANCE_MONITOR_THRESHOLD_TOMANS must be between 1 and 922337203685477580")
 		}
+	}
+	if cfg.Scheduler.SMSCampaignBatchSendConcurrency < 1 || cfg.Scheduler.SMSCampaignBatchSendConcurrency > 5 {
+		errors = append(errors, "SMS_CAMPAIGN_BATCH_SEND_CONCURRENCY must be between 1 and 5")
 	}
 	if cfg.CandooSMS.Enabled {
 		if strings.TrimSpace(cfg.CandooSMS.APIKey) == "" {
