@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
@@ -28,6 +29,8 @@ const defaultBotAPIDomain = "https://jazebeh.ir"
 // response has time to reach the scheduler instead of becoming an ambiguous
 // client-side timeout.
 const defaultShortLinkAllocationTimeout = 60 * time.Minute
+
+const botTokenRefreshSkew = 30 * time.Second
 
 type BotClient interface {
 	Login(ctx context.Context) (string, error)
@@ -46,6 +49,10 @@ type httpBotClient struct {
 	cfg                  config.BotConfig
 	client               *http.Client
 	shortLinkAllocClient *http.Client
+
+	loginMu              sync.Mutex
+	accessToken          string
+	accessTokenExpiresAt time.Time
 }
 
 func newHTTPBotClient(cfg config.BotConfig) *httpBotClient {
@@ -88,6 +95,12 @@ func statusErr(operation string, resp *http.Response) error {
 }
 
 func (c *httpBotClient) Login(ctx context.Context) (string, error) {
+	c.loginMu.Lock()
+	defer c.loginMu.Unlock()
+
+	if c.accessToken != "" && !c.accessTokenExpiresAt.IsZero() && time.Now().Add(botTokenRefreshSkew).Before(c.accessTokenExpiresAt) {
+		return c.accessToken, nil
+	}
 	if c.cfg.Username == "" || c.cfg.Password == "" {
 		return "", fmt.Errorf("bot credentials not configured")
 	}
@@ -140,6 +153,14 @@ func (c *httpBotClient) Login(ctx context.Context) (string, error) {
 
 	if botLoginResp.Session.AccessToken == "" {
 		return "", fmt.Errorf("empty bot access token")
+	}
+	if botLoginResp.Session.ExpiresIn > 0 {
+		c.accessToken = botLoginResp.Session.AccessToken
+		c.accessTokenExpiresAt = time.Now().Add(time.Duration(botLoginResp.Session.ExpiresIn) * time.Second)
+	} else {
+		// Without an expiry the token cannot be safely shared across calls.
+		c.accessToken = ""
+		c.accessTokenExpiresAt = time.Time{}
 	}
 
 	return botLoginResp.Session.AccessToken, nil
