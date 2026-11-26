@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,6 +55,81 @@ func TestPayamSendBatchRetainsImmediateResponse(t *testing.T) {
 	}
 	if len(result.Items) != 1 || result.Items[0].TrackingID != "tracking-1" {
 		t.Fatalf("decoded items mismatch: %+v", result.Items)
+	}
+}
+
+func TestPayamSendBatchSharesValidTokenAcrossConcurrentBatches(t *testing.T) {
+	var mu sync.Mutex
+	tokenCalls := 0
+	sendCalls := 0
+	client := newHTTPPayamSMSClientWithClient(config.PayamSMSConfig{TokenURL: "https://www.payamsms.com/auth/oauth/token"}, &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if strings.Contains(req.URL.Path, "/auth/oauth/token") {
+				tokenCalls++
+				return payamTestResponse(req, http.StatusOK, `{"access_token":"shared-token","expires_in":3600}`), nil
+			}
+			sendCalls++
+			if req.Header.Get("Authorization") != "Bearer shared-token" {
+				return nil, errors.New("send request did not use shared bearer token")
+			}
+			return payamTestResponse(req, http.StatusOK, `[]`), nil
+		}),
+	})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := client.SendBatch(context.Background(), "sender", []PayamSMSItem{{TrackingID: fmt.Sprintf("tracking-%d", i)}})
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("SendBatch returned an error: %v", err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if tokenCalls != 1 || sendCalls != 10 {
+		t.Fatalf("token calls=%d, send calls=%d; want 1 and 10", tokenCalls, sendCalls)
+	}
+}
+
+func TestPayamSendBatchRefreshesCachedTokenAfterUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	tokenCalls := 0
+	var sendAuthorizations []string
+	client := newHTTPPayamSMSClientWithClient(config.PayamSMSConfig{TokenURL: "https://www.payamsms.com/auth/oauth/token"}, &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/auth/oauth/token") {
+				tokenCalls++
+				return payamTestResponse(req, http.StatusOK, fmt.Sprintf(`{"access_token":"token-%d","expires_in":3600}`, tokenCalls)), nil
+			}
+			sendAuthorizations = append(sendAuthorizations, req.Header.Get("Authorization"))
+			if req.Header.Get("Authorization") == "Bearer token-1" {
+				return payamTestResponse(req, http.StatusUnauthorized, "expired"), nil
+			}
+			return payamTestResponse(req, http.StatusOK, `[]`), nil
+		}),
+	})
+
+	result, err := client.SendBatch(context.Background(), "sender", []PayamSMSItem{{TrackingID: "tracking-1"}})
+	if err != nil {
+		t.Fatalf("SendBatch returned an error: %v", err)
+	}
+	if tokenCalls != 2 || result.AttemptCount != 2 {
+		t.Fatalf("token calls=%d attempts=%d, want 2 and 2", tokenCalls, result.AttemptCount)
+	}
+	if got, want := fmt.Sprint(sendAuthorizations), "[Bearer token-1 Bearer token-2]"; got != want {
+		t.Fatalf("send authorizations=%s, want %s", got, want)
 	}
 }
 
