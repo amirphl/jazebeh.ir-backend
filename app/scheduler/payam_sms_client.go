@@ -25,6 +25,7 @@ const (
 	// A status request that is rejected with 401 gets at most three total
 	// attempts: the original request and two requests with refreshed tokens.
 	payamStatusUnauthorizedMaxAttempts = 3
+	payamTokenRefreshSkew              = 30 * time.Second
 )
 
 func payamRetryBackoffDelay(attempt int) time.Duration {
@@ -132,9 +133,10 @@ type httpPayamSMSClient struct {
 	cfg    config.PayamSMSConfig
 	client *http.Client
 
-	refreshMu   sync.Mutex
-	tokenMu     sync.RWMutex
-	accessToken string
+	refreshMu      sync.Mutex
+	tokenMu        sync.RWMutex
+	accessToken    string
+	tokenExpiresAt time.Time
 
 	statusUnauthorizedRetryDelay func(attempt int) time.Duration
 	balanceRetryDelay            func(attempt int) time.Duration
@@ -167,10 +169,22 @@ func (c *httpPayamSMSClient) SendBatch(ctx context.Context, sender string, items
 		return PayamSMSSendResult{}, err
 	}
 
-	var out PayamSMSSendResult
+	var (
+		out                   PayamSMSSendResult
+		unauthorizedRetryUsed bool
+	)
 	for attempt := 0; ; attempt++ {
 		out, err = c.sendBatchOnce(ctx, sender, items, token)
 		out.AttemptCount = attempt + 1
+		if isPayamUnauthorizedError(err) && !unauthorizedRetryUsed && (payamRetryMaxAttempts <= 0 || attempt+1 < payamRetryMaxAttempts) {
+			refreshedToken, refreshErr := c.refreshTokenAfterUnauthorized(ctx, token)
+			if refreshErr != nil {
+				return out, fmt.Errorf("payamsms send token refresh after 401: %w", refreshErr)
+			}
+			token = refreshedToken
+			unauthorizedRetryUsed = true
+			continue
+		}
 		if !isPayamRetryableError(err) {
 			return out, err
 		}
@@ -251,50 +265,64 @@ func (c *httpPayamSMSClient) sendBatchOnce(ctx context.Context, sender string, i
 	return result, nil
 }
 
-// GetToken fetches a fresh OAuth2 bearer token from PayamSMS with exponential backoff retries.
+// GetToken returns a cached, still-valid OAuth2 bearer token when possible.
+// A single refresh lock prevents a concurrent batch window from stampeding the
+// token endpoint. Tokens without a usable expiry deliberately remain uncached.
 func (c *httpPayamSMSClient) GetToken(ctx context.Context) (string, error) {
 	c.refreshMu.Lock()
 	defer c.refreshMu.Unlock()
 
-	token, err := c.getTokenWithRetry(ctx)
+	if token := c.currentToken(""); token != "" {
+		return token, nil
+	}
+	token, expiresAt, err := c.getTokenWithRetry(ctx)
 	if err != nil {
 		return "", err
 	}
-	c.storeToken(token)
+	c.storeToken(token, expiresAt)
 	return token, nil
 }
 
-func (c *httpPayamSMSClient) getTokenWithRetry(ctx context.Context) (string, error) {
+func (c *httpPayamSMSClient) getTokenWithRetry(ctx context.Context) (string, time.Time, error) {
 	var (
-		token string
-		err   error
+		token     string
+		expiresAt time.Time
+		err       error
 	)
 	for attempt := 0; ; attempt++ {
-		token, err = c.getTokenOnce(ctx)
+		var expiresIn int
+		token, expiresIn, err = c.getTokenOnce(ctx)
+		if expiresIn > 0 {
+			expiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second)
+		} else {
+			expiresAt = time.Time{}
+		}
 		if !isPayamRetryableError(err) {
-			return token, err
+			return token, expiresAt, err
 		}
 		if payamRetryMaxAttempts > 0 && attempt+1 >= payamRetryMaxAttempts {
 			break
 		}
 		if sleepErr := sleepWithContext(ctx, payamRetryBackoffDelay(attempt)); sleepErr != nil {
-			return "", ctx.Err()
+			return "", time.Time{}, ctx.Err()
 		}
 	}
-	return token, err
+	return token, expiresAt, err
 }
 
-func (c *httpPayamSMSClient) storeToken(token string) {
+func (c *httpPayamSMSClient) storeToken(token string, expiresAt time.Time) {
 	c.tokenMu.Lock()
 	c.accessToken = token
+	c.tokenExpiresAt = expiresAt
 	c.tokenMu.Unlock()
 }
 
 func (c *httpPayamSMSClient) currentToken(fallback string) string {
 	c.tokenMu.RLock()
 	token := c.accessToken
+	expiresAt := c.tokenExpiresAt
 	c.tokenMu.RUnlock()
-	if token != "" {
+	if token != "" && !expiresAt.IsZero() && time.Now().Add(payamTokenRefreshSkew).Before(expiresAt) {
 		return token
 	}
 	return fallback
@@ -312,15 +340,15 @@ func (c *httpPayamSMSClient) refreshTokenAfterUnauthorized(ctx context.Context, 
 		return currentToken, nil
 	}
 
-	token, err := c.getTokenWithRetry(ctx)
+	token, expiresAt, err := c.getTokenWithRetry(ctx)
 	if err != nil {
 		return "", err
 	}
-	c.storeToken(token)
+	c.storeToken(token, expiresAt)
 	return token, nil
 }
 
-func (c *httpPayamSMSClient) getTokenOnce(ctx context.Context) (string, error) {
+func (c *httpPayamSMSClient) getTokenOnce(ctx context.Context) (string, int, error) {
 	tokenURL := c.cfg.TokenURL
 	if tokenURL == "" {
 		tokenURL = "https://www.payamsms.com/auth/oauth/token"
@@ -348,30 +376,30 @@ func (c *httpPayamSMSClient) getTokenOnce(ctx context.Context) (string, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenReqURL, nil)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if rootToken != "" {
 		req.Header.Set("Authorization", "Basic "+rootToken)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("payamsms token http status: %d", resp.StatusCode)
+		return "", 0, fmt.Errorf("payamsms token http status: %d", resp.StatusCode)
 	}
 	var out struct {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int    `json:"expires_in"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if out.AccessToken == "" {
-		return "", fmt.Errorf("empty access_token")
+		return "", 0, fmt.Errorf("empty access_token")
 	}
-	return out.AccessToken, nil
+	return out.AccessToken, out.ExpiresIn, nil
 }
 
 // FetchStatus retrieves delivery statuses for the given tracking IDs with
