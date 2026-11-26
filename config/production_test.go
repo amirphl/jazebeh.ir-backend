@@ -178,6 +178,7 @@ func appBetaComposeEnvironmentKeys(compose []byte) (map[string]struct{}, error) 
 
 func TestLoadSchedulerConfigReadsTagTestPerformanceSettings(t *testing.T) {
 	t.Setenv("CAMPAIGN_EXECUTION_MAX_PARALLEL_RUNS", "3")
+	t.Setenv("SMS_CAMPAIGN_BATCH_SEND_CONCURRENCY", "5")
 	t.Setenv("TAG_TEST_PERFORMANCE_SCHEDULER_ENABLED", "true")
 	t.Setenv("TAG_TEST_PERFORMANCE_SCHEDULER_INTERVAL", "45s")
 	t.Setenv("TAG_TEST_PERFORMANCE_SCHEDULER_BATCH_SIZE", "17")
@@ -185,6 +186,9 @@ func TestLoadSchedulerConfigReadsTagTestPerformanceSettings(t *testing.T) {
 	cfg := loadSchedulerConfig()
 	if cfg.CampaignExecutionMaxParallelRuns != 3 {
 		t.Fatalf("CampaignExecutionMaxParallelRuns = %d, want 3", cfg.CampaignExecutionMaxParallelRuns)
+	}
+	if cfg.SMSCampaignBatchSendConcurrency != 5 {
+		t.Fatalf("SMSCampaignBatchSendConcurrency = %d, want 5", cfg.SMSCampaignBatchSendConcurrency)
 	}
 	if !cfg.TagTestPerformanceSchedulerEnabled {
 		t.Fatal("TagTestPerformanceSchedulerEnabled = false, want true")
@@ -194,6 +198,14 @@ func TestLoadSchedulerConfigReadsTagTestPerformanceSettings(t *testing.T) {
 	}
 	if cfg.TagTestPerformanceSchedulerBatchSize != 17 {
 		t.Fatalf("TagTestPerformanceSchedulerBatchSize = %d, want 17", cfg.TagTestPerformanceSchedulerBatchSize)
+	}
+}
+
+func TestValidateProductionConfigRejectsInvalidSMSBatchSendConcurrency(t *testing.T) {
+	cfg := &ProductionConfig{Scheduler: SchedulerConfig{SMSCampaignBatchSendConcurrency: 6}}
+	err := ValidateProductionConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "SMS_CAMPAIGN_BATCH_SEND_CONCURRENCY") {
+		t.Fatalf("validation error = %v, want SMS batch concurrency range failure", err)
 	}
 }
 
@@ -383,6 +395,13 @@ func TestLoadProductionConfigReadsCandooSMSSettings(t *testing.T) {
 	cfg := loadCandooSMSConfig()
 	if !cfg.Enabled || cfg.APIKey != "candoo-key" || cfg.MessageType != 2 || cfg.RetryCount != 4 || cfg.ValidityPeriod != 300 || cfg.MaxRequestsPerSecond != 7 || cfg.StatusCodeMap["100"] != "successful" {
 		t.Fatalf("Candoo config = %+v", cfg)
+	}
+}
+
+func TestLoadCandooSMSConfigDefaultsToTwentyRequestsPerSecond(t *testing.T) {
+	t.Setenv("CANDOO_SMS_MAX_REQUESTS_PER_SECOND", "")
+	if got := loadCandooSMSConfig().MaxRequestsPerSecond; got != 20 {
+		t.Fatalf("MaxRequestsPerSecond = %d, want 20", got)
 	}
 }
 
