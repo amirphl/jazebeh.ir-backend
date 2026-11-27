@@ -64,7 +64,7 @@ func TestCandooSendBatchUsesDocumentedRequestShapeAndCorrelatesByCustomerID(t *t
 	if len(payload) != 2 {
 		t.Fatalf("payload length = %d, want 2", len(payload))
 	}
-	if payload[0].SrcNum != "982170007177" || payload[0].Recipient != "989120000001" {
+	if payload[0].SrcNum != "02170007177" || payload[0].Recipient != "989120000001" {
 		t.Fatalf("first normalized payload = %+v", payload[0])
 	}
 	if payload[0].Type != 2 || payload[0].RetryCount != 4 || payload[0].ValidityPeriod != 300 {
@@ -82,6 +82,31 @@ func TestCandooSendBatchUsesDocumentedRequestShapeAndCorrelatesByCustomerID(t *t
 	rejected := byTrackingID["trk-2"]
 	if rejected.TrackDeliveryStatus || rejected.InternalStatus != models.SMSSendStatusUnsuccessful || rejected.ErrorCode == nil || *rejected.ErrorCode != "-4" {
 		t.Fatalf("rejected result = %+v", rejected)
+	}
+}
+
+func TestCandooSendBatchAcceptsArbitraryProvisionedSenderLine(t *testing.T) {
+	t.Parallel()
+
+	var payload []candooSendRequest
+	client := newCandooSMSProviderWithClient(config.CandooSMSConfig{
+		Enabled: true, APIKey: "test-key", MaxRequestsPerSecond: 1000,
+		HTTPMaxAttempts: 1, StatusCodeMap: testCandooStatusCodeMap(),
+	}, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return payamTestResponse(req, http.StatusOK, `[{"messageId":1,"customerId":1,"status":"ACCEPTED","statusCode":100}]`), nil
+	})})
+
+	customerID := int64(1)
+	if _, err := client.SendBatch(context.Background(), "  50001234  ", []SMSProviderMessage{{
+		TrackingID: "trk-short-code", Recipient: "989120000001", ProviderCustomerID: &customerID,
+	}}); err != nil {
+		t.Fatalf("SendBatch: %v", err)
+	}
+	if len(payload) != 1 || payload[0].SrcNum != "50001234" {
+		t.Fatalf("sender payload = %+v, want provisioned short code", payload)
 	}
 }
 
