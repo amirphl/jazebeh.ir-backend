@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,78 @@ import (
 type stubSMSClient struct {
 	getTokenFn    func(ctx context.Context) (string, error)
 	fetchStatusFn func(ctx context.Context, token string, ids []string) (PayamStatusFetchResult, error)
+}
+
+func TestRunOrderedSMSBatchPipelineBoundsSendsAndProcessesInOrder(t *testing.T) {
+	t.Parallel()
+
+	firstRelease := make(chan struct{})
+	started := make(chan int, 3)
+	done := make(chan error, 1)
+	var mu sync.Mutex
+	active, maxActive := 0, 0
+	processed := make([]int, 0, 3)
+
+	go func() {
+		done <- runOrderedSMSBatchPipeline(
+			context.Background(), 2, 3,
+			func(sequence int) (smsSendBatch, error) { return smsSendBatch{sequence: sequence}, nil },
+			func(batch smsSendBatch) (SMSProviderSendResult, error) {
+				mu.Lock()
+				active++
+				if active > maxActive {
+					maxActive = active
+				}
+				mu.Unlock()
+				defer func() {
+					mu.Lock()
+					active--
+					mu.Unlock()
+				}()
+				started <- batch.sequence
+				if batch.sequence == 0 {
+					<-firstRelease
+				}
+				if batch.sequence == 1 {
+					return SMSProviderSendResult{}, errors.New("transient send failure")
+				}
+				return SMSProviderSendResult{}, nil
+			},
+			func(result smsSendBatchResult) {
+				mu.Lock()
+				processed = append(processed, result.batch.sequence)
+				mu.Unlock()
+			},
+		)
+	}()
+
+	seen := map[int]bool{}
+	deadline := time.After(time.Second)
+	for len(seen) < 3 {
+		select {
+		case sequence := <-started:
+			seen[sequence] = true
+		case <-deadline:
+			t.Fatalf("timed out waiting for sends; started=%v", seen)
+		}
+	}
+	mu.Lock()
+	if maxActive > 2 {
+		t.Fatalf("max concurrent sends=%d, want <=2", maxActive)
+	}
+	if len(processed) != 0 {
+		t.Fatalf("processed before first batch completed: %v", processed)
+	}
+	mu.Unlock()
+	close(firstRelease)
+	if err := <-done; err != nil {
+		t.Fatalf("pipeline returned an error: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got, want := fmt.Sprint(processed), "[0 1 2]"; got != want {
+		t.Fatalf("processed batches=%s, want %s", got, want)
+	}
 }
 
 func (s *stubSMSClient) SendBatch(ctx context.Context, sender string, items []PayamSMSItem) (PayamSMSSendResult, error) {
@@ -44,6 +117,19 @@ func (s *stubSMSClient) FetchStatus(ctx context.Context, token string, ids []str
 type stubSMSCampaignStatusJobRepo struct {
 	updated []*models.CampaignStatusJob
 	batched [][]*models.CampaignStatusJob
+}
+
+type interleavedSMSCampaignStatusJobRepo struct {
+	*stubSMSCampaignStatusJobRepo
+	called bool
+}
+
+func (s *interleavedSMSCampaignStatusJobRepo) ListDueInterleavedByCampaign(_ context.Context, platform string, _ time.Time, limit int) ([]*models.CampaignStatusJob, error) {
+	s.called = true
+	if platform != models.CampaignPlatformSMS || limit != 1000 {
+		return nil, fmt.Errorf("unexpected interleaved query: platform=%q limit=%d", platform, limit)
+	}
+	return []*models.CampaignStatusJob{{ID: 9, ProcessedCampaignID: 7}}, nil
 }
 
 type stubSMSAudienceProfileRepo struct {
@@ -270,6 +356,18 @@ func TestGetPayamStatusTokenCachesForFiveMinutes(t *testing.T) {
 	third, err := s.getPayamStatusToken(context.Background())
 	if err != nil || third != "token-2" || calls != 2 {
 		t.Fatalf("refreshed token = %q, calls=%d, err=%v; want token-2/2/nil", third, calls, err)
+	}
+}
+
+func TestListDueSMSStatusJobsUsesInterleavedRepositoryQuery(t *testing.T) {
+	repo := &interleavedSMSCampaignStatusJobRepo{stubSMSCampaignStatusJobRepo: &stubSMSCampaignStatusJobRepo{}}
+	s := &SMSCampaignScheduler{jobRepo: repo}
+	jobs, err := s.listDueSMSStatusJobs(context.Background(), time.Now(), 1000)
+	if err != nil {
+		t.Fatalf("list due SMS status jobs: %v", err)
+	}
+	if !repo.called || len(jobs) != 1 || jobs[0].ProcessedCampaignID != 7 {
+		t.Fatalf("interleaved query called=%v jobs=%v", repo.called, jobs)
 	}
 }
 
