@@ -2,11 +2,13 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +23,49 @@ func TestNewHTTPBotClientUsesDedicatedAllocationTimeout(t *testing.T) {
 	}
 	if got := client.client.Timeout; got != 30*time.Second {
 		t.Fatalf("ordinary bot timeout = %s, want 30s", got)
+	}
+}
+
+func TestBotClientLoginSharesValidTokenAcrossConcurrentCalls(t *testing.T) {
+	var mu sync.Mutex
+	loginCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/bot/auth/login" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		mu.Lock()
+		loginCalls++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"session":{"access_token":"cached-token","expires_in":3600}}}`))
+	}))
+	defer srv.Close()
+
+	client := newHTTPBotClient(config.BotConfig{APIDomain: srv.URL, Username: "scheduler", Password: "password"})
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			token, err := client.Login(context.Background())
+			if err == nil && token != "cached-token" {
+				err = fmt.Errorf("token = %q, want cached-token", token)
+			}
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Login returned an error: %v", err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if loginCalls != 1 {
+		t.Fatalf("login requests = %d, want 1", loginCalls)
 	}
 }
 
