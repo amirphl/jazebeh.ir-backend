@@ -112,7 +112,7 @@ func (c *candooSMSProvider) SendBatch(ctx context.Context, sender string, items 
 		return SMSProviderSendResult{}, fmt.Errorf("candoo send batch exceeds %d messages", candooMaxBatchSize)
 	}
 
-	sender, err := normalizeCandooNumber(sender)
+	sender, err := normalizeCandooSender(sender)
 	if err != nil {
 		return SMSProviderSendResult{}, fmt.Errorf("normalize Candoo sender: %w", err)
 	}
@@ -511,6 +511,17 @@ func normalizeCandooNumber(value string) (string, error) {
 		}
 	}
 	return v, nil
+}
+
+// normalizeCandooSender deliberately does not apply the recipient phone-number
+// rules. Candoo accepts provisioned sender lines such as short codes, which do
+// not necessarily use Iran's 98 mobile-number format.
+func normalizeCandooSender(value string) (string, error) {
+	sender := strings.TrimSpace(value)
+	if sender == "" {
+		return "", fmt.Errorf("sender is required")
+	}
+	return sender, nil
 }
 
 func candooURL(baseURL, path string) string {
