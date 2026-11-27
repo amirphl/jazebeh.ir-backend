@@ -46,6 +46,32 @@ func (r *CampaignStatusJobRepositoryImpl) ListDue(ctx context.Context, platform 
 	return rows, nil
 }
 
+// ListDueInterleavedByCampaign returns due jobs in round-robin campaign order:
+// each processed campaign's earliest job is returned before a second job from
+// any campaign. It is intentionally separate from ListDue because only the SMS
+// scheduler currently processes processed-campaign groups concurrently.
+func (r *CampaignStatusJobRepositoryImpl) ListDueInterleavedByCampaign(ctx context.Context, platform string, now time.Time, limit int) ([]*models.CampaignStatusJob, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	db := r.getDB(ctx)
+	rankedDueJobs := db.Table("campaign_status_jobs").
+		Select(`campaign_status_jobs.*, ROW_NUMBER() OVER (
+			PARTITION BY processed_campaign_id
+			ORDER BY scheduled_at ASC, id ASC
+		) AS campaign_position`).
+		Where("platform = ? AND scheduled_at <= ? AND retry_count < ? AND executed_at IS NULL", platform, now, 3)
+
+	var rows []*models.CampaignStatusJob
+	if err := db.Table("(?) AS ranked_due_jobs", rankedDueJobs).
+		Order("campaign_position ASC, scheduled_at ASC, id ASC").
+		Limit(limit).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 func (r *CampaignStatusJobRepositoryImpl) SaveBatch(ctx context.Context, jobs []*models.CampaignStatusJob) error {
 	return r.BaseRepository.SaveBatch(ctx, jobs)
 }
