@@ -900,6 +900,7 @@ func initializeApplication(cfg *config.ProductionConfig) (*Application, error) {
 			cfg.Admin,
 			cfg.Scheduler.MessageSendMockEnabled,
 			campaignExecutionLimiter,
+			cfg.Scheduler.SMSCampaignBatchSendConcurrency,
 		)
 		stopSMSScheduler := smsSched.Start(context.Background())
 		stopFuncs = append(stopFuncs, stopSMSScheduler)
