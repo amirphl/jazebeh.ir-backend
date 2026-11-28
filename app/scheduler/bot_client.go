@@ -32,6 +32,17 @@ const defaultShortLinkAllocationTimeout = 60 * time.Minute
 
 const botTokenRefreshSkew = 30 * time.Second
 
+// fallbackBotTokenTTL is used only for older bot API deployments that do not
+// include session.expires_in. The current API includes it, but treating a
+// valid token as uncacheable in that case turns every status update into a
+// login request and quickly trips the auth endpoint's rate limit.
+const fallbackBotTokenTTL = 5 * time.Minute
+
+// defaultBotLoginRetryAfter bounds repeated login attempts after the bot API
+// has explicitly rate-limited this process. A Retry-After response header, if
+// supplied, takes precedence.
+const defaultBotLoginRetryAfter = time.Minute
+
 type BotClient interface {
 	Login(ctx context.Context) (string, error)
 	ListReadyCampaigns(ctx context.Context, token string, platform string) ([]dto.BotGetCampaignResponse, error)
@@ -53,6 +64,8 @@ type httpBotClient struct {
 	loginMu              sync.Mutex
 	accessToken          string
 	accessTokenExpiresAt time.Time
+	loginRetryAt         time.Time
+	loginRetryErr        error
 }
 
 func newHTTPBotClient(cfg config.BotConfig) *httpBotClient {
@@ -98,9 +111,15 @@ func (c *httpBotClient) Login(ctx context.Context) (string, error) {
 	c.loginMu.Lock()
 	defer c.loginMu.Unlock()
 
-	if c.accessToken != "" && !c.accessTokenExpiresAt.IsZero() && time.Now().Add(botTokenRefreshSkew).Before(c.accessTokenExpiresAt) {
+	now := time.Now()
+	if c.accessToken != "" && !c.accessTokenExpiresAt.IsZero() && now.Add(botTokenRefreshSkew).Before(c.accessTokenExpiresAt) {
 		return c.accessToken, nil
 	}
+	if !c.loginRetryAt.IsZero() && now.Before(c.loginRetryAt) {
+		return "", fmt.Errorf("bot login is temporarily paused until %s after rate limiting: %w", c.loginRetryAt.UTC().Format(time.RFC3339), c.loginRetryErr)
+	}
+	c.loginRetryAt = time.Time{}
+	c.loginRetryErr = nil
 	if c.cfg.Username == "" || c.cfg.Password == "" {
 		return "", fmt.Errorf("bot credentials not configured")
 	}
@@ -124,7 +143,14 @@ func (c *httpBotClient) Login(ctx context.Context) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", statusErr("bot login", resp)
+		err := statusErr("bot login", resp)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter := botLoginRetryAfter(resp.Header.Get("Retry-After"), now)
+			c.loginRetryAt = now.Add(retryAfter)
+			c.loginRetryErr = err
+			return "", fmt.Errorf("%w; suppressing further login attempts for %s", err, retryAfter)
+		}
+		return "", err
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -154,16 +180,25 @@ func (c *httpBotClient) Login(ctx context.Context) (string, error) {
 	if botLoginResp.Session.AccessToken == "" {
 		return "", fmt.Errorf("empty bot access token")
 	}
+	ttl := fallbackBotTokenTTL
 	if botLoginResp.Session.ExpiresIn > 0 {
-		c.accessToken = botLoginResp.Session.AccessToken
-		c.accessTokenExpiresAt = time.Now().Add(time.Duration(botLoginResp.Session.ExpiresIn) * time.Second)
-	} else {
-		// Without an expiry the token cannot be safely shared across calls.
-		c.accessToken = ""
-		c.accessTokenExpiresAt = time.Time{}
+		ttl = time.Duration(botLoginResp.Session.ExpiresIn) * time.Second
 	}
+	c.accessToken = botLoginResp.Session.AccessToken
+	c.accessTokenExpiresAt = now.Add(ttl)
 
 	return botLoginResp.Session.AccessToken, nil
+}
+
+func botLoginRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	if retryAt, err := http.ParseTime(value); err == nil && retryAt.After(now) {
+		return retryAt.Sub(now)
+	}
+	return defaultBotLoginRetryAfter
 }
 
 func (c *httpBotClient) ListReadyCampaigns(ctx context.Context, token string, platform string) ([]dto.BotGetCampaignResponse, error) {
