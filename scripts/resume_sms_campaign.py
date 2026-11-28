@@ -110,6 +110,20 @@ def env_int(name: str, default: int, *, minimum: int = 0, maximum: int | None = 
     return value
 
 
+def env_float(name: str, default: float, *, minimum: float) -> float:
+    """Read an optional positive float; an explicitly empty dotenv value uses default."""
+    raw = env(name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ResumeError(f"{name} must be a number") from exc
+    if value < minimum:
+        raise ResumeError(f"{name} must be >= {minimum}")
+    return value
+
+
 def database_connection(*, read_only: bool = False):
     """Connect from the deployment's DB_* dotenv settings, never its DB_HOST."""
     kwargs: dict[str, Any] = {
@@ -137,6 +151,22 @@ class Resume:
     def close(self) -> None:
         if self.db:
             self.db.close()
+
+    def validate_provider_configuration(self, provider: str) -> None:
+        """Fail configuration problems before the no-replay intent boundary."""
+        if provider == "payamsms":
+            env("PAYAM_SMS_USERNAME", required=True)
+            env("PAYAM_SMS_PASSWORD", required=True)
+            env("PAYAM_SMS_ROOT_ACCESS_TOKEN", required=True)
+            return
+        if provider == "candoo":
+            env("CANDOO_SMS_API_KEY", required=True)
+            env_int("CANDOO_SMS_MESSAGE_TYPE", 0, maximum=4)
+            env_int("CANDOO_SMS_RETRY_COUNT", 0, maximum=10)
+            env_int("CANDOO_SMS_VALIDITY_PERIOD", 0, maximum=172800)
+            env_float("CANDOO_SMS_TIMEOUT", 30.0, minimum=0.001)
+            return
+        raise ResumeError(f"unsupported provider {provider}")
 
     def load(self, conn, *, lock: bool = True) -> tuple[dict[str, Any], list[Recipient], int, str, str]:
         row = conn.execute("""
@@ -237,7 +267,7 @@ class Resume:
         retry_count = env_int("CANDOO_SMS_RETRY_COUNT", 0, maximum=10)
         validity_period = env_int("CANDOO_SMS_VALIDITY_PERIOD", 0, maximum=172800)
         payload=[{"srcNum":sender,"recipient":x.phone,"body":body(spec,x.code,x.uid),"customerId":c,"type":message_type,"retryCount":retry_count,"validityPeriod":validity_period} for x,c in zip(batch,customers)]
-        r=self.http.post(env("CANDOO_SMS_BASE_URL","https://api.candoosms.com").rstrip("/")+"/api/v3.0.1/send",json=payload,headers={"x-api-key":env("CANDOO_SMS_API_KEY",required=True)},timeout=float(env("CANDOO_SMS_TIMEOUT","30")))
+        r=self.http.post(env("CANDOO_SMS_BASE_URL","https://api.candoosms.com").rstrip("/")+"/api/v3.0.1/send",json=payload,headers={"x-api-key":env("CANDOO_SMS_API_KEY",required=True)},timeout=env_float("CANDOO_SMS_TIMEOUT",30.0,minimum=0.001))
         raw=r.text; status=r.status_code; headers=dict(r.headers); r.raise_for_status(); return status,headers,raw,r.json()
 
     def record(self, row, provider, tracking, customers, http_status, headers, raw, responses, error=None) -> None:
@@ -264,6 +294,7 @@ class Resume:
           with self.db.transaction():
             row, recipients, _, sender, provider = self.load(self.db)
             if row["status"] == "interrupted": self.db.execute("UPDATE campaigns SET status='approved',updated_at=now() WHERE id=%s AND status='interrupted'", (self.id,))
+          self.validate_provider_configuration(provider)
           spec=row["campaign_json"] if isinstance(row["campaign_json"],dict) else json.loads(row["campaign_json"])
           size=PAYAM_BATCH if provider=="payamsms" else CANDOO_BATCH
           for start in range(0,len(recipients),size):
