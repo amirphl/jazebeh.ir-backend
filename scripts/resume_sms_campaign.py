@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -30,6 +31,7 @@ except ImportError as exc:  # pragma: no cover
 
 PAYAM_BATCH, CANDOO_BATCH = 200, 100
 DATABASE_HOST = "172.30.0.10"
+LOGGER = logging.getLogger("resume_sms_campaign")
 
 
 class ResumeError(RuntimeError):
@@ -67,6 +69,11 @@ def parse_args() -> argparse.Namespace:
         help="dotenv file to load; defaults to the repository-root .env.beta",
     )
     p.add_argument("--campaign-id", type=int, required=True)
+    p.add_argument(
+        "--log-file",
+        type=Path,
+        help="Append operational progress to this file; defaults to resume-sms-campaign-<id>.log",
+    )
     p.add_argument("--execute", action="store_true", help="permit DB writes and provider requests")
     p.add_argument("--confirm-campaign-id", type=int, help="must equal --campaign-id with --execute")
     p.add_argument("--concurrency", type=int, default=1, help="sequential by default for outage recovery")
@@ -75,7 +82,28 @@ def parse_args() -> argparse.Namespace:
         p.error("--execute requires --confirm-campaign-id equal to --campaign-id")
     if args.concurrency != 1:
         p.error("only sequential dispatch is supported; rerun one campaign at a time")
+    if args.log_file is None:
+        args.log_file = Path(f"resume-sms-campaign-{args.campaign_id}.log")
     return args
+
+
+def setup_logging(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(path, encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%dT%H:%M:%SZ")
+    formatter.converter = time.gmtime
+    handler.setFormatter(formatter)
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    LOGGER.handlers.clear()
+    LOGGER.setLevel(logging.INFO)
+    LOGGER.addHandler(handler)
+    LOGGER.addHandler(console)
+    LOGGER.propagate = False
 
 
 def load_environment(path: Path) -> None:
@@ -152,6 +180,16 @@ class Resume:
         if self.db:
             self.db.close()
 
+    @staticmethod
+    def database_identity(conn) -> dict[str, str]:
+        row = conn.execute("""
+            SELECT current_database() AS database_name,
+                   current_user AS database_user,
+                   inet_server_addr()::text AS server_address,
+                   inet_server_port()::text AS server_port
+        """).fetchone()
+        return dict(row)
+
     def validate_provider_configuration(self, provider: str) -> None:
         """Fail configuration problems before the no-replay intent boundary."""
         if provider == "payamsms":
@@ -203,11 +241,15 @@ class Resume:
         # Dry-run intentionally uses a short read-only connection, never a lock/write connection.
         with database_connection(read_only=True) as conn:
             row, recipients, pos, sender, provider = self.load(conn, lock=False)
+            identity = self.database_identity(conn)
         size = PAYAM_BATCH if provider == "payamsms" else CANDOO_BATCH
+        LOGGER.info("dry run: campaign=%s status=%s provider=%s checkpoint=%s tail=%s database=%s",
+                    self.id, row["status"], provider, pos, len(recipients), identity)
         print(json.dumps({"campaign_id": self.id, "status": row["status"], "provider": provider,
                           "sender": sender, "processed_campaign_id": row["pc_id"], "checkpoint_position": pos,
                           "tail_count": len(recipients), "batch_size": size,
-                          "expected_batches": (len(recipients)+size-1)//size}, default=str, indent=2))
+                          "expected_batches": (len(recipients)+size-1)//size,
+                          "database": identity}, default=str, indent=2))
 
     def bot_token(self) -> str:
         base = env("BOT_API_DOMAIN", "https://jazebeh.ir", True).rstrip("/")
@@ -293,24 +335,34 @@ class Resume:
         try:
           with self.db.transaction():
             row, recipients, _, sender, provider = self.load(self.db)
-            if row["status"] == "interrupted": self.db.execute("UPDATE campaigns SET status='approved',updated_at=now() WHERE id=%s AND status='interrupted'", (self.id,))
+            identity = self.database_identity(self.db)
+            if row["status"] == "interrupted":
+                self.db.execute("UPDATE campaigns SET status='approved',updated_at=now() WHERE id=%s AND status='interrupted'", (self.id,))
+                LOGGER.info("campaign=%s transitioned interrupted -> approved directly", self.id)
           self.validate_provider_configuration(provider)
           spec=row["campaign_json"] if isinstance(row["campaign_json"],dict) else json.loads(row["campaign_json"])
           size=PAYAM_BATCH if provider=="payamsms" else CANDOO_BATCH
-          for start in range(0,len(recipients),size):
+          total_batches = (len(recipients) + size - 1) // size
+          LOGGER.info("campaign=%s start provider=%s tail=%s batch_size=%s batches=%s database=%s",
+                      self.id, provider, len(recipients), size, total_batches, identity)
+          for batch_number, start in enumerate(range(0,len(recipients),size), start=1):
               batch=recipients[start:start+size]; tracking,customers=self.persist_intent(row,batch,provider)
+              LOGGER.info("campaign=%s batch=%s/%s intent persisted recipients=%s", self.id, batch_number, total_batches, len(batch))
               try: result=self.send(provider,sender,spec,batch,tracking,customers)
               except Exception as exc:
                   # The intent is already durable. Retain an audit trail, then stop;
                   # retrying this batch could duplicate an accepted provider request.
                   self.record(row,provider,tracking,customers,None,{},"",[],str(exc))
+                  LOGGER.error("campaign=%s batch=%s/%s provider request uncertain; stopping without replay", self.id, batch_number, total_batches)
                   raise ResumeError(f"provider result is uncertain after durable intent; do not replay: {exc}") from exc
               self.record(row,provider,tracking,customers,*result)
+              LOGGER.info("campaign=%s batch=%s/%s provider response recorded http_status=%s", self.id, batch_number, total_batches, result[0])
           with self.db.transaction():
               result = self.db.execute("UPDATE campaigns SET status='executed',updated_at=now() WHERE id=%s AND status='approved'", (self.id,))
               if result.rowcount != 1:
                   raise ResumeError("campaign status changed during resume; refusing to mark executed")
-          print(f"campaign {self.id}: resumed {len(recipients)} recipients and marked executed directly")
+          print(f"campaign {self.id}: resumed {len(recipients)} recipients and marked executed directly; database={identity}")
+          LOGGER.info("campaign=%s completed and marked executed directly", self.id)
         finally:
           self.db.execute("SELECT pg_advisory_unlock(%s)", (self.id,))
 
@@ -318,10 +370,13 @@ class Resume:
 def main() -> int:
     args=parse_args()
     try:
+        setup_logging(args.log_file)
+        LOGGER.info("starting campaign=%s execute=%s env_file=%s log_file=%s", args.campaign_id, args.execute, args.env_file, args.log_file)
         load_environment(args.env_file)
         job=Resume(args.campaign_id,args.execute)
         (job.execute() if args.execute else job.dry_run()); return 0
     except (ResumeError, psycopg.Error, requests.RequestException, ValueError) as exc:
+        LOGGER.error("campaign=%s failed: %s", args.campaign_id, exc)
         print(f"ERROR: {exc}",file=sys.stderr); return 1
     finally:
         if "job" in locals(): job.close()
