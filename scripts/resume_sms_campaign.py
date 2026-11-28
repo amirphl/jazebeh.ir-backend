@@ -167,8 +167,16 @@ class Resume:
     def bot_token(self) -> str:
         base = env("BOT_API_DOMAIN", "https://jazebeh.ir", True).rstrip("/")
         r = self.http.post(base + "/api/v1/bot/auth/login", json={"username": env("BOT_USERNAME", required=True), "password": env("BOT_PASSWORD", required=True)}, timeout=30)
-        r.raise_for_status(); data = r.json().get("data", r.json())
-        return data.get("access_token") or data.get("accessToken") or (_ for _ in ()).throw(ResumeError("Bot login returned no token"))
+        r.raise_for_status()
+        payload = r.json()
+        if not payload.get("success", False):
+            raise ResumeError(f"Bot login failed: {payload.get('message', 'unspecified API error')}")
+        data = payload.get("data") or {}
+        session = data.get("session") or {}
+        token = session.get("access_token")
+        if not isinstance(token, str) or not token.strip():
+            raise ResumeError("Bot login returned no session.access_token")
+        return token
 
     def bot_transition(self, token: str, state: str) -> None:
         base = env("BOT_API_DOMAIN", "https://jazebeh.ir", True).rstrip("/")
