@@ -132,7 +132,7 @@ class Resume:
           WHERE c.id=%s
         """ + (" FOR UPDATE OF c,pc" if lock else ""), (self.id,)).fetchone()
         if not row: raise ResumeError("campaign/current processed checkpoint not found")
-        if row["status"] not in ("interrupted", "running"): raise ResumeError(f"status must be interrupted or running, got {row['status']}")
+        if row["status"] not in ("interrupted", "approved", "running"): raise ResumeError(f"status must be interrupted, approved, or running, got {row['status']}")
         spec = row["campaign_json"] if isinstance(row["campaign_json"], dict) else json.loads(row["campaign_json"])
         if str(spec.get("platform", "")).lower() != "sms": raise ResumeError("campaign is not SMS")
         sender = str(spec.get("line_number") or "").strip()
@@ -181,7 +181,12 @@ class Resume:
     def bot_transition(self, token: str, state: str) -> None:
         base = env("BOT_API_DOMAIN", "https://jazebeh.ir", True).rstrip("/")
         r = self.http.post(f"{base}/api/v1/bot/campaigns/{self.id}/{state}", headers={"Authorization": "Bearer " + token}, timeout=30)
-        r.raise_for_status()
+        if not r.ok:
+            # The Go client includes a bounded error body too; it is essential
+            # for an operator to distinguish a transition conflict from a server
+            # deployment/database failure, without dumping an unbounded page.
+            detail = r.text.strip().replace("\n", " ")[:4096]
+            raise ResumeError(f"Bot transition to {state} failed: HTTP {r.status_code}" + (f"; {detail}" if detail else ""))
 
     def allocate(self, cur, count: int, provider: str) -> tuple[list[str], list[int | None]]:
         cur.execute("SELECT last_value FROM sequence_counters WHERE name='sms_tracking_id' FOR UPDATE")
@@ -242,7 +247,7 @@ class Resume:
             row, recipients, _, sender, provider = self.load(self.db)
             if row["status"] == "interrupted": self.db.execute("UPDATE campaigns SET status='approved',updated_at=now() WHERE id=%s AND status='interrupted'", (self.id,))
           token=self.bot_token()
-          if row["status"] == "interrupted": self.bot_transition(token,"running")
+          if row["status"] in ("interrupted", "approved"): self.bot_transition(token,"running")
           spec=row["campaign_json"] if isinstance(row["campaign_json"],dict) else json.loads(row["campaign_json"])
           size=PAYAM_BATCH if provider=="payamsms" else CANDOO_BATCH
           for start in range(0,len(recipients),size):
