@@ -30,6 +30,7 @@ except ImportError as exc:  # pragma: no cover
 
 
 PAYAM_BATCH, CANDOO_BATCH = 200, 100
+DATABASE_HOST = "172.29.0.2"
 LOGGER = logging.getLogger("resume_sms_campaign")
 
 
@@ -152,9 +153,9 @@ def env_float(name: str, default: float, *, minimum: float) -> float:
 
 
 def database_connection(*, read_only: bool = False):
-    """Connect only from the deployment's DB_* dotenv settings."""
+    """Use the confirmed production host with the remaining DB_* dotenv settings."""
     kwargs: dict[str, Any] = {
-        "host": env("DB_HOST", required=True),
+        "host": DATABASE_HOST,
         "port": env("DB_PORT", "5432"),
         "dbname": env("DB_NAME", required=True),
         "user": env("DB_USER", required=True),
