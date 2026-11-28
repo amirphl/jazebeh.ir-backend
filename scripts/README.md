@@ -36,6 +36,7 @@ Data and repair utilities:
 | `push_campaign_audience_uids.py` | Resolves and pushes aligned UID/short-code pairs |
 | `export_uid_campaign_participation.py` | Creates private, spreadsheet-safe TorobPay participation CSVs |
 | `resend_torobpay_sms.py` | Dry-run-by-default, idempotent TorobPay SMS correction/resend tool |
+| `resume_sms_campaign.py` | Resumes the unsent tail of one interrupted/running SMS campaign; dry-run by default and writes Go-compatible status jobs |
 | `count_characters.py` | Mirrors campaign SMS character and part calculations |
 | `cert_monitor.py` | Checks configured certificates and alerts without logging credentials |
 | `nginx_sentry_forwarder.py` | Redacts and forwards bounded Nginx error events to Sentry |
