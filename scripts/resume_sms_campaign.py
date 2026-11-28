@@ -132,7 +132,7 @@ class Resume:
           WHERE c.id=%s
         """ + (" FOR UPDATE OF c,pc" if lock else ""), (self.id,)).fetchone()
         if not row: raise ResumeError("campaign/current processed checkpoint not found")
-        if row["status"] not in ("interrupted", "approved", "running"): raise ResumeError(f"status must be interrupted, approved, or running, got {row['status']}")
+        if row["status"] not in ("interrupted", "approved"): raise ResumeError(f"status must be interrupted or approved, got {row['status']}")
         spec = row["campaign_json"] if isinstance(row["campaign_json"], dict) else json.loads(row["campaign_json"])
         if str(spec.get("platform", "")).lower() != "sms": raise ResumeError("campaign is not SMS")
         sender = str(spec.get("line_number") or "").strip()
@@ -206,7 +206,7 @@ class Resume:
             cur.executemany("""INSERT INTO sent_sms(processed_campaign_id,phone_number,tracking_id,provider,provider_customer_id,status,parts_delivered)
                              VALUES(%s,%s,%s,%s,%s,'pending',0)""", [(row["pc_id"], x.phone, t, provider, c) for x,t,c in zip(batch,tracking,customers)])
             cur.execute("UPDATE processed_campaigns SET last_audience_id=%s,updated_at=now() WHERE id=%s", (batch[-1].audience_id,row["pc_id"]))
-            cur.execute("UPDATE campaigns SET updated_at=now() WHERE id=%s AND status='running'", (self.id,))
+            cur.execute("UPDATE campaigns SET updated_at=now() WHERE id=%s AND status='approved'", (self.id,))
         return tracking, customers
 
     def send(self, provider: str, sender: str, spec: dict[str, Any], batch: list[Recipient], tracking: list[str], customers: list[int | None]) -> tuple[int | None, dict[str,str], str, list[dict[str,Any]]]:
@@ -246,8 +246,6 @@ class Resume:
           with self.db.transaction():
             row, recipients, _, sender, provider = self.load(self.db)
             if row["status"] == "interrupted": self.db.execute("UPDATE campaigns SET status='approved',updated_at=now() WHERE id=%s AND status='interrupted'", (self.id,))
-          token=self.bot_token()
-          if row["status"] in ("interrupted", "approved"): self.bot_transition(token,"running")
           spec=row["campaign_json"] if isinstance(row["campaign_json"],dict) else json.loads(row["campaign_json"])
           size=PAYAM_BATCH if provider=="payamsms" else CANDOO_BATCH
           for start in range(0,len(recipients),size):
@@ -259,8 +257,11 @@ class Resume:
                   self.record(row,provider,tracking,customers,None,{},"",[],str(exc))
                   raise ResumeError(f"provider result is uncertain after durable intent; do not replay: {exc}") from exc
               self.record(row,provider,tracking,customers,*result)
-          self.bot_transition(token,"executed")
-          print(f"campaign {self.id}: resumed {len(recipients)} recipients and marked executed")
+          with self.db.transaction():
+              result = self.db.execute("UPDATE campaigns SET status='executed',updated_at=now() WHERE id=%s AND status='approved'", (self.id,))
+              if result.rowcount != 1:
+                  raise ResumeError("campaign status changed during resume; refusing to mark executed")
+          print(f"campaign {self.id}: resumed {len(recipients)} recipients and marked executed directly")
         finally:
           self.db.execute("SELECT pg_advisory_unlock(%s)", (self.id,))
 
