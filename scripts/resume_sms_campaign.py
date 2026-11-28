@@ -29,6 +29,7 @@ except ImportError as exc:  # pragma: no cover
 
 
 PAYAM_BATCH, CANDOO_BATCH = 200, 100
+DATABASE_HOST = "172.30.0.10"
 
 
 class ResumeError(RuntimeError):
@@ -94,10 +95,28 @@ def env(name: str, default: str = "", required: bool = False) -> str:
     return value
 
 
+def database_connection(*, read_only: bool = False):
+    """Connect from the deployment's DB_* dotenv settings, never its DB_HOST."""
+    kwargs: dict[str, Any] = {
+        "host": DATABASE_HOST,
+        "port": env("DB_PORT", "5432"),
+        "dbname": env("DB_NAME", required=True),
+        "user": env("DB_USER", required=True),
+        "password": env("DB_PASSWORD", required=True),
+        "sslmode": env("DB_SSL_MODE", "require"),
+        "connect_timeout": 10,
+        "row_factory": dict_row,
+    }
+    conn = psycopg.connect(**kwargs)
+    if read_only:
+        conn.execute("SET TRANSACTION READ ONLY")
+    return conn
+
+
 class Resume:
     def __init__(self, campaign_id: int, execute: bool):
         self.id, self.execute = campaign_id, execute
-        self.db = psycopg.connect(env("DATABASE_URL", required=execute), row_factory=dict_row) if execute else None
+        self.db = database_connection() if execute else None
         self.http = requests.Session()
 
     def close(self) -> None:
@@ -137,8 +156,7 @@ class Resume:
 
     def dry_run(self) -> None:
         # Dry-run intentionally uses a short read-only connection, never a lock/write connection.
-        with psycopg.connect(env("DATABASE_URL", required=True), row_factory=dict_row) as conn:
-            conn.execute("SET TRANSACTION READ ONLY")
+        with database_connection(read_only=True) as conn:
             row, recipients, pos, sender, provider = self.load(conn, lock=False)
         size = PAYAM_BATCH if provider == "payamsms" else CANDOO_BATCH
         print(json.dumps({"campaign_id": self.id, "status": row["status"], "provider": provider,
