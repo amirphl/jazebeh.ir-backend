@@ -15,7 +15,10 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
+
+from load_dotenv import DotenvError, parse_dotenv
 
 try:
     import psycopg
@@ -56,6 +59,12 @@ def body(spec: dict[str, Any], code: str, uid: str) -> str:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--env-file",
+        type=Path,
+        default=Path(__file__).resolve().parent.parent / ".env.beta",
+        help="dotenv file to load; defaults to the repository-root .env.beta",
+    )
     p.add_argument("--campaign-id", type=int, required=True)
     p.add_argument("--execute", action="store_true", help="permit DB writes and provider requests")
     p.add_argument("--confirm-campaign-id", type=int, help="must equal --campaign-id with --execute")
@@ -66,6 +75,16 @@ def parse_args() -> argparse.Namespace:
     if args.concurrency != 1:
         p.error("only sequential dispatch is supported; rerun one campaign at a time")
     return args
+
+
+def load_environment(path: Path) -> None:
+    """Load a strict dotenv file without replacing explicitly exported values."""
+    try:
+        values = parse_dotenv(path)
+    except (DotenvError, UnicodeError) as exc:
+        raise ResumeError(f"cannot load env file {path}: {exc}") from exc
+    for key, value in values:
+        os.environ.setdefault(key, value)
 
 
 def env(name: str, default: str = "", required: bool = False) -> str:
@@ -216,11 +235,14 @@ class Resume:
 
 
 def main() -> int:
-    args=parse_args(); job=Resume(args.campaign_id,args.execute)
+    args=parse_args()
     try:
+        load_environment(args.env_file)
+        job=Resume(args.campaign_id,args.execute)
         (job.execute() if args.execute else job.dry_run()); return 0
     except (ResumeError, psycopg.Error, requests.RequestException, ValueError) as exc:
         print(f"ERROR: {exc}",file=sys.stderr); return 1
-    finally: job.close()
+    finally:
+        if "job" in locals(): job.close()
 
 if __name__ == "__main__": raise SystemExit(main())
