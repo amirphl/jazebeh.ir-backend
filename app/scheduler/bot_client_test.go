@@ -69,6 +69,52 @@ func TestBotClientLoginSharesValidTokenAcrossConcurrentCalls(t *testing.T) {
 	}
 }
 
+func TestBotClientLoginCachesTokenWhenLegacyResponseOmitsExpiry(t *testing.T) {
+	loginCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loginCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"session":{"access_token":"legacy-token"}}}`))
+	}))
+	defer srv.Close()
+
+	client := newHTTPBotClient(config.BotConfig{APIDomain: srv.URL, Username: "scheduler", Password: "password"})
+	for range 2 {
+		token, err := client.Login(context.Background())
+		if err != nil {
+			t.Fatalf("Login returned an error: %v", err)
+		}
+		if token != "legacy-token" {
+			t.Fatalf("token = %q, want legacy-token", token)
+		}
+	}
+	if loginCalls != 1 {
+		t.Fatalf("login requests = %d, want 1", loginCalls)
+	}
+}
+
+func TestBotClientLoginRateLimitIsLocallyThrottled(t *testing.T) {
+	loginCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loginCalls++
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"success":false,"message":"Too many requests"}`))
+	}))
+	defer srv.Close()
+
+	client := newHTTPBotClient(config.BotConfig{APIDomain: srv.URL, Username: "scheduler", Password: "password"})
+	if _, err := client.Login(context.Background()); err == nil {
+		t.Fatal("first Login returned nil error, want rate-limit error")
+	}
+	if _, err := client.Login(context.Background()); err == nil {
+		t.Fatal("second Login returned nil error, want locally throttled error")
+	}
+	if loginCalls != 1 {
+		t.Fatalf("login requests = %d, want 1", loginCalls)
+	}
+}
+
 func TestDownloadCampaignMediaKeepsHeaderExtension(t *testing.T) {
 	t.Parallel()
 
