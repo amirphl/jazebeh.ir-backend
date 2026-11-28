@@ -164,7 +164,13 @@ def database_connection(*, read_only: bool = False):
         "connect_timeout": 10,
         "row_factory": dict_row,
     }
-    conn = psycopg.connect(**kwargs)
+    # Live mode keeps the connection in autocommit so pg_try_advisory_lock()
+    # does not open an implicit outer transaction. Each explicit
+    # ``with conn.transaction()`` below is then a real commit boundary for
+    # the no-replay intent, audit/status-job writes, and final state change.
+    # Without this, those blocks become savepoints and close() rolls all
+    # scheduler records back after the provider has already accepted SMS.
+    conn = psycopg.connect(**kwargs, autocommit=not read_only)
     if read_only:
         conn.execute("SET TRANSACTION READ ONLY")
     return conn
@@ -328,6 +334,24 @@ class Resume:
                 correlation_id = str(uuid.uuid4())
                 for minutes in offsets: cur.execute("INSERT INTO campaign_status_jobs(correlation_id,processed_campaign_id,platform,provider,tracking_ids,retry_count,scheduled_at) VALUES(%s,%s,'sms',%s,%s,0,now()+(%s||' minutes')::interval)", (correlation_id,row["pc_id"],provider,poll_ids,minutes))
 
+    def verify_completed_write(self, processed_campaign_id: int, expected_intents: int) -> None:
+        """Read back committed state before reporting success to the operator."""
+        check = self.db.execute("""
+            SELECT c.status::text AS status,
+                   COUNT(s.id) FILTER (WHERE NULLIF(BTRIM(s.phone_number), '') IS NOT NULL) AS send_intents
+            FROM campaigns c
+            JOIN processed_campaigns pc ON pc.campaign_id = c.id AND pc.is_current = TRUE
+            LEFT JOIN sent_sms s ON s.processed_campaign_id = pc.id
+            WHERE c.id = %s AND pc.id = %s
+            GROUP BY c.status
+        """, (self.id, processed_campaign_id)).fetchone()
+        if not check or check["status"] != "executed" or check["send_intents"] != expected_intents:
+            raise ResumeError(
+                "post-commit verification failed: expected status=executed and "
+                f"send_intents={expected_intents}, got {dict(check) if check else None}"
+            )
+        LOGGER.info("campaign=%s post-commit verification passed status=executed send_intents=%s", self.id, expected_intents)
+
     def execute(self) -> None:
         assert self.db
         if not self.db.execute("SELECT pg_try_advisory_lock(%s)", (self.id,)).fetchone()["pg_try_advisory_lock"]:
@@ -361,6 +385,7 @@ class Resume:
               result = self.db.execute("UPDATE campaigns SET status='executed',updated_at=now() WHERE id=%s AND status='approved'", (self.id,))
               if result.rowcount != 1:
                   raise ResumeError("campaign status changed during resume; refusing to mark executed")
+          self.verify_completed_write(row["pc_id"], len(row["audience_ids"]))
           print(f"campaign {self.id}: resumed {len(recipients)} recipients and marked executed directly; database={identity}")
           LOGGER.info("campaign=%s completed and marked executed directly", self.id)
         finally:
