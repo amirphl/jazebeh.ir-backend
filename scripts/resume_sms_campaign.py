@@ -95,6 +95,21 @@ def env(name: str, default: str = "", required: bool = False) -> str:
     return value
 
 
+def env_int(name: str, default: int, *, minimum: int = 0, maximum: int | None = None) -> int:
+    """Read an optional integer; an explicitly empty dotenv value uses default."""
+    raw = env(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ResumeError(f"{name} must be an integer") from exc
+    if value < minimum or (maximum is not None and value > maximum):
+        upper = f" and <= {maximum}" if maximum is not None else ""
+        raise ResumeError(f"{name} must be >= {minimum}{upper}")
+    return value
+
+
 def database_connection(*, read_only: bool = False):
     """Connect from the deployment's DB_* dotenv settings, never its DB_HOST."""
     kwargs: dict[str, Any] = {
@@ -218,7 +233,10 @@ class Resume:
             payload={"sender":sender,"smsItems":[{"recipient":x.phone,"body":body(spec,x.code,x.uid),"customerId":t} for x,t in zip(batch,tracking)]}
             r=self.http.post(env("PAYAM_SMS_SEND_URL","https://www.payamsms.com/panel/webservice/sendMultipleWithSrc"),json=payload,headers={"Authorization":"Bearer "+access},timeout=60)
             raw=r.text; status=r.status_code; headers=dict(r.headers); r.raise_for_status(); return status,headers,raw,r.json()
-        payload=[{"srcNum":sender,"recipient":x.phone,"body":body(spec,x.code,x.uid),"customerId":c,"type":int(env("CANDOO_SMS_MESSAGE_TYPE","0")),"retryCount":int(env("CANDOO_SMS_RETRY_COUNT","0")),"validityPeriod":int(env("CANDOO_SMS_VALIDITY_PERIOD","0"))} for x,c in zip(batch,customers)]
+        message_type = env_int("CANDOO_SMS_MESSAGE_TYPE", 0, maximum=4)
+        retry_count = env_int("CANDOO_SMS_RETRY_COUNT", 0, maximum=10)
+        validity_period = env_int("CANDOO_SMS_VALIDITY_PERIOD", 0, maximum=172800)
+        payload=[{"srcNum":sender,"recipient":x.phone,"body":body(spec,x.code,x.uid),"customerId":c,"type":message_type,"retryCount":retry_count,"validityPeriod":validity_period} for x,c in zip(batch,customers)]
         r=self.http.post(env("CANDOO_SMS_BASE_URL","https://api.candoosms.com").rstrip("/")+"/api/v3.0.1/send",json=payload,headers={"x-api-key":env("CANDOO_SMS_API_KEY",required=True)},timeout=float(env("CANDOO_SMS_TIMEOUT","30")))
         raw=r.text; status=r.status_code; headers=dict(r.headers); r.raise_for_status(); return status,headers,raw,r.json()
 
