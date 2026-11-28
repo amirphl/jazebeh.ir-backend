@@ -115,7 +115,7 @@ def database_connection(*, read_only: bool = False):
 
 class Resume:
     def __init__(self, campaign_id: int, execute: bool):
-        self.id, self.execute = campaign_id, execute
+        self.id, self.live_mode = campaign_id, execute
         self.db = database_connection() if execute else None
         self.http = requests.Session()
 
