@@ -87,7 +87,7 @@ impl Settings {
             )?,
             link_lookup_timeout: seconds(
                 "EXTERNAL_SHORTLINK_LINK_LOOKUP_TIMEOUT_SECONDS",
-                0.150,
+                5.0,
                 0.001,
             )?,
             cache_max_entries,
