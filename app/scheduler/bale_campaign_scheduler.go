@@ -846,7 +846,7 @@ func (s *BaleCampaignScheduler) scheduleStatusCheckJobs(ctx context.Context, pro
 
 	corrID := uuid.NewString()
 	now := utils.UTCNow()
-	offsets := []time.Duration{10 * time.Minute, 20 * time.Minute, 24 * time.Hour}
+	offsets := []time.Duration{20 * time.Minute, 60 * time.Minute, 12 * time.Hour}
 	jobs := make([]*models.CampaignStatusJob, 0, len(offsets))
 	for _, off := range offsets {
 		jobs = append(jobs, &models.CampaignStatusJob{
