@@ -3,9 +3,9 @@
 
 This is an operational recovery tool, not a normal campaign dispatcher.  It
 opens PostgreSQL read-only and never changes campaign, sent_sms, or status-job
-records.  Its default mode is a dry run.  --execute needs both campaign and
-attempt-count confirmation because a successful provider request cannot be
-rolled back by this script.
+records.  Its default mode is a dry run.  --execute requires explicit campaign
+confirmation because a successful provider request cannot be rolled back by
+this script.
 
 For PayamSMS the old tracking IDs are sent again as customerId values.  For
 Candoo the old numeric provider_customer_id values are reused; Candoo does not
@@ -138,7 +138,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--attempt-id", type=int, action="append", help="only this failed send-attempt ID (repeatable)")
     parser.add_argument("--execute", action="store_true", help="send provider requests; default is dry-run")
     parser.add_argument("--confirm-campaign-id", type=int)
-    parser.add_argument("--confirm-attempt-count", type=int, help="must equal the dry-run selected attempt count")
     parser.add_argument("--audit-file", type=Path, help="new local JSONL audit path; required implicitly in execute mode")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args(argv)
@@ -149,8 +148,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         validate_positive_ids(parser, "attempt-id", args.attempt_id)
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
-    if args.execute and (args.confirm_campaign_id != args.campaign_id or args.confirm_attempt_count is None):
-        parser.error("--execute requires --confirm-campaign-id and --confirm-attempt-count")
+    if args.execute and args.confirm_campaign_id != args.campaign_id:
+        parser.error("--execute requires --confirm-campaign-id equal to campaign_id")
     if args.audit_file is None:
         args.audit_file = Path(f"resend-sms-http-400-campaign-{args.campaign_id}.jsonl")
     return args
@@ -350,8 +349,6 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"campaign_id": args.campaign_id, "database": "read-only", "execute": args.execute, "selected_attempt_count": len(attempts), "selected_recipient_count": sum(len(a.recipients) for a in attempts), "attempts": plan}, indent=2))
         if not args.execute:
             return 0
-        if args.confirm_attempt_count != len(attempts):
-            raise RecoveryError(f"--confirm-attempt-count={args.confirm_attempt_count} does not match selected count {len(attempts)}")
         # A brand-new audit file makes accidental repeat execution fail closed.
         with private_new_file(args.audit_file) as audit, requests.Session() as session:
             for attempt in attempts:
