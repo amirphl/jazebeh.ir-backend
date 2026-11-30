@@ -1156,10 +1156,11 @@ func (s *SMSCampaignScheduler) scheduleStatusCheckJobs(ctx context.Context, proc
 
 	corrID := uuid.NewString()
 	now := utils.UTCNow()
-	offsets := []time.Duration{10 * time.Minute, 20 * time.Minute}
-	// Candoo delivery status is not queried after the first day.
-	if provider != models.SMSProviderCandoo {
-		offsets = append(offsets, 24*time.Hour)
+	offsets := []time.Duration{30 * time.Minute, 60 * time.Minute, 24 * time.Hour}
+	// Candoo's final delivery-status check is due after 12 hours; other SMS
+	// providers retain their 24-hour final check.
+	if provider == models.SMSProviderCandoo {
+		offsets[2] = 12 * time.Hour
 	}
 	jobs := make([]*models.CampaignStatusJob, 0, len(offsets))
 	for _, off := range offsets {
