@@ -46,7 +46,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--db-user", default=os.getenv("DB_USER", ""))
     parser.add_argument("--db-sslmode", default=os.getenv("DB_SSL_MODE", "require"))
     parser.add_argument("--timeout", type=float, default=60.0)
-    parser.add_argument("--request-delay", type=float, default=1.0)
+    parser.add_argument(
+        "--requests-per-second",
+        type=float,
+        default=10.0,
+        help="target provider request rate; backs off on provider throttling (default: 10)",
+    )
+    parser.add_argument(
+        "--request-delay",
+        type=float,
+        default=0.0,
+        help="extra delay after each successful request in seconds (default: 0)",
+    )
     parser.add_argument("--verbose", action="store_true", help="log progress for every provider batch")
     parser.add_argument(
         "--include-unjobbed-sent-sms",
@@ -61,9 +72,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--db-name/DB_NAME and --db-user/DB_USER are required")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
+    if args.requests_per_second <= 0:
+        parser.error("--requests-per-second must be positive")
     if args.request_delay < 0:
         parser.error("--request-delay must be non-negative")
     return args
+
+
+def provider_request_delay(args: argparse.Namespace) -> float:
+    """Use a conservative, evenly spaced request cadence for both providers."""
+    return max(args.request_delay, 1.0 / args.requests_per_second)
 
 
 def as_nonnegative_int(item: Mapping[str, Any], key: str) -> int:
@@ -206,6 +224,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     session = requests.Session()
     session.headers["User-Agent"] = "yamata-sms-statistics-report/1"
+    request_delay = provider_request_delay(args)
+    logger.info(
+        "campaign_id=%d provider_request_rate_target=%.2f/s spacing=%.3fs",
+        args.campaign_id,
+        args.requests_per_second,
+        request_delay,
+    )
     results: dict[str, dict[str, dict[str, Any]]] = {}
     if lookup_ids["payamsms"]:
         logger.info("campaign_id=%d fetching PayamSMS delivery statuses", args.campaign_id)
@@ -214,7 +239,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             payam_config(),
             sorted(lookup_ids["payamsms"]),
             args.timeout,
-            args.request_delay,
+            request_delay,
             lambda completed, total, requested, response: log_provider_batch(
                 args.campaign_id,
                 "payamsms",
@@ -231,7 +256,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             session,
             sorted(lookup_ids["candoo"]),
             args.timeout,
-            args.request_delay,
+            request_delay,
             lambda completed, total, requested, response: log_provider_batch(
                 args.campaign_id,
                 "candoo",

@@ -1,9 +1,17 @@
+import argparse
 import unittest
 
 import report_sms_campaign_statistics as report
 
 
 class ReportSMSCampaignStatisticsTests(unittest.TestCase):
+    def test_provider_request_delay_targets_requested_rate(self):
+        args = argparse.Namespace(requests_per_second=10.0, request_delay=0.0)
+        self.assertEqual(report.provider_request_delay(args), 0.1)
+
+        args.request_delay = 0.5
+        self.assertEqual(report.provider_request_delay(args), 0.5)
+
     def test_aggregate_matches_scheduler_shape(self):
         stats = report.aggregate(
             [
