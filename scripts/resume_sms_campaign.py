@@ -329,7 +329,7 @@ class Resume:
                 rejected=provider=="candoo" and str(item.get("status","")).upper()=="REJECTED"
                 cur.execute("UPDATE sent_sms SET server_id=%s,error_code=%s,description=%s,status=%s,parts_delivered=%s,updated_at=now() WHERE processed_campaign_id=%s AND tracking_id=%s", (server,str(item.get("statusCode")) if item else None,str(item.get("status")) if item else None,"unsuccessful" if rejected else "pending",0,row["pc_id"],t))
             poll_ids = tracking if provider == "payamsms" else [t for t,c in zip(tracking,customers) if str(by_key.get((str(c),),{}).get("status", "")).upper() == "ACCEPTED"]
-            offsets=(10,20,1440) if provider=="payamsms" else (10,20)
+            offsets=(10,20,1440) if provider=="payamsms" else (10,20,720)
             if poll_ids:
                 correlation_id = str(uuid.uuid4())
                 for minutes in offsets: cur.execute("INSERT INTO campaign_status_jobs(correlation_id,processed_campaign_id,platform,provider,tracking_ids,retry_count,scheduled_at) VALUES(%s,%s,'sms',%s,%s,0,now()+(%s||' minutes')::interval)", (correlation_id,row["pc_id"],provider,poll_ids,minutes))
