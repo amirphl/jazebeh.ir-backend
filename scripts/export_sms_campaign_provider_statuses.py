@@ -231,7 +231,7 @@ def payam_statuses(
     lookup_ids: Sequence[str],
     timeout: float,
     delay: float,
-    progress: Callable[[int, int, int], None] | None = None,
+    progress: Callable[[int, int, Sequence[str], Sequence[Mapping[str, Any]]], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     token = payam_login(session, config, timeout)
     results: dict[str, dict[str, Any]] = {}
@@ -252,7 +252,12 @@ def payam_statuses(
                 if isinstance(item, dict) and str(item.get("customerId", "")).strip():
                     results[str(item["customerId"]).strip()] = item
             if progress:
-                progress(index + 1, (len(lookup_ids) + PAYAM_BATCH_SIZE - 1) // PAYAM_BATCH_SIZE, len(payload))
+                progress(
+                    index + 1,
+                    (len(lookup_ids) + PAYAM_BATCH_SIZE - 1) // PAYAM_BATCH_SIZE,
+                    batch,
+                    payload,
+                )
             break
         else:
             raise RuntimeError("PayamSMS status retries exhausted")
@@ -266,7 +271,7 @@ def candoo_statuses(
     lookup_ids: Sequence[str],
     timeout: float,
     delay: float,
-    progress: Callable[[int, int, int], None] | None = None,
+    progress: Callable[[int, int, Sequence[str], Sequence[Mapping[str, Any]]], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     api_key = os.getenv("CANDOO_SMS_API_KEY", "").strip()
     if not api_key:
@@ -295,7 +300,12 @@ def candoo_statuses(
                 if isinstance(item, dict) and item.get("customerId") is not None:
                     results[str(item["customerId"])] = item
             if progress:
-                progress(index + 1, (len(lookup_ids) + CANDOO_BATCH_SIZE - 1) // CANDOO_BATCH_SIZE, len(payload))
+                progress(
+                    index + 1,
+                    (len(lookup_ids) + CANDOO_BATCH_SIZE - 1) // CANDOO_BATCH_SIZE,
+                    batch,
+                    payload,
+                )
             break
         if index + 1 < (len(lookup_ids) + CANDOO_BATCH_SIZE - 1) // CANDOO_BATCH_SIZE and delay:
             time.sleep(delay)

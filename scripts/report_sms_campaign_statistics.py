@@ -131,6 +131,38 @@ def aggregate(rows: Sequence[Mapping[str, int]]) -> dict[str, int]:
     }
 
 
+def log_provider_batch(
+    campaign_id: int,
+    provider: str,
+    completed: int,
+    total: int,
+    requested_ids: Sequence[str],
+    response_items: Sequence[Mapping[str, Any]],
+) -> None:
+    """Log a small provider-debug sample without exposing recipient data."""
+    output_keys = (
+        ("customerId", "status", "totalParts", "totalDeliveredParts", "totalUnDeliveredParts", "totalUnKnownParts")
+        if provider == "payamsms"
+        else ("customerId", "messageId", "status")
+    )
+    response_sample = [
+        {key: item[key] for key in output_keys if key in item}
+        for item in response_items[:3]
+        if isinstance(item, Mapping)
+    ]
+    logger.info(
+        "campaign_id=%d provider=%s batch=%d/%d requested=%d returned=%d request_sample=%s response_sample=%s",
+        campaign_id,
+        provider,
+        completed,
+        total,
+        len(requested_ids),
+        len(response_items),
+        json.dumps(list(requested_ids[:3]), ensure_ascii=False),
+        json.dumps(response_sample, ensure_ascii=False, sort_keys=True),
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     load_repository_env()
     args = parse_args(argv)
@@ -183,12 +215,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             sorted(lookup_ids["payamsms"]),
             args.timeout,
             args.request_delay,
-            lambda completed, total, returned: logger.info(
-                "campaign_id=%d provider=payamsms batch=%d/%d returned=%d",
+            lambda completed, total, requested, response: log_provider_batch(
                 args.campaign_id,
+                "payamsms",
                 completed,
                 total,
-                returned,
+                requested,
+                response,
             ),
         )
         logger.info("campaign_id=%d provider=payamsms results=%d", args.campaign_id, len(results["payamsms"]))
@@ -199,12 +232,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             sorted(lookup_ids["candoo"]),
             args.timeout,
             args.request_delay,
-            lambda completed, total, returned: logger.info(
-                "campaign_id=%d provider=candoo batch=%d/%d returned=%d",
+            lambda completed, total, requested, response: log_provider_batch(
                 args.campaign_id,
+                "candoo",
                 completed,
                 total,
-                returned,
+                requested,
+                response,
             ),
         )
         logger.info("campaign_id=%d provider=candoo results=%d", args.campaign_id, len(results["candoo"]))
