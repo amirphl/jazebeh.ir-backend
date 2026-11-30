@@ -35,7 +35,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from load_dotenv import DotenvError, parse_dotenv
 from script_common import read_secret, validate_database_port, validate_positive_ids
@@ -225,7 +225,14 @@ def payam_login(session, config: Mapping[str, str], timeout: float) -> str:
     raise RuntimeError("PayamSMS token retries exhausted")
 
 
-def payam_statuses(session, config: Mapping[str, str], lookup_ids: Sequence[str], timeout: float, delay: float) -> dict[str, dict[str, Any]]:
+def payam_statuses(
+    session,
+    config: Mapping[str, str],
+    lookup_ids: Sequence[str],
+    timeout: float,
+    delay: float,
+    progress: Callable[[int, int, int], None] | None = None,
+) -> dict[str, dict[str, Any]]:
     token = payam_login(session, config, timeout)
     results: dict[str, dict[str, Any]] = {}
     for index, batch in enumerate(chunks(list(lookup_ids), PAYAM_BATCH_SIZE)):
@@ -244,6 +251,8 @@ def payam_statuses(session, config: Mapping[str, str], lookup_ids: Sequence[str]
             for item in payload:
                 if isinstance(item, dict) and str(item.get("customerId", "")).strip():
                     results[str(item["customerId"]).strip()] = item
+            if progress:
+                progress(index + 1, (len(lookup_ids) + PAYAM_BATCH_SIZE - 1) // PAYAM_BATCH_SIZE, len(payload))
             break
         else:
             raise RuntimeError("PayamSMS status retries exhausted")
@@ -252,7 +261,13 @@ def payam_statuses(session, config: Mapping[str, str], lookup_ids: Sequence[str]
     return results
 
 
-def candoo_statuses(session, lookup_ids: Sequence[str], timeout: float, delay: float) -> dict[str, dict[str, Any]]:
+def candoo_statuses(
+    session,
+    lookup_ids: Sequence[str],
+    timeout: float,
+    delay: float,
+    progress: Callable[[int, int, int], None] | None = None,
+) -> dict[str, dict[str, Any]]:
     api_key = os.getenv("CANDOO_SMS_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("CANDOO_SMS_API_KEY is required for Candoo")
@@ -279,6 +294,8 @@ def candoo_statuses(session, lookup_ids: Sequence[str], timeout: float, delay: f
             for item in payload:
                 if isinstance(item, dict) and item.get("customerId") is not None:
                     results[str(item["customerId"])] = item
+            if progress:
+                progress(index + 1, (len(lookup_ids) + CANDOO_BATCH_SIZE - 1) // CANDOO_BATCH_SIZE, len(payload))
             break
         if index + 1 < (len(lookup_ids) + CANDOO_BATCH_SIZE - 1) // CANDOO_BATCH_SIZE and delay:
             time.sleep(delay)

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from collections import Counter, defaultdict
@@ -33,6 +34,9 @@ from export_sms_campaign_provider_statuses import (
 from script_common import validate_database_port, validate_positive_ids
 
 
+logger = logging.getLogger("yamata.sms_statistics_report")
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("campaign_id", type=int, help="campaigns.id to inspect")
@@ -43,6 +47,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--db-sslmode", default=os.getenv("DB_SSL_MODE", "require"))
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--request-delay", type=float, default=1.0)
+    parser.add_argument("--verbose", action="store_true", help="log progress for every provider batch")
     parser.add_argument(
         "--include-unjobbed-sent-sms",
         action=argparse.BooleanOptionalAction,
@@ -129,34 +134,80 @@ def aggregate(rows: Sequence[Mapping[str, int]]) -> dict[str, int]:
 def main(argv: Sequence[str] | None = None) -> int:
     load_repository_env()
     args = parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     os.umask(0o077)
     try:
         import requests
     except ImportError as exc:
         raise RuntimeError("requests is required; install scripts/requirements.txt") from exc
 
+    logger.info("campaign_id=%d connecting to PostgreSQL in read-only mode", args.campaign_id)
     # connect_read_only prompts for DB_PASSWORD only when it was not exported.
     with connect_read_only(args) as connection, connection.cursor() as cur:
         messages = fetch_messages(cur, args.campaign_id, args.include_unjobbed_sent_sms)
     if not messages:
         raise RuntimeError("campaign has no SMS status-job or sent_sms rows")
+    logger.info(
+        "campaign_id=%d discovered_messages=%d include_unjobbed_sent_sms=%s",
+        args.campaign_id,
+        len(messages),
+        args.include_unjobbed_sent_sms,
+    )
 
     lookup_ids: dict[str, set[str]] = defaultdict(set)
     for message in messages:
         if message.provider in {"payamsms", "candoo"} and message.lookup_id:
             lookup_ids[message.provider].add(message.lookup_id)
 
+    for provider, ids in sorted(lookup_ids.items()):
+        batch_size = 200 if provider == "payamsms" else 100
+        logger.info(
+            "campaign_id=%d provider=%s unique_lookup_ids=%d request_batches=%d",
+            args.campaign_id,
+            provider,
+            len(ids),
+            (len(ids) + batch_size - 1) // batch_size,
+        )
+
     session = requests.Session()
     session.headers["User-Agent"] = "yamata-sms-statistics-report/1"
     results: dict[str, dict[str, dict[str, Any]]] = {}
     if lookup_ids["payamsms"]:
+        logger.info("campaign_id=%d fetching PayamSMS delivery statuses", args.campaign_id)
         results["payamsms"] = payam_statuses(
-            session, payam_config(), sorted(lookup_ids["payamsms"]), args.timeout, args.request_delay
+            session,
+            payam_config(),
+            sorted(lookup_ids["payamsms"]),
+            args.timeout,
+            args.request_delay,
+            lambda completed, total, returned: logger.info(
+                "campaign_id=%d provider=payamsms batch=%d/%d returned=%d",
+                args.campaign_id,
+                completed,
+                total,
+                returned,
+            ),
         )
+        logger.info("campaign_id=%d provider=payamsms results=%d", args.campaign_id, len(results["payamsms"]))
     if lookup_ids["candoo"]:
+        logger.info("campaign_id=%d fetching Candoo delivery statuses", args.campaign_id)
         results["candoo"] = candoo_statuses(
-            session, sorted(lookup_ids["candoo"]), args.timeout, args.request_delay
+            session,
+            sorted(lookup_ids["candoo"]),
+            args.timeout,
+            args.request_delay,
+            lambda completed, total, returned: logger.info(
+                "campaign_id=%d provider=candoo batch=%d/%d returned=%d",
+                args.campaign_id,
+                completed,
+                total,
+                returned,
+            ),
         )
+        logger.info("campaign_id=%d provider=candoo results=%d", args.campaign_id, len(results["candoo"]))
 
     rows, missing_lookup, missing_result, unsupported = fresh_status_rows(messages, results)
     report = {
@@ -175,6 +226,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         "note": "Statistics include only fresh provider results; no database rows were written.",
     }
+    logger.info(
+        "campaign_id=%d aggregation complete records=%d delivered_parts=%d unknown_parts=%d missing_provider_results=%d",
+        args.campaign_id,
+        report["statistics"]["aggregatedTotalRecords"],
+        report["statistics"]["aggregatedTotalDeliveredParts"],
+        report["statistics"]["aggregatedTotalUnKnownParts"],
+        missing_result,
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
