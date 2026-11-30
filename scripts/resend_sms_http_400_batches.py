@@ -183,10 +183,8 @@ def digest(value: str) -> str:
 
 def load_attempts(conn, campaign_id: int, attempt_ids: list[int] | None) -> tuple[str, list[FailedAttempt]]:
     where = "a.http_status_code = 400"
-    parameters: list[Any] = [campaign_id]
     if attempt_ids:
         where += " AND a.id = ANY(%s)"
-        parameters.append(attempt_ids)
     campaign = conn.execute("""
         SELECT pc.id, pc.campaign_json, pc.audience_ids, pc.audience_codes
         FROM processed_campaigns pc
@@ -194,6 +192,10 @@ def load_attempts(conn, campaign_id: int, attempt_ids: list[int] | None) -> tupl
     """, (campaign_id,)).fetchone()
     if not campaign:
         raise RecoveryError("current processed campaign was not found")
+    # sms_provider_send_attempts references processed_campaigns, not campaigns.
+    parameters: list[Any] = [campaign["id"]]
+    if attempt_ids:
+        parameters.append(attempt_ids)
     spec = campaign["campaign_json"] if isinstance(campaign["campaign_json"], dict) else json.loads(campaign["campaign_json"])
     sender = str(spec.get("line_number") or "").strip()
     if str(spec.get("platform") or "").lower() != "sms" or not sender:
