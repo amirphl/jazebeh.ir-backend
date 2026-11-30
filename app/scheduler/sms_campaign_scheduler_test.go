@@ -236,7 +236,7 @@ func (s *stubSMSCampaignStatusJobRepo) Update(ctx context.Context, job *models.C
 	return nil
 }
 
-func TestScheduleStatusCheckJobsSkips48HourCandooCheck(t *testing.T) {
+func TestScheduleStatusCheckJobsSchedulesCandooThirdCheckAt12Hours(t *testing.T) {
 	repo := &stubSMSCampaignStatusJobRepo{}
 	scheduler := &SMSCampaignScheduler{jobRepo: repo}
 
@@ -246,14 +246,15 @@ func TestScheduleStatusCheckJobsSkips48HourCandooCheck(t *testing.T) {
 	if len(repo.batched) != 1 {
 		t.Fatalf("Candoo status job batches = %d, want 1", len(repo.batched))
 	}
-	for _, job := range repo.batched[0] {
-		if job.ScheduledAt.Sub(job.CreatedAt) == 48*time.Hour {
-			t.Fatal("Candoo status checks must not include a 48-hour job")
-		}
+	if got := len(repo.batched[0]); got != 3 {
+		t.Fatalf("Candoo status jobs = %d, want 3", got)
+	}
+	if got := repo.batched[0][2].ScheduledAt.Sub(repo.batched[0][2].CreatedAt); got != 12*time.Hour {
+		t.Fatalf("Candoo third status job delay = %s, want 12h", got)
 	}
 }
 
-func TestScheduleStatusCheckJobsKeeps48HourPayamSMSCheck(t *testing.T) {
+func TestScheduleStatusCheckJobsKeeps24HourPayamSMSCheck(t *testing.T) {
 	repo := &stubSMSCampaignStatusJobRepo{}
 	scheduler := &SMSCampaignScheduler{jobRepo: repo}
 
@@ -263,12 +264,12 @@ func TestScheduleStatusCheckJobsKeeps48HourPayamSMSCheck(t *testing.T) {
 	if len(repo.batched) != 1 {
 		t.Fatalf("PayamSMS status job batches = %d, want 1", len(repo.batched))
 	}
-	for _, job := range repo.batched[0] {
-		if job.ScheduledAt.Sub(job.CreatedAt) == 48*time.Hour {
-			return
-		}
+	if got := len(repo.batched[0]); got != 3 {
+		t.Fatalf("PayamSMS status jobs = %d, want 3", got)
 	}
-	t.Fatal("PayamSMS status checks must retain the 48-hour job")
+	if got := repo.batched[0][2].ScheduledAt.Sub(repo.batched[0][2].CreatedAt); got != 24*time.Hour {
+		t.Fatalf("PayamSMS third status job delay = %s, want 24h", got)
+	}
 }
 
 func TestGroupSMSStatusJobsByCampaignPreservesCampaignAndJobOrder(t *testing.T) {
