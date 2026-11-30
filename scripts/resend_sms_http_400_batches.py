@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import sys
+import time
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,6 +140,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--execute", action="store_true", help="send provider requests; default is dry-run")
     parser.add_argument("--confirm-campaign-id", type=int)
     parser.add_argument("--audit-file", type=Path, help="new local JSONL audit path; required implicitly in execute mode")
+    parser.add_argument("--log-file", type=Path, help="append operational progress here; default is resend-sms-http-400-<id>.log")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args(argv)
     validate_positive_ids(parser, "campaign_id", [args.campaign_id])
@@ -152,6 +154,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--execute requires --confirm-campaign-id equal to campaign_id")
     if args.audit_file is None:
         args.audit_file = Path(f"resend-sms-http-400-campaign-{args.campaign_id}.jsonl")
+    if args.log_file is None:
+        args.log_file = Path(f"resend-sms-http-400-{args.campaign_id}.log")
     return args
 
 
@@ -174,6 +178,32 @@ def private_new_file(path: Path):
     descriptor = os.open(path, flags, 0o600)
     os.fchmod(descriptor, 0o600)
     return os.fdopen(descriptor, "w", encoding="utf-8")
+
+
+def private_append_file(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if path.is_symlink():
+        raise OSError(f"refusing symlinked log file: {path}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags, 0o600)
+    os.fchmod(descriptor, 0o600)
+    return os.fdopen(descriptor, "a", encoding="utf-8")
+
+
+def setup_logging(path: Path) -> None:
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%dT%H:%M:%SZ")
+    formatter.converter = time.gmtime
+    file_handler = logging.StreamHandler(private_append_file(path))
+    file_handler.setFormatter(formatter)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    LOGGER.handlers.clear()
+    LOGGER.setLevel(logging.INFO)
+    LOGGER.addHandler(file_handler)
+    LOGGER.addHandler(console_handler)
+    LOGGER.propagate = False
 
 
 def digest(value: str) -> str:
@@ -334,6 +364,8 @@ def describe(attempts: Iterable[FailedAttempt]) -> list[dict[str, Any]]:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        setup_logging(args.log_file)
+        LOGGER.info("starting campaign=%s execute=%s env_file=%s audit_file=%s", args.campaign_id, args.execute, args.env_file, args.audit_file)
         load_env(args.env_file)
         # Arguments win, but dotenv is the normal operations source.  argparse
         # has already run when the file is loaded, so fill its empty DB fields.
@@ -346,17 +378,22 @@ def main(argv: list[str] | None = None) -> int:
         with connect(args) as conn:
             sender, attempts = load_attempts(conn, args.campaign_id, args.attempt_id)
         plan = describe(attempts)
+        recipient_count = sum(len(attempt.recipients) for attempt in attempts)
+        LOGGER.info("campaign=%s selected_attempts=%s selected_recipients=%s providers=%s", args.campaign_id, len(attempts), recipient_count, ",".join(sorted({attempt.provider for attempt in attempts})))
         print(json.dumps({"campaign_id": args.campaign_id, "database": "read-only", "execute": args.execute, "selected_attempt_count": len(attempts), "selected_recipient_count": sum(len(a.recipients) for a in attempts), "attempts": plan}, indent=2))
         if not args.execute:
+            LOGGER.info("campaign=%s dry run complete; no provider request or database write was made", args.campaign_id)
             return 0
         # A brand-new audit file makes accidental repeat execution fail closed.
         with private_new_file(args.audit_file) as audit, requests.Session() as session:
             for attempt in attempts:
                 event = {"campaign_id": args.campaign_id, "attempt_id": attempt.id, "provider": attempt.provider, "recipient_count": len(attempt.recipients), "tracking_id_digests": [digest(x) for x in attempt.tracking_ids]}
                 try:
+                    LOGGER.info("campaign=%s attempt=%s provider=%s recipients=%s submitting", args.campaign_id, attempt.id, attempt.provider, len(attempt.recipients))
                     status, response_sha256 = send_attempt(session, attempt, sender, args.timeout)
                     event.update({"http_status_code": status, "response_sha256": response_sha256})
                     audit.write(json.dumps(event, separators=(",", ":")) + "\n"); audit.flush()
+                    LOGGER.info("campaign=%s attempt=%s provider=%s recipients=%s response_http_status=%s", args.campaign_id, attempt.id, attempt.provider, len(attempt.recipients), status)
                     if not 200 <= status < 300:
                         raise RecoveryError(f"attempt {attempt.id} returned HTTP {status}; stopped without sending later attempts")
                 except Exception as exc:
@@ -364,8 +401,10 @@ def main(argv: list[str] | None = None) -> int:
                         raise
                     event.update({"error": str(exc)[:512]})
                     audit.write(json.dumps(event, separators=(",", ":")) + "\n"); audit.flush()
+                    LOGGER.error("campaign=%s attempt=%s provider=%s failed; stopping without later batches: %s", args.campaign_id, attempt.id, attempt.provider, exc)
                     raise
         print(f"sent {len(attempts)} HTTP-400 recovery batches; DB unchanged; audit={args.audit_file}")
+        LOGGER.info("campaign=%s completed attempts=%s recipients=%s database_unchanged=true", args.campaign_id, len(attempts), recipient_count)
         return 0
     except (RecoveryError, psycopg.Error, requests.RequestException, OSError, ValueError) as exc:
         LOGGER.error("failed: %s", exc)
