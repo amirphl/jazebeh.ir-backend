@@ -19,6 +19,7 @@ type BundleActionFile struct {
 	ID                         int64                  `gorm:"primaryKey;autoIncrement;type:bigserial" json:"id"`
 	BundleID                   uint                   `gorm:"not null;index:idx_bundle_action_files_bundle_status,priority:1" json:"bundle_id"`
 	OriginalFileName           string                 `gorm:"type:varchar(255);not null" json:"original_file_name"`
+	ActionLevel                string                 `gorm:"type:text;not null;default:''" json:"action_level"`
 	StoragePath                string                 `gorm:"type:text;not null" json:"-"`
 	ContentSHA256              string                 `gorm:"type:char(64);not null" json:"content_sha256"`
 	Status                     BundleActionFileStatus `gorm:"type:varchar(32);not null;index:idx_bundle_action_files_bundle_status,priority:2" json:"status"`
