@@ -5,6 +5,7 @@ import "time"
 type BundleActionFileItem struct {
 	ID                         int64      `json:"id"`
 	OriginalFileName           string     `json:"original_file_name"`
+	ActionLevel                string     `json:"action_level"`
 	Status                     string     `json:"status"`
 	TotalRowCount              int64      `json:"total_row_count"`
 	UniqueUIDCount             int64      `json:"unique_uid_count"`
