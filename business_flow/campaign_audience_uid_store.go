@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/amirphl/Yamata-no-Orochi/app/dto"
 )
@@ -50,9 +49,6 @@ func appendCampaignAudienceUIDs(campaignID uint, items []dto.BotAudienceUIDItem)
 	defer lock.Unlock()
 
 	path := campaignAudienceUIDsFilePath(campaignID)
-	if err := removeCampaignAudienceUIDsFileIfExpired(path, time.Now()); err != nil {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -100,9 +96,6 @@ func readCampaignAudienceUIDsBounded(campaignID uint, maxUIDs int) ([]string, ma
 	defer lock.Unlock()
 
 	path := campaignAudienceUIDsFilePath(campaignID)
-	if err := removeCampaignAudienceUIDsFileIfExpired(path, time.Now()); err != nil {
-		return nil, nil, err
-	}
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -146,21 +139,4 @@ func collectCampaignAudienceUIDs(reader io.Reader, maxUIDs int) ([]string, map[s
 		uids = append(uids, uid)
 	}
 	return uids, uidToCode, nil
-}
-
-func removeCampaignAudienceUIDsFileIfExpired(path string, now time.Time) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if now.Sub(info.ModTime()) <= audienceUIDsTTL {
-		return nil
-	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
 }
