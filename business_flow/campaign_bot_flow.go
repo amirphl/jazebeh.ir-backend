@@ -472,11 +472,9 @@ func (s *BotCampaignFlowImpl) UpdateCampaignStatistics(ctx context.Context, camp
 	return &dto.BotUpdateCampaignStatisticsResponse{Message: "Campaign statistics updated"}, nil
 }
 
-const audienceUIDsTTL = 900 * 24 * time.Hour
-
 // PushCampaignAudienceUIDs appends a batch of audience uid/code pairs to the campaign's
 // file-backed store. Called repeatedly for large campaigns (one call per scheduler chunk).
-// The export flow de-duplicates by UID and treats files older than 900 days as expired.
+// These files are durable report inputs and are intentionally retained indefinitely.
 func (s *BotCampaignFlowImpl) PushCampaignAudienceUIDs(ctx context.Context, campaignID uint, items []dto.BotAudienceUIDItem) error {
 	if campaignID == 0 {
 		return NewBusinessError("VALIDATION_ERROR", "campaign_id must be greater than 0", nil)
