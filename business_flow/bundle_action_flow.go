@@ -34,7 +34,7 @@ const (
 const defaultBundleActionFileStorageRoot = "data/uploads/bundle-action-files"
 
 type BundleActionFlow interface {
-	Upload(context.Context, uint, uint, string, io.Reader) (*models.BundleActionFile, error)
+	Upload(context.Context, uint, uint, string, string, io.Reader) (*models.BundleActionFile, error)
 	Get(context.Context, uint, uint, int64) (*models.BundleActionFile, error)
 	List(context.Context, uint, uint, int, int) ([]*models.BundleActionFile, int64, error)
 	Delete(context.Context, uint, uint, int64) error
@@ -71,7 +71,7 @@ func (s *BundleActionFlowImpl) ownedBundle(ctx context.Context, customerID, bund
 func actionFileItemPath(root string, bundleID uint, id int64) string {
 	return filepath.Join(root, fmt.Sprintf("%d", bundleID), fmt.Sprintf("%d.xlsx", id))
 }
-func (s *BundleActionFlowImpl) Upload(ctx context.Context, customerID, bundleID uint, name string, source io.Reader) (*models.BundleActionFile, error) {
+func (s *BundleActionFlowImpl) Upload(ctx context.Context, customerID, bundleID uint, name, actionLevel string, source io.Reader) (*models.BundleActionFile, error) {
 	if _, err := s.ownedBundle(ctx, customerID, bundleID); err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (s *BundleActionFlowImpl) Upload(ctx context.Context, customerID, bundleID 
 	}
 	hash := sha256.Sum256(data)
 	now := utils.UTCNow()
-	row := &models.BundleActionFile{BundleID: bundleID, OriginalFileName: filepath.Base(name), ContentSHA256: hex.EncodeToString(hash[:]), Status: models.BundleActionFilePending, UploadedByCustomerID: customerID, CreatedAt: now, UpdatedAt: now, StoragePath: "pending"}
+	row := &models.BundleActionFile{BundleID: bundleID, OriginalFileName: filepath.Base(name), ActionLevel: actionLevel, ContentSHA256: hex.EncodeToString(hash[:]), Status: models.BundleActionFilePending, UploadedByCustomerID: customerID, CreatedAt: now, UpdatedAt: now, StoragePath: "pending"}
 	if err := s.repo.Create(ctx, row); err != nil {
 		return nil, err
 	}
