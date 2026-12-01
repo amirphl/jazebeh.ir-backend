@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE bundle_action_files
+    ADD COLUMN IF NOT EXISTS action_level TEXT NOT NULL DEFAULT '';
+
+COMMIT;
