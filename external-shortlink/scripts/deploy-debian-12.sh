@@ -31,7 +31,7 @@ readonly LOG_DIR='/var/log/external-shortlink'
 readonly DEPLOY_LOG="$LOG_DIR/deploy.log"
 readonly RUST_TOOLCHAIN='1.85.0'
 readonly MINIMUM_MEMORY_KIB=3800000
-readonly MINIMUM_ROOT_FREE_KIB=$((50 * 1024 * 1024))
+readonly MINIMUM_ROOT_FREE_KIB=$((40 * 1024 * 1024))
 
 ACTION='deploy'
 SOURCE_DIR="$DEFAULT_SOURCE_DIR"
@@ -263,7 +263,7 @@ verify_deployment_account_and_capacity() {
     root_free_kib="$(df -Pk / | awk 'NR == 2 { print $4 }')"
     [[ "$cores" =~ ^[0-9]+$ && "$cores" -ge 4 ]] || die 'at least 4 vCPUs are required'
     [[ "$memory_kib" =~ ^[0-9]+$ && "$memory_kib" -ge "$MINIMUM_MEMORY_KIB" ]] || die 'at least 4 GB RAM is required'
-    [[ "$root_free_kib" =~ ^[0-9]+$ && "$root_free_kib" -ge "$MINIMUM_ROOT_FREE_KIB" ]] || die 'at least 50 GiB free space is required on /'
+    [[ "$root_free_kib" =~ ^[0-9]+$ && "$root_free_kib" -ge "$MINIMUM_ROOT_FREE_KIB" ]] || die 'at least 40 GiB free space is required on /'
     log "host verified: debian=12 user=$DEPLOYMENT_USER vcpus=$cores memory_kib=$memory_kib root_free_kib=$root_free_kib"
 }
 
