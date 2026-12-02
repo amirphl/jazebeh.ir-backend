@@ -59,7 +59,9 @@ func (r *BundleActionRepositoryImpl) List(ctx context.Context, bundleID uint, li
 		return nil, 0, err
 	}
 	var rows []*models.BundleActionFile
-	err := db.Order("id DESC").Limit(limit).Offset(offset).Find(&rows).Error
+	// The API contract is newest uploaded file first. Keep ID as a tie-breaker
+	// so offset pagination remains deterministic when uploads share a timestamp.
+	err := db.Order("created_at DESC, id DESC").Limit(limit).Offset(offset).Find(&rows).Error
 	return rows, n, err
 }
 func (r *BundleActionRepositoryImpl) RequestDelete(ctx context.Context, id int64, customerID uint, at time.Time) error {
@@ -233,6 +235,13 @@ func (r *BundleActionRepositoryImpl) Complete(ctx context.Context, id int64, at 
 	return r.getDB(ctx).Transaction(func(tx *gorm.DB) error {
 		var file models.BundleActionFile
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, id).Error; err != nil {
+			return err
+		}
+		// Refresh replaces every metric row for this Bundle.  Two files in the
+		// same Bundle may finish concurrently, so serialize the whole transition
+		// on the Bundle row; a file-row lock alone cannot prevent one refresh from
+		// publishing a snapshot that omits the other's uncommitted completion.
+		if err := tx.Exec("SELECT id FROM bundles WHERE id = ? FOR UPDATE", file.BundleID).Error; err != nil {
 			return err
 		}
 		if file.Status == models.BundleActionFileDeletePending {
