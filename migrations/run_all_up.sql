@@ -487,6 +487,12 @@
 \echo 'Running 0160_harden_admin_short_link_upload_jobs.sql...'
 \i migrations/0160_harden_admin_short_link_upload_jobs.sql
 
+\echo 'Running 0161_add_bundle_action_file_action_level.sql...'
+\i migrations/0161_add_bundle_action_file_action_level.sql
+
+\echo 'Running 0162_order_bundle_action_files_by_upload_time.sql...'
+\i migrations/0162_order_bundle_action_files_by_upload_time.sql
+
 \echo 'Running 0158_cascade_bundle_overall_tag_ctr_summary.sql...'
 \i migrations/0158_cascade_bundle_overall_tag_ctr_summary.sql
 
