@@ -55,7 +55,7 @@ func (h *BundleHandler) actionBundleRequest(c fiber.Ctx) (uint, uint, error) {
 }
 
 func actionFileDTO(row *models.BundleActionFile) dto.BundleActionFileItem {
-	return dto.BundleActionFileItem{ID: row.ID, OriginalFileName: row.OriginalFileName, Status: string(row.Status), TotalRowCount: row.TotalRowCount, UniqueUIDCount: row.UniqueUIDCount, NewActionUIDCount: row.NewActionUIDCount, DuplicateInFileCount: row.DuplicateInFileCount, DuplicateInOtherFilesCount: row.DuplicateInOtherFilesCount, InvalidUIDCount: row.InvalidUIDCount, OutsideBundleCount: row.OutsideBundleCount, UnassignedTagCount: row.UnassignedTagCount, MissingDeliveryCount: row.MissingDeliveryCount, EligibleActionUIDCount: row.EligibleActionUIDCount, ErrorCode: row.ErrorCode, ErrorMessage: row.ErrorMessage, CreatedAt: row.CreatedAt, ProcessedAt: row.ProcessedAt}
+	return dto.BundleActionFileItem{ID: row.ID, OriginalFileName: row.OriginalFileName, ActionLevel: row.ActionLevel, Status: string(row.Status), TotalRowCount: row.TotalRowCount, UniqueUIDCount: row.UniqueUIDCount, NewActionUIDCount: row.NewActionUIDCount, DuplicateInFileCount: row.DuplicateInFileCount, DuplicateInOtherFilesCount: row.DuplicateInOtherFilesCount, InvalidUIDCount: row.InvalidUIDCount, OutsideBundleCount: row.OutsideBundleCount, UnassignedTagCount: row.UnassignedTagCount, MissingDeliveryCount: row.MissingDeliveryCount, EligibleActionUIDCount: row.EligibleActionUIDCount, ErrorCode: row.ErrorCode, ErrorMessage: row.ErrorMessage, CreatedAt: row.CreatedAt, ProcessedAt: row.ProcessedAt}
 }
 
 // DownloadActionFileTemplate returns a minimal XLSX template whose only
@@ -94,7 +94,7 @@ func (h *BundleHandler) UploadActionFile(c fiber.Ctx) error {
 	defer opened.Close()
 	ctx, cancel := h.createRequestContextWithTimeout(c, "/api/v1/bundles/:id/action-files", 30*time.Second)
 	defer cancel()
-	row, err := h.actionFlow.Upload(ctx, customer, bundle, file.Filename, io.Reader(opened))
+	row, err := h.actionFlow.Upload(ctx, customer, bundle, file.Filename, c.FormValue("action_level"), io.Reader(opened))
 	if err != nil {
 		return h.handleBundleFlowError(c, err, 500, "Failed to upload action file", "ACTION_FILE_UPLOAD_FAILED")
 	}
