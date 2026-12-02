@@ -55,26 +55,45 @@ ALTER TABLE links
 ALTER TABLE clicks
     ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Backfill campaign-test links created before the explicit flag existed.
-UPDATE links
-SET is_test = TRUE
-WHERE is_test = FALSE
-  AND long_url ~ '(^|[^[:alnum:]_-])test-[0-9a-f]{8}([^[:alnum:]_-]|$)';
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-UPDATE clicks AS click
-SET is_test = TRUE
-FROM links AS link
-WHERE click.link_id = link.link_id
-  AND link.is_test = TRUE
-  AND click.is_test = FALSE;
+-- These legacy data migrations can scan every row in links and clicks. Record
+-- completion so the idempotent schema import does not repeat them on deploy.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM schema_migrations
+        WHERE name = '20260926_legacy_link_and_click_backfills'
+    ) THEN
+        -- Backfill campaign-test links created before the explicit flag existed.
+        UPDATE links
+        SET is_test = TRUE
+        WHERE is_test = FALSE
+          AND long_url ~ '(^|[^[:alnum:]_-])test-[0-9a-f]{8}([^[:alnum:]_-]|$)';
 
-UPDATE links
-SET short_url = 'https://' || short_url
-WHERE short_url ~ '^(jzbe\.ir|jo1n\.ir|joinsahel\.ir)/';
+        UPDATE clicks AS click
+        SET is_test = TRUE
+        FROM links AS link
+        WHERE click.link_id = link.link_id
+          AND link.is_test = TRUE
+          AND click.is_test = FALSE;
 
-UPDATE clicks
-SET short_url = 'https://' || short_url
-WHERE short_url ~ '^(jzbe\.ir|jo1n\.ir|joinsahel\.ir)/';
+        UPDATE links
+        SET short_url = 'https://' || short_url
+        WHERE short_url ~ '^(jzbe\.ir|jo1n\.ir|joinsahel\.ir)/';
+
+        UPDATE clicks
+        SET short_url = 'https://' || short_url
+        WHERE short_url ~ '^(jzbe\.ir|jo1n\.ir|joinsahel\.ir)/';
+
+        INSERT INTO schema_migrations (name)
+        VALUES ('20260926_legacy_link_and_click_backfills');
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS click_acknowledgements (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
