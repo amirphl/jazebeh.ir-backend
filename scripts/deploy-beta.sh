@@ -472,8 +472,12 @@ wait_for_services() {
 			health=$($docker_cmd inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo missing)
 			# A large first backup can outlast this readiness loop. Docker keeps
 			# checking its freshness independently after the deployment completes.
+			# GlitchTip can also take longer than the core deployment path to finish
+			# migrations; require it to be running, but do not gate this deploy on
+			# its Docker health state.
 			if [ "$state" != running ] || { \
 				[ "$health" != none ] && [ "$health" != healthy ] && \
+				[ "$container" != yamata-sentry-beta ] && \
 				{ [ "$container" != yamata-postgres-backup-beta ] || [ "$health" != starting ]; }; \
 			}; then
 				all_running=false
