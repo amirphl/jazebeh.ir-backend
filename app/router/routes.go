@@ -290,7 +290,11 @@ func (r *FiberRouter) SetupRoutes() {
 	campaigns.Get("/initiated/last", r.campaignHandler.GetLastInitiatedCampaign)
 	campaigns.Post("/audience-click-report", r.campaignHandler.ExportCampaignAudienceClickReport)
 	campaigns.Get("/:uuid/action-metrics", r.campaignHandler.GetCampaignActionMetrics)
-	campaigns.Get("/:id/export", r.campaignHandler.ExportCampaignReport)
+	// ExportCampaignReport resolves the path parameter as a campaign UUID.
+	// Keep the route name aligned with the handler (and the OpenAPI contract),
+	// otherwise Fiber exposes it only as "id" and every export is rejected as
+	// missing a UUID.
+	campaigns.Get("/:uuid/export", r.campaignHandler.ExportCampaignReport)
 	campaigns.Get("/:uuid/click-report", r.campaignHandler.ExportCampaignClickReport)
 	campaigns.Post("/:id/cancel", r.campaignHandler.CancelCampaign)
 	campaigns.Post("/hide", r.campaignHandler.HideCampaigns)
