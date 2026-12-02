@@ -3,6 +3,12 @@
 
 \set ON_ERROR_STOP on
 
+\echo 'Running 0162_order_bundle_action_files_by_upload_time_down.sql...'
+\i migrations/0162_order_bundle_action_files_by_upload_time_down.sql
+
+\echo 'Running 0161_add_bundle_action_file_action_level_down.sql...'
+\i migrations/0161_add_bundle_action_file_action_level_down.sql
+
 \echo 'Running 0160_harden_admin_short_link_upload_jobs_down.sql...'
 \i migrations/0160_harden_admin_short_link_upload_jobs_down.sql
 \echo 'Running 0159_create_admin_short_link_upload_jobs_down.sql...'
