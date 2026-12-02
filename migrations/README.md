@@ -4,12 +4,11 @@ This directory contains the ordered PostgreSQL schema history for Yamata no
 Orochi. The current schema head is:
 
 ```text
-0154_optimize_campaign_click_reporting.sql
+0162_order_bundle_action_files_by_upload_time.sql
 ```
 
-There are 157 numbered up files and 156 numbered down files. Both aggregate
-manifests currently include every matching file exactly once. The difference is
-`0050_remove_short_links_indexes.sql`, which has no checked-in down migration.
+There are 164 numbered up files and 164 numbered down files. Both aggregate
+manifests currently include every matching file exactly once.
 
 ## Naming and ordering
 
@@ -250,6 +249,8 @@ every production change.
 | `0157` | Bundle-scoped overall Smart Targeting tag CTR summaries |
 | `0159` | Durable admin short-link CSV upload jobs and retry state |
 | `0158` | Cascading Bundle cleanup for overall Smart Targeting tag CTR summaries |
+| `0161` | Opaque action-level metadata stored with Bundle action-file uploads |
+| `0162` | Deterministic newest-uploaded-first Bundle action-file pagination |
 
 ## Current schema areas
 
